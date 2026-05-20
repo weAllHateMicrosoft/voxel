@@ -2,15 +2,15 @@ plugins {
     id 'java'
 }
 
-project.ext.lwjglVersion = "3.4.1"
-project.ext.lwjglNatives = "natives-macos-arm64"
+group = 'com.yourname'
+version = '1.0'
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
+    implementation platform("org.lwjgl:lwjgl-bom:3.4.1")
 
     implementation "org.lwjgl:lwjgl"
     implementation "org.lwjgl:lwjgl-assimp"
@@ -18,12 +18,29 @@ dependencies {
     implementation "org.lwjgl:lwjgl-openal"
     implementation "org.lwjgl:lwjgl-opengl"
     implementation "org.lwjgl:lwjgl-stb"
-    implementation "org.lwjgl:lwjgl::$lwjglNatives"
-    implementation "org.lwjgl:lwjgl-assimp::$lwjglNatives"
-    implementation "org.lwjgl:lwjgl-glfw::$lwjglNatives"
-    implementation "org.lwjgl:lwjgl-openal::$lwjglNatives"
-    implementation "org.lwjgl:lwjgl-opengl::$lwjglNatives"
-    implementation "org.lwjgl:lwjgl-stb::$lwjglNatives"
+    implementation "org.joml:joml:1.10.5"
 
-    implementation 'org.joml:joml:1.10.5'
+    // This part is the most compatible way to handle natives
+    def os = System.getProperty("os.name").toLowerCase()
+    def arch = System.getProperty("os.arch").toLowerCase()
+    if (os.contains("win")) {
+        runtimeOnly "org.lwjgl:lwjgl::natives-windows"
+        runtimeOnly "org.lwjgl:lwjgl-glfw::natives-windows"
+        runtimeOnly "org.lwjgl:lwjgl-opengl::natives-windows"
+    } else if (os.contains("mac")) {
+        if (arch.contains("aarch64") || arch.contains("arm64")) {
+            runtimeOnly "org.lwjgl:lwjgl::natives-macos-arm64"
+            runtimeOnly "org.lwjgl:lwjgl-glfw::natives-macos-arm64"
+            runtimeOnly "org.lwjgl:lwjgl-opengl::natives-macos-arm64"
+        } else {
+            runtimeOnly "org.lwjgl:lwjgl::natives-macos"
+            runtimeOnly "org.lwjgl:lwjgl-glfw::natives-macos"
+            runtimeOnly "org.lwjgl:lwjgl-opengl::natives-macos"
+        }
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
