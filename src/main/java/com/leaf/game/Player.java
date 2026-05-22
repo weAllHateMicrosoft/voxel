@@ -6,6 +6,8 @@ import static org.lwjgl.glfw.GLFW.*;
 
 public class Player {
 
+    //Debug Mode
+    public boolean debugMode = true;
     // Feet position (bottom-center of the player box)
     public Vector3f position;
 
@@ -19,9 +21,9 @@ public class Player {
     private static final float EYE_HEIGHT = 1.6f;   // camera offset from feet
 
     // Physics constants
-    private static final float GRAVITY    = 38.0f;
-    private static final float JUMP_FORCE =  12.0f;
-    private static final float MOVE_SPEED =  6.0f;
+    private static final float GRAVITY    = 40.0f;
+    private static final float JUMP_FORCE =  11.0f;
+    private static final float MOVE_SPEED =  5.0f;
 
     public Player(float x, float y, float z) {
         position = new Vector3f(x, y, z);
@@ -30,8 +32,10 @@ public class Player {
     // Called every frame from Window.loop()
     public void update(long window, Camera camera, World world, float deltaTime) {
         handleMovement(window, camera, deltaTime);
-        handleGravityAndJump(window, deltaTime);
-        resolveCollisions(world);
+        if(!debugMode) {
+            handleGravityAndJump(window, deltaTime);
+            resolveCollisions(world);
+        }
 
         // Place the camera at eye level above feet
         camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
@@ -40,22 +44,48 @@ public class Player {
     // --- HORIZONTAL MOVEMENT ---
 
     private void handleMovement(long window, Camera camera, float deltaTime) {
-        // Reuse camera's forward/right vectors for direction
-        // getForward() ignores pitch so you move horizontally only
-        Vector3f forward = camera.getForward();
-        Vector3f right   = camera.getRight();
 
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            position.add(new Vector3f(forward).mul(MOVE_SPEED * deltaTime));
-        }
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            position.sub(new Vector3f(forward).mul(MOVE_SPEED * deltaTime));
-        }
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            position.add(new Vector3f(right).mul(MOVE_SPEED * deltaTime));
-        }
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            position.sub(new Vector3f(right).mul(MOVE_SPEED * deltaTime));
+        if (debugMode) {
+            // ── SPECTATOR / FLY MODE ─────────────────────────────────────────
+            Vector3f forward = camera.getLookDirection(); // Fly exactly where we look
+            Vector3f right   = camera.getRight();
+            float speed      = MOVE_SPEED * 4.0f;         // Fast exploration
+
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                position.add(new Vector3f(forward).mul(speed * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                position.sub(new Vector3f(forward).mul(speed * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+                position.add(new Vector3f(right).mul(speed * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+                position.sub(new Vector3f(right).mul(speed * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                position.y += speed * deltaTime;
+            }
+            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+                position.y -= speed * deltaTime;
+            }
+        } else {// Reuse camera's forward/right vectors for direction
+            // getForward() ignores pitch so you move horizontally only
+            Vector3f forward = camera.getForward();
+            Vector3f right = camera.getRight();
+
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                position.add(new Vector3f(forward).mul(MOVE_SPEED * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                position.sub(new Vector3f(forward).mul(MOVE_SPEED * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+                position.add(new Vector3f(right).mul(MOVE_SPEED * deltaTime));
+            }
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+                position.sub(new Vector3f(right).mul(MOVE_SPEED * deltaTime));
+            }
         }
     }
 

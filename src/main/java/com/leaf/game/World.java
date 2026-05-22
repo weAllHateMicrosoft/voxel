@@ -5,9 +5,9 @@ import java.util.List;
 
 public class World {
 
-    public static final int WIDTH  = 32;  // X axis
+    public static final int WIDTH  = 128;  // X axis
     public static final int HEIGHT =64;  // Y axis (up)
-    public static final int DEPTH  = 32;  // Z axis
+    public static final int DEPTH  = 128;  // Z axis
 
     private static final int TERRAIN_HEIGHT = 8; // y where grass appears
 
@@ -16,27 +16,11 @@ public class World {
 
     public World() {
         blocks = new Block[WIDTH][HEIGHT][DEPTH];
-        generateFlat();
+        WorldGen gen = new WorldGen(); // No seed for now
+        gen.generate(this);
     }
 
-    // --- WORLD GENERATION ---
 
-    private void generateFlat() {
-        for (int x = 0; x < WIDTH; x++) {
-            for (int y = 0; y < HEIGHT; y++) {
-                for (int z = 0; z < DEPTH; z++) {
-
-                    if (y < TERRAIN_HEIGHT - 1) {
-                        blocks[x][y][z] = Block.STONE;        // underground
-                    } else if (y == TERRAIN_HEIGHT - 1) {
-                        blocks[x][y][z] = Block.GRASS;        // surface
-                    } else {
-                        blocks[x][y][z] = Block.AIR;          // sky
-                    }
-                }
-            }
-        }
-    }
 
     // --- BLOCK ACCESS ---
 
