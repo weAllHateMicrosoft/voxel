@@ -126,6 +126,7 @@ public class Window {
             camera.position.y -= MOVE_SPEED * deltaTime;
         }
     }
+
     private void loop() {
         GL.createCapabilities();
         glEnable(GL_DEPTH_TEST);
@@ -136,26 +137,27 @@ public class Window {
                 "src/main/resources/shaders/fragment.glsl"
         );
 
-        // PHASE 3: Camera positioned outside the world looking in.
-        // World is 32×16×32. Grass is at y=7. Standing above and in front.
-        Camera camera = new Camera(new Vector3f(16.0f, 14.0f, 48.0f));
+        // Camera no longer takes a position — Player sets it each frame
+        Camera camera = new Camera();
         setupMouseLook(camera);
 
-        // PHASE 3: Build the world and its mesh
+        // PHASE 4: Player spawns above the terrain (grass is at y=7, so y=9 gives a drop)
+        Player player = new Player(16.0f, 60.0f, 16.0f);
+
         World world = new World();
         Mesh worldMesh = world.buildMesh();
 
-        // PHASE 3: Model matrix is identity — world blocks are already in world space
-        Matrix4f model = new Matrix4f(); // identity by default
+        Matrix4f model = new Matrix4f(); // identity
 
         double lastTime = glfwGetTime();
 
         while (!glfwWindowShouldClose(window)) {
-            double now = glfwGetTime();
-            float deltaTime = (float)(now - lastTime);
+            double now       = glfwGetTime();
+            float  deltaTime = (float)(now - lastTime);
             lastTime = now;
 
-            processInput(camera, deltaTime);
+            // PHASE 4: Player handles all input, physics, and sets camera position
+            player.update(window, camera, world, deltaTime);
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -166,7 +168,7 @@ public class Window {
             Matrix4f mvp        = new Matrix4f(projection).mul(view).mul(model);
 
             shader.setUniform("mvp", mvp);
-            worldMesh.render();   // one draw call for the entire world
+            worldMesh.render();
             shader.unbind();
 
             glfwSwapBuffers(window);
