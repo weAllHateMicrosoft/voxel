@@ -126,7 +126,6 @@ public class Window {
             camera.position.y -= MOVE_SPEED * deltaTime;
         }
     }
-
     private void loop() {
         GL.createCapabilities();
         glEnable(GL_DEPTH_TEST);
@@ -137,89 +136,44 @@ public class Window {
                 "src/main/resources/shaders/fragment.glsl"
         );
 
-        Camera camera = new Camera(new Vector3f(0.0f, 0.0f, 3.0f));
-        // PHASE 2: Start slightly in front of the cube (at z=3, looking toward z=-3)
-        // The cube is at (0,0,-3) and camera is now at (0,0,3) — 6 units apart.
-
-        // PHASE 2: Set up mouse capture and rotation callback
+        // PHASE 3: Camera positioned outside the world looking in.
+        // World is 32×16×32. Grass is at y=7. Standing above and in front.
+        Camera camera = new Camera(new Vector3f(16.0f, 14.0f, 48.0f));
         setupMouseLook(camera);
 
-        float[] vertices = {
-                // FRONT FACE
-                -0.5f, -0.5f,  0.5f,  0.2f, 0.7f, 0.2f,
-                0.5f, -0.5f,  0.5f,  0.2f, 0.7f, 0.2f,
-                0.5f,  0.5f,  0.5f,  0.2f, 0.7f, 0.2f,
-                -0.5f,  0.5f,  0.5f,  0.2f, 0.7f, 0.2f,
-                // BACK FACE
-                -0.5f, -0.5f, -0.5f,  0.2f, 0.7f, 0.2f,
-                0.5f, -0.5f, -0.5f,  0.2f, 0.7f, 0.2f,
-                0.5f,  0.5f, -0.5f,  0.2f, 0.7f, 0.2f,
-                -0.5f,  0.5f, -0.5f,  0.2f, 0.7f, 0.2f,
-                // TOP FACE
-                -0.5f,  0.5f,  0.5f,  0.4f, 1.0f, 0.4f,
-                0.5f,  0.5f,  0.5f,  0.4f, 1.0f, 0.4f,
-                0.5f,  0.5f, -0.5f,  0.4f, 1.0f, 0.4f,
-                -0.5f,  0.5f, -0.5f,  0.4f, 1.0f, 0.4f,
-                // BOTTOM FACE
-                -0.5f, -0.5f,  0.5f,  0.1f, 0.4f, 0.1f,
-                0.5f, -0.5f,  0.5f,  0.1f, 0.4f, 0.1f,
-                0.5f, -0.5f, -0.5f,  0.1f, 0.4f, 0.1f,
-                -0.5f, -0.5f, -0.5f,  0.1f, 0.4f, 0.1f,
-                // RIGHT FACE
-                0.5f, -0.5f,  0.5f,  0.15f, 0.6f, 0.15f,
-                0.5f, -0.5f, -0.5f,  0.15f, 0.6f, 0.15f,
-                0.5f,  0.5f, -0.5f,  0.15f, 0.6f, 0.15f,
-                0.5f,  0.5f,  0.5f,  0.15f, 0.6f, 0.15f,
-                // LEFT FACE
-                -0.5f, -0.5f,  0.5f,  0.15f, 0.6f, 0.15f,
-                -0.5f, -0.5f, -0.5f,  0.15f, 0.6f, 0.15f,
-                -0.5f,  0.5f, -0.5f,  0.15f, 0.6f, 0.15f,
-                -0.5f,  0.5f,  0.5f,  0.15f, 0.6f, 0.15f
-        };
+        // PHASE 3: Build the world and its mesh
+        World world = new World();
+        Mesh worldMesh = world.buildMesh();
 
-        int[] indices = {
-                0, 1, 2, 2, 3, 0,
-                4, 5, 6, 6, 7, 4,
-                8, 9, 10, 10, 11, 8,
-                12, 13, 14, 14, 15, 12,
-                16, 17, 18, 18, 19, 16,
-                20, 21, 22, 22, 23, 20
-        };
+        // PHASE 3: Model matrix is identity — world blocks are already in world space
+        Matrix4f model = new Matrix4f(); // identity by default
 
-        Mesh mesh = new Mesh(vertices, indices);
-
-        // PHASE 2: Delta time tracking
         double lastTime = glfwGetTime();
 
         while (!glfwWindowShouldClose(window)) {
-
-            // PHASE 2: Calculate how long the last frame took
             double now = glfwGetTime();
             float deltaTime = (float)(now - lastTime);
             lastTime = now;
 
-            // PHASE 2: Read keyboard input and update camera position
             processInput(camera, deltaTime);
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             shader.bind();
 
-            // PHASE 2: Removed spinning. Cube stays still, you move around it.
-            Matrix4f model      = new Matrix4f().translate(0.0f, 0.0f, -3.0f);
             Matrix4f view       = camera.getViewMatrix();
             Matrix4f projection = camera.getProjectionMatrix();
             Matrix4f mvp        = new Matrix4f(projection).mul(view).mul(model);
 
             shader.setUniform("mvp", mvp);
-            mesh.render();
+            worldMesh.render();   // one draw call for the entire world
             shader.unbind();
 
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
 
-        mesh.cleanup();
+        worldMesh.cleanup();
         shader.cleanup();
     }
 }
