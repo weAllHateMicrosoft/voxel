@@ -18,7 +18,8 @@ public class WorldGen {
     }
 
     public WorldGen() {
-        this(System.currentTimeMillis());
+        //this(System.currentTimeMillis());
+        this(GameConfig.seed);
     }
 
     public void resetSeed(long seed) {

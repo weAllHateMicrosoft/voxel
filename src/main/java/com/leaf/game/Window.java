@@ -223,12 +223,21 @@ public class Window {
                     network.seedReceived = false;
                 }
 
-                network.sendPosition(player.position.x, player.position.y, player.position.z, camera.yaw, camera.pitch);
+                // MULTIPLAYER: send our position and update where our friend is sliding
+                if (network != null && network.connected) {
+                    // 1. Send our position
+                    network.sendPosition(
+                            player.position.x, player.position.y, player.position.z,
+                            camera.yaw, camera.pitch
+                    );
 
-                remotePlayer.targetX = network.remoteX;
-                remotePlayer.targetY = network.remoteY;
-                remotePlayer.targetZ = network.remoteZ;
-                remotePlayer.update(deltaTime);
+                    // 2. Set targets for our friend's smooth LERP movement
+                    remotePlayer.targetX   = network.remoteX;
+                    remotePlayer.targetY   = network.remoteY;
+                    remotePlayer.targetZ   = network.remoteZ;
+                    remotePlayer.targetYaw = network.remoteYaw;
+                    remotePlayer.update(deltaTime); // Runs the smooth sliding math!
+                }
 
                 // 3. Process blocks friend broke
                 int[] brk = network.pollBreak();
@@ -328,6 +337,7 @@ public class Window {
                 itemMesh.render();
             }
 
+            // MULTIPLAYER: render friend's body
             if (network != null && network.connected) {
                 remotePlayer.render(shader, projection, view);
             }

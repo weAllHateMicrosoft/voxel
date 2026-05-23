@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class NetworkSession {
 
-    private static final int PORT = 25565;
+    private static final int PORT = 25566;
 
     public volatile float   remoteX, remoteY, remoteZ;
     public volatile float   remoteYaw, remotePitch;
