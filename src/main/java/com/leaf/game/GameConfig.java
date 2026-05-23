@@ -27,7 +27,11 @@ public class GameConfig {
     public static int     heightRange    = 55;  // added on top of heightBase
 
     // ── PLAYER / CAMERA ──────────────────────────────────────
-    public static float   mouseSensitivity = 0.001f;
-    public static float   moveSpeed        = 10.0f;
-    public static float   fov              = 70.0f;
+    public static float       mouseSensitivity = 0.001f;
+    public static float GRAVITY      = 35.0f; // Tweaked for a better fall feel
+    public static float JUMP_FORCE   = 10.0f;
+    public static float WALK_SPEED   = 5.0f;
+    public static float SPRINT_SPEED = 8.5f;
+    public static float FLY_SPEED    = 15.0f;
+    public static float       fov              = 70.0f;
 }

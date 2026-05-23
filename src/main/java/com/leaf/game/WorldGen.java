@@ -3,14 +3,12 @@ import java.util.Random;
 
 
 public class WorldGen {
-    private final Noise noise;
-    private final Noise continentalness;  // large scale — ocean vs land
-    private final Noise erosion;          // medium scale — flat vs jagged
-    private final Noise peaksValleys;     // fine scale — mountain peaks
+    private Noise continentalness;  // large scale — ocean vs land
+    private Noise erosion;          // medium scale — flat vs jagged
+    private Noise peaksValleys;     // fine scale — mountain peaks
 
 
     public WorldGen(long seed){
-        this.noise = new Noise(seed);
         this.continentalness = new Noise(seed);
         this.erosion         = new Noise(seed + 1000L);
         this.peaksValleys    = new Noise(seed + 2000L);
@@ -18,16 +16,6 @@ public class WorldGen {
 
     public WorldGen(){
        this(System.currentTimeMillis());
-    }
-
-    public void generate(World world) {
-        for (int x = 0; x < World.WIDTH; x++) {
-            for (int y = 0; y < World.HEIGHT; y++) {
-                for (int z = 0; z < World.DEPTH; z++) {
-                    world.setBlock(x, y, z, getBlock(x, y, z));
-                }
-            }
-        }
     }
 
     public void generateChunk(Chunk chunk){
@@ -41,9 +29,12 @@ public class WorldGen {
                 int wx = worldX + lx;
                 int wz = worldZ + lz;
 
-                float c  = continentalness.octave(wx * 0.005f, wz * 0.005f, 3, 0.5f);
-                float e  = erosion.octave        (wx * 0.015f, wz * 0.015f, 4, 0.5f);
-                float pv = peaksValleys.octave   (wx * 0.04f,  wz * 0.04f,  5, 0.4f);
+                float c  = continentalness.octave(wx * GameConfig.contFreq, wz * GameConfig.contFreq,
+                        GameConfig.contOctaves,  GameConfig.contPersist);
+                float e  = erosion.octave        (wx * GameConfig.erosFreq, wz * GameConfig.erosFreq,
+                        GameConfig.erosOctaves,  GameConfig.erosPersist);
+                float pv = peaksValleys.octave   (wx * GameConfig.pvFreq,   wz * GameConfig.pvFreq,
+                        GameConfig.pvOctaves,    GameConfig.pvPersist);
 
                 // Apply spline to continentalness → base height shape
                 float baseHeight = continentalnessSpline(c);
@@ -59,7 +50,7 @@ public class WorldGen {
                 float finalHeight = baseHeight + (detail * 0.2f * erosionFactor);
                 finalHeight = Math.max(0, Math.min(1, finalHeight));
 
-                int surfaceY = 5 + (int)(finalHeight * 55);
+                int surfaceY = GameConfig.heightBase + (int)(finalHeight * GameConfig.heightRange);
                 for(int ly = 0; ly < Chunk.HEIGHT; ly++){
                     chunk.setBlock(lx, ly, lz, pickBlock(ly,surfaceY));
                 }
@@ -71,21 +62,6 @@ public class WorldGen {
     private Block pickBlock(int y, int surfaceY){
         if (y < surfaceY)  return Block.STONE;
         if (y == surfaceY) return Block.GRASS;
-        return Block.AIR;
-    }
-
-    private Block getBlock(int x, int y, int z) {
-        //Sample noise - returns [-1 ~ 1]
-        //x and z are shrinked as perlin noise is sensitive
-        //octave takes in x,z,number octaves and persistence.
-        float raw = noise.octave(x*0.035f,z*0.035f,4,0.3f);
-        //Shifts from [-1,1] to [0, 1], then scale to a height
-        float normalized = (raw+1.0f)/2.0f;
-        int surfaceY = 10+(int)(normalized*30);
-
-        //Stone below, grass at surface, air above
-        if(y<surfaceY) return Block.STONE;
-        if(y==surfaceY)return Block.GRASS;
         return Block.AIR;
     }
 
@@ -111,5 +87,11 @@ public class WorldGen {
         return remap(c, 0.5f, 1.0f, 0.85f, 1.0f);
     }
 
-
+    public void resetSeed(long seed) {
+        // Re-create all three noise objects with the new seed
+        // (you'll need to make the noise fields non-final for this)
+        this.continentalness = new Noise(seed);
+        this.erosion         = new Noise(seed + 1000L);
+        this.peaksValleys    = new Noise(seed + 2000L);
+    }
 }

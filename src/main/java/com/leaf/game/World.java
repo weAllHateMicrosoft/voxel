@@ -17,7 +17,6 @@ public class World {
 
     public World() {
         this.generator = new WorldGen(); // Generates with random seed based on system time
-        this.generator.generate(this);
     }
 
 
@@ -75,6 +74,10 @@ public class World {
         return chunks.values();
     }
 
+    public void clearAllChunks() {
+        chunks.clear();
+    }
+
     private boolean inBounds(int x, int y, int z) {
         return x >= 0 && x < WIDTH
                 && y >= 0 && y < HEIGHT
@@ -83,7 +86,7 @@ public class World {
 
     // Call this every frame (or every few frames to save performance)
     public void updateChunks(World world, WorldGen gen, Player player) {
-        int RENDER_DISTANCE = 10; // chunks in each direction
+        int RENDER_DISTANCE = GameConfig.renderDistance;; // chunks in each direction
 
         // Which chunk is the player currently in?
         int playerCX = Math.floorDiv((int) player.position.x, Chunk.SIZE);
