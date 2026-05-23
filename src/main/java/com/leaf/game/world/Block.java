@@ -1,4 +1,4 @@
-package com.leaf.game;
+package com.leaf.game.world;
 public enum Block {
 
     AIR  (0.0f, 0.0f, 0.0f,  0.0f),   // hardness 0 = instant (never called, it's air)

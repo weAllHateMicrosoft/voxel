@@ -1,5 +1,7 @@
-package com.leaf.game;
+package com.leaf.game.entity;
 
+import com.leaf.game.render.Mesh;
+import com.leaf.game.render.Shader;
 import org.joml.Matrix4f;
 import java.util.ArrayList;
 import java.util.List;

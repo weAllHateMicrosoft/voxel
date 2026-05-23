@@ -1,4 +1,7 @@
-package com.leaf.game;
+package com.leaf.game.net;
+
+import com.leaf.game.core.GameConfig;
+import com.leaf.game.world.Block;
 
 import java.io.*;
 import java.net.*;

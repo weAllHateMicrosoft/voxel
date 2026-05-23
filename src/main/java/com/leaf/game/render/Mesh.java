@@ -1,4 +1,4 @@
-package com.leaf.game;
+package com.leaf.game.render;
 
 import org.lwjgl.system.MemoryUtil;
 import java.nio.FloatBuffer;

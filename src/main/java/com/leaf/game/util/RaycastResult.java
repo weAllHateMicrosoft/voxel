@@ -1,4 +1,4 @@
-package com.leaf.game;
+package com.leaf.game.util;
 
 public class RaycastResult {
     public boolean hit = false;

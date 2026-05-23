@@ -1,4 +1,4 @@
-package com.leaf.game;
+package com.leaf.game.render;
 
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -9,7 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import static org.lwjgl.opengl.GL20.*;
-import static org.lwjgl.opengl.GL33.*;
 
 public class Shader {
     private final int programId;

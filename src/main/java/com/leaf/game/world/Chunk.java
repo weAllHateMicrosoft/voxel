@@ -1,4 +1,6 @@
-package com.leaf.game;
+package com.leaf.game.world;
+
+import com.leaf.game.render.Mesh;
 
 public class Chunk {
     public static final int SIZE = 16;

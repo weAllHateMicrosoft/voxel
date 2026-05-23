@@ -1,4 +1,6 @@
-package com.leaf.game;
+package com.leaf.game.entity;
+
+import com.leaf.game.world.Block;
 
 import java.util.HashMap;
 import java.util.Map;

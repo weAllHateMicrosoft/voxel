@@ -1,5 +1,6 @@
-package com.leaf.game;
+package com.leaf.game.entity;
 
+import com.leaf.game.world.Block;
 import org.joml.Vector3f;
 
 public class DroppedItem {

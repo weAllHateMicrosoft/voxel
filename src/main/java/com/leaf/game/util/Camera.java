@@ -1,5 +1,6 @@
-package com.leaf.game;
+package com.leaf.game.util;
 
+import com.leaf.game.core.GameConfig;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
