@@ -20,9 +20,6 @@ public class Window {
     private final double[] lastMouseY = {360.0};
     private final boolean[] firstMouse = {true};  // ignore the first delta (it's huge)
 
-    private static final float MOUSE_SENSITIVITY = 0.001f;
-    private static final float MOVE_SPEED        = 2.0f;   // units per second
-
     public void run() {
         init();
         loop();
@@ -84,11 +81,11 @@ public class Window {
 
             // Apply rotation to camera
             // dx positive = mouse moved right = yaw increases (turn right)
-            camera.yaw   += dx * MOUSE_SENSITIVITY;
+            camera.yaw   += dx * GameConfig.mouseSensitivity;
 
             // dy positive = mouse moved down (screen Y goes top-to-bottom)
             //   = looking down = pitch decreases
-            camera.pitch -= dy * MOUSE_SENSITIVITY;
+            camera.pitch -= dy * GameConfig.mouseSensitivity;
 
             // Prevent flipping upside-down
             camera.clampPitch();
@@ -103,27 +100,27 @@ public class Window {
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
             // Move in the forward direction (flat, ignores pitch)
             Vector3f forward = camera.getForward();
-            camera.position.add(forward.mul(MOVE_SPEED * deltaTime));
+            camera.position.add(forward.mul(GameConfig.moveSpeed * deltaTime));
         }
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
             Vector3f forward = camera.getForward();
-            camera.position.sub(forward.mul(MOVE_SPEED * deltaTime));
+            camera.position.sub(forward.mul(GameConfig.moveSpeed * deltaTime));
         }
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
             Vector3f right = camera.getRight();
-            camera.position.add(right.mul(MOVE_SPEED * deltaTime));
+            camera.position.add(right.mul(GameConfig.moveSpeed * deltaTime));
         }
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
             Vector3f right = camera.getRight();
-            camera.position.sub(right.mul(MOVE_SPEED * deltaTime));
+            camera.position.sub(right.mul(GameConfig.moveSpeed * deltaTime));
         }
 
         // Bonus: Space = fly up, Left Shift = fly down
         if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-            camera.position.y += MOVE_SPEED * deltaTime;
+            camera.position.y += GameConfig.moveSpeed * deltaTime;
         }
         if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-            camera.position.y -= MOVE_SPEED * deltaTime;
+            camera.position.y -= GameConfig.moveSpeed * deltaTime;
         }
     }
 
@@ -137,17 +134,16 @@ public class Window {
                 "src/main/resources/shaders/fragment.glsl"
         );
 
-        // Camera no longer takes a position — Player sets it each frame
         Camera camera = new Camera();
         setupMouseLook(camera);
 
-        // PHASE 4: Player spawns above the terrain (grass is at y=7, so y=9 gives a drop)
+        // Player spawns up in the air
         Player player = new Player(16.0f, 60.0f, 16.0f);
 
         World world = new World();
-        Mesh worldMesh = world.buildMesh();
+        WorldGen worldGen = new WorldGen();
 
-        Matrix4f model = new Matrix4f(); // identity
+        Matrix4f model = new Matrix4f(); // Identity matrix (all blocks are built at world coordinates)
 
         double lastTime = glfwGetTime();
 
@@ -156,8 +152,8 @@ public class Window {
             float  deltaTime = (float)(now - lastTime);
             lastTime = now;
 
-            // PHASE 4: Player handles all input, physics, and sets camera position
             player.update(window, camera, world, deltaTime);
+            world.updateChunks(world, worldGen, player);
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -165,17 +161,40 @@ public class Window {
 
             Matrix4f view       = camera.getViewMatrix();
             Matrix4f projection = camera.getProjectionMatrix();
-            Matrix4f mvp        = new Matrix4f(projection).mul(view).mul(model);
 
-            shader.setUniform("mvp", mvp);
-            worldMesh.render();
+            // ── CHUNK RENDERING ──
+            // Loop through all loaded chunks and render them individually
+            for (Chunk chunk : world.getAllChunks()) {
+
+                // If the chunk is dirty, rebuild its GPU Mesh
+                if (chunk.dirty) {
+                    if (chunk.mesh != null) {
+                        chunk.mesh.cleanup(); // Clean up old GPU memory first!
+                    }
+                    chunk.mesh = world.buildChunkMesh(chunk);
+                    chunk.dirty = false;
+                }
+
+                // If the chunk has a valid mesh, render it
+                if (chunk.mesh != null) {
+                    Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
+                    shader.setUniform("mvp", mvp);
+                    chunk.mesh.render();
+                }
+            }
+
             shader.unbind();
 
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
 
-        worldMesh.cleanup();
+        // Clean up GPU memory for all chunks at exit
+        for (Chunk chunk : world.getAllChunks()) {
+            if (chunk.mesh != null) {
+                chunk.mesh.cleanup();
+            }
+        }
         shader.cleanup();
     }
 }
