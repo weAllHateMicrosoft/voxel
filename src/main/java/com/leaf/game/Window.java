@@ -136,8 +136,19 @@ public class Window {
     }
 
     private void loop() {
+        // MULTIPLAYER: Networking stuff is fine here (it doesn't use the GPU)
+        GameServer server = new GameServer();
+        server.start(); // if you are hosting
+
+        // GameClient client = new GameClient("192.168.x.x");
+        // client.connect(); // if you are joining
+
+        // ── 1. WAKE UP OPENGL (Must happen before any Mesh or Shader is created!) ──
         GL.createCapabilities();
         imguiGl3.init("#version 330");
+
+        // ── 2. NOW CREATE GRAPHICS OBJECTS ──
+        RemotePlayer remotePlayer = new RemotePlayer();
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
@@ -164,6 +175,16 @@ public class Window {
             lastTime = now;
 
             player.update(window, camera, world, deltaTime);
+            // MULTIPLAYER: send our position every frame
+            server.sendPosition(
+                    player.position.x, player.position.y, player.position.z,
+                    camera.yaw, camera.pitch
+            );
+
+            // MULTIPLAYER: update where we draw our friend
+            remotePlayer.x = server.remoteX;
+            remotePlayer.y = server.remoteY;
+            remotePlayer.z = server.remoteZ;
             lastTarget = player.getTargetBlock(camera, world);
             world.updateChunks(world, worldGen, player);
 
@@ -188,6 +209,10 @@ public class Window {
                     chunk.mesh.render();
                 }
             }
+            // MULTIPLAYER: render friend's body
+            if (server.friendConnected) {
+                remotePlayer.render(shader, projection, view);
+            }
             shader.unbind();
 
             // ── IMGUI FRAME ──────────────────────────────────
@@ -209,6 +234,7 @@ public class Window {
         imguiGl3.dispose();
         imguiGlfw.dispose();
         ImGui.destroyContext();
+        remotePlayer.cleanup();
     }
 
     private void renderDebugMenu() {

@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class World {
+    //Hardcoded server seed
+    WorldGen gen = new WorldGen(42L);
 
     public static final int WIDTH  = 128;
     public static final int HEIGHT = 64;
