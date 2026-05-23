@@ -18,14 +18,17 @@ public class Window {
     private long window;
     private Player player;
     private World world;
+    private WorldGen worldGen;   // field so renderDebugMenu can reach it
+
+    // which block the player has selected to place
+    private Block selectedBlock = Block.GRASS;
+    //the last raycast result (updated every frame, used by click handlers)
+    private RaycastResult lastTarget = null;
 
     private final double[]  lastMouseX = {640.0};
     private final double[]  lastMouseY = {360.0};
     private final boolean[] firstMouse = {true};
-    private Block selectedBlock = Block.GRASS;
-    private RaycastResult lastTarget = null;
 
-    // ImGui — glfw can init early, gl3 must wait until GL.createCapabilities() has run
     private final ImGuiImplGlfw imguiGlfw = new ImGuiImplGlfw();
     private final ImGuiImplGl3  imguiGl3  = new ImGuiImplGl3();
     private boolean showDebug = false;
@@ -56,9 +59,8 @@ public class Window {
         if (window == NULL) throw new RuntimeException("Failed to create window");
 
         glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
-            if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
+            if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE)
                 glfwSetWindowShouldClose(win, true);
-            }
             if (key == GLFW_KEY_F3 && action == GLFW_RELEASE) {
                 showDebug = !showDebug;
                 glfwSetInputMode(window, GLFW_CURSOR,
@@ -77,16 +79,15 @@ public class Window {
         glfwSwapInterval(1);
         glfwShowWindow(window);
 
-        // ImGui context + GLFW backend can start now (no GL calls yet)
         ImGui.createContext();
-        imguiGlfw.init(window, true); // 'true' = chain our key callback above
+        imguiGlfw.init(window, true);
     }
 
     private void setupMouseLook(Camera camera) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         glfwSetCursorPosCallback(window, (win, xpos, ypos) -> {
-            if (showDebug) return; // don't rotate camera while menu is open
+            if (showDebug) return;
 
             if (firstMouse[0]) {
                 lastMouseX[0] = xpos;
@@ -132,13 +133,11 @@ public class Window {
                 }
             }
         });
-
     }
 
     private void loop() {
-        // GL capabilities must be created before any GL call — including ImGui's GL3 backend
         GL.createCapabilities();
-        imguiGl3.init("#version 330"); // <-- HERE, after createCapabilities(), not in init()
+        imguiGl3.init("#version 330");
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
@@ -151,9 +150,9 @@ public class Window {
         Camera camera = new Camera();
         setupMouseLook(camera);
 
-        this.player  = new Player(16.0f, 60.0f, 16.0f);
-        this.world   = new World();
-        WorldGen worldGen = new WorldGen();
+        this.player   = new Player(16.0f, 60.0f, 16.0f);
+        this.world    = new World();
+        this.worldGen = new WorldGen();          // now a field, not a local
         world.updateChunks(world, worldGen, player);
 
         Matrix4f model    = new Matrix4f();
@@ -188,12 +187,7 @@ public class Window {
             }
             shader.unbind();
 
-            // ImGui frame
-            imguiGlfw.newFrame();
-            ImGui.newFrame();
-            if (showDebug) renderDebugMenu();
-            ImGui.render();
-            imguiGl3.renderDrawData(ImGui.getDrawData());
+            // ── IMGUI FRAME ──────────────────────────────────
             imguiGlfw.newFrame();
             ImGui.newFrame();
             renderHUD();                          // ← always shown
@@ -205,72 +199,137 @@ public class Window {
             glfwPollEvents();
         }
 
-        // Cleanup
         for (Chunk chunk : world.getAllChunks()) {
             if (chunk.mesh != null) chunk.mesh.cleanup();
         }
         shader.cleanup();
-
-        imguiGl3.dispose();   // <-- dispose(), not shutdown()
-        imguiGlfw.dispose();  // <-- dispose(), not shutdown()
+        imguiGl3.dispose();
+        imguiGlfw.dispose();
         ImGui.destroyContext();
     }
 
     private void renderDebugMenu() {
-        ImGui.begin("Settings");  // Simple window title
+        ImGui.begin("Settings");
 
-        // ── FOV SLIDER ───────────────────────────────────────────
+        // ── INFO ─────────────────────────────────────────────────────────────
+        ImGui.text("Chunks loaded: " + world.getAllChunks().size());
+        ImGui.text(String.format("Position: %.1f  %.1f  %.1f",
+                player.position.x, player.position.y, player.position.z));
+        ImGui.text("Debug/fly mode: " + (player.debugMode ? "ON" : "OFF"));
+        ImGui.spacing();
+
+        // ── CAMERA ───────────────────────────────────────────────────────────
+        ImGui.text("Camera");
+        ImGui.separator();
         float[] fov = { GameConfig.fov };
-        if (ImGui.sliderFloat("FOV", fov, 30f, 120f)) {
+        if (ImGui.sliderFloat("FOV", fov, 30f, 120f))
             GameConfig.fov = fov[0];
-        }
 
-        // ── RENDER DISTANCE SLIDER ──────────────────────────────────
+        float[] sens = { GameConfig.mouseSensitivity };
+        if (ImGui.sliderFloat("Sensitivity", sens, 0.0001f, 0.005f))
+            GameConfig.mouseSensitivity = sens[0];
+
+        // ── WORLD ────────────────────────────────────────────────────────────
+        ImGui.text("World");
+        ImGui.separator();
         int[] rd = { GameConfig.renderDistance };
-        if (ImGui.sliderInt("Render Distance", rd, 2, 16)) {
+        if (ImGui.sliderInt("Render Distance", rd, 2, 16))
             GameConfig.renderDistance = rd[0];
-        }
+
+        // ── CONTINENTALNESS ──────────────────────────────────────────────────
+        ImGui.text("Continentalness");
+        ImGui.separator();
+        float[] cf = { GameConfig.contFreq };
+        if (ImGui.sliderFloat("Frequency##cont", cf, 0.001f, 0.05f))
+            GameConfig.contFreq = cf[0];
+        int[] co = { GameConfig.contOctaves };
+        if (ImGui.sliderInt("Octaves##cont", co, 1, 8))
+            GameConfig.contOctaves = co[0];
+        float[] cp = { GameConfig.contPersist };
+        if (ImGui.sliderFloat("Persistence##cont", cp, 0.1f, 0.9f))
+            GameConfig.contPersist = cp[0];
+
+        // ── EROSION ──────────────────────────────────────────────────────────
+        ImGui.text("Erosion");
+        ImGui.separator();
+        float[] ef = { GameConfig.erosFreq };
+        if (ImGui.sliderFloat("Frequency##eros", ef, 0.001f, 0.05f))
+            GameConfig.erosFreq = ef[0];
+        int[] eo = { GameConfig.erosOctaves };
+        if (ImGui.sliderInt("Octaves##eros", eo, 1, 8))
+            GameConfig.erosOctaves = eo[0];
+        float[] ep = { GameConfig.erosPersist };
+        if (ImGui.sliderFloat("Persistence##eros", ep, 0.1f, 0.9f))
+            GameConfig.erosPersist = ep[0];
+
+        // ── PEAKS & VALLEYS ──────────────────────────────────────────────────
+        ImGui.text("Peaks and Valleys");
+        ImGui.separator();
+        float[] pf = { GameConfig.pvFreq };
+        if (ImGui.sliderFloat("Frequency##pv", pf, 0.001f, 0.05f))
+            GameConfig.pvFreq = pf[0];
+        int[] po = { GameConfig.pvOctaves };
+        if (ImGui.sliderInt("Octaves##pv", po, 1, 8))
+            GameConfig.pvOctaves = po[0];
+        float[] pp = { GameConfig.pvPersist };
+        if (ImGui.sliderFloat("Persistence##pv", pp, 0.1f, 0.9f))
+            GameConfig.pvPersist = pp[0];
+
+        // ── HEIGHT ───────────────────────────────────────────────────────────
+        ImGui.text("Height");
+        ImGui.separator();
+        int[] hb = { GameConfig.heightBase };
+        if (ImGui.sliderInt("Base Y", hb, 0, 30))
+            GameConfig.heightBase = hb[0];
+        int[] hr = { GameConfig.heightRange };
+        if (ImGui.sliderInt("Range", hr, 10, Chunk.HEIGHT - GameConfig.heightBase))
+            GameConfig.heightRange = hr[0];
+
+        // ── 3D DENSITY ───────────────────────────────────────────────────────
+        ImGui.text("3D Density Noise");
+        ImGui.separator();
+        float[] df = { GameConfig.density3DFreq };
+        if (ImGui.sliderFloat("Frequency##d3d", df, 0.01f, 0.15f))
+            GameConfig.density3DFreq = df[0];
+        float[] dvc = { GameConfig.density3DVerticalCompress };
+        if (ImGui.sliderFloat("Vertical Compress", dvc, 0.1f, 2.0f))
+            GameConfig.density3DVerticalCompress = dvc[0];
+        int[] dOct = { GameConfig.density3DOctaves };
+        if (ImGui.sliderInt("Octaves##d3d", dOct, 1, 6))
+            GameConfig.density3DOctaves = dOct[0];
+        float[] dp = { GameConfig.density3DPersist };
+        if (ImGui.sliderFloat("Persistence##d3d", dp, 0.1f, 0.9f))
+            GameConfig.density3DPersist = dp[0];
+        float[] da = { GameConfig.density3DAmplitude };
+        if (ImGui.sliderFloat("Amplitude", da, 0f, 30f))
+            GameConfig.density3DAmplitude = da[0];
+
+        // ── DENSITY SHAPE ────────────────────────────────────────────────────
+        ImGui.text("Density Shape");
+        ImGui.separator();
+        float[] dvs = { GameConfig.densityVerticalScale };
+        if (ImGui.sliderFloat("Vertical Scale", dvs, 0.01f, 0.5f))
+            GameConfig.densityVerticalScale = dvs[0];
+        float[] deb = { GameConfig.densityErosionBoost };
+        if (ImGui.sliderFloat("Erosion Boost", deb, 0.0f, 0.5f))
+            GameConfig.densityErosionBoost = deb[0];
+
+        // ── REGENERATE ───────────────────────────────────────────────────────
+        ImGui.text("Rebuild");
+        ImGui.separator();
+        if (ImGui.button("Regenerate World"))
+            regenerateWorld();
 
         ImGui.end();
     }
 
-    private void regenerateWorld(World world, WorldGen worldGen) {
+    private void regenerateWorld() {
         for (Chunk chunk : world.getAllChunks()) {
             if (chunk.mesh != null) chunk.mesh.cleanup();
         }
         world.clearAllChunks();
         worldGen.resetSeed(GameConfig.seed);
         player.position.y = 60.0f;
-    }
-
-    private void renderHUD() {
-        // Use ImGui's background draw list — draws in screen space, always on top,
-        // without needing a separate OpenGL pass.
-        var draw = ImGui.getForegroundDrawList();
-
-        // Crosshair — two lines crossing at screen center
-        float cx = 1280 / 2.0f;
-        float cy = 720  / 2.0f;
-        float size = 10.0f;
-        int white = ImGui.colorConvertFloat4ToU32(1, 1, 1, 0.9f);
-        int black = ImGui.colorConvertFloat4ToU32(0, 0, 0, 0.6f);
-
-        // Draw a dark outline first, then white on top (visible on any background)
-        draw.addLine(cx - size - 1, cy, cx + size + 1, cy, black, 3.0f);
-        draw.addLine(cx, cy - size - 1, cx, cy + size + 1, black, 3.0f);
-        draw.addLine(cx - size, cy, cx + size, cy, white, 1.5f);
-        draw.addLine(cx, cy - size, cx, cy + size, white, 1.5f);
-
-        // Selected block indicator (bottom center)
-        String blockName = selectedBlock.name();
-        ImGui.setNextWindowPos(640 - 60, 700);
-        ImGui.setNextWindowSize(120, 22);
-        ImGui.begin("##hud", imgui.flag.ImGuiWindowFlags.NoDecoration
-                | imgui.flag.ImGuiWindowFlags.NoBackground
-                | imgui.flag.ImGuiWindowFlags.NoMove
-                | imgui.flag.ImGuiWindowFlags.NoInputs);
-        ImGui.text("[ " + blockName + " ]");
-        ImGui.end();
     }
 
     /**
@@ -309,5 +368,35 @@ public class Window {
         return px + halfW > bx && px - halfW < bx + 1
                 && py + height > by && py           < by + 1
                 && pz + halfW > bz && pz - halfW < bz + 1;
+    }
+
+    private void renderHUD() {
+        // Use ImGui's background draw list — draws in screen space, always on top,
+        // without needing a separate OpenGL pass.
+        var draw = ImGui.getForegroundDrawList();
+
+        // Crosshair — two lines crossing at screen center
+        float cx = 1280 / 2.0f;
+        float cy = 720  / 2.0f;
+        float size = 10.0f;
+        int white = ImGui.colorConvertFloat4ToU32(1, 1, 1, 0.9f);
+        int black = ImGui.colorConvertFloat4ToU32(0, 0, 0, 0.6f);
+
+        // Draw a dark outline first, then white on top (visible on any background)
+        draw.addLine(cx - size - 1, cy, cx + size + 1, cy, black, 3.0f);
+        draw.addLine(cx, cy - size - 1, cx, cy + size + 1, black, 3.0f);
+        draw.addLine(cx - size, cy, cx + size, cy, white, 1.5f);
+        draw.addLine(cx, cy - size, cx, cy + size, white, 1.5f);
+
+        // Selected block indicator (bottom center)
+        String blockName = selectedBlock.name();
+        ImGui.setNextWindowPos(640 - 60, 700);
+        ImGui.setNextWindowSize(120, 22);
+        ImGui.begin("##hud", imgui.flag.ImGuiWindowFlags.NoDecoration
+                | imgui.flag.ImGuiWindowFlags.NoBackground
+                | imgui.flag.ImGuiWindowFlags.NoMove
+                | imgui.flag.ImGuiWindowFlags.NoInputs);
+        ImGui.text("[ " + blockName + " ]");
+        ImGui.end();
     }
 }

@@ -103,6 +103,16 @@ public class World {
                     gen.generateChunk(chunk);
                     // TODO later: rebuild the mesh for this chunk
                 }
+                if (world.getChunk(cx, cz) == null) {
+                    Chunk chunk = world.getOrCreateChunk(cx, cz);
+                    gen.generateChunk(chunk);
+
+                    // Mark neighbors dirty so they update their mesh for the newly created borders!
+                    Chunk nX = world.getChunk(cx + 1, cz); if(nX != null) nX.dirty = true;
+                    Chunk pX = world.getChunk(cx - 1, cz); if(pX != null) pX.dirty = true;
+                    Chunk nZ = world.getChunk(cx, cz + 1); if(nZ != null) nZ.dirty = true;
+                    Chunk pZ = world.getChunk(cx, cz - 1); if(pZ != null) pZ.dirty = true;
+                }
             }
         }
         world.chunks.entrySet().removeIf(entry -> {
@@ -115,6 +125,7 @@ public class World {
             }
             return false;
         });
+
     }
     // --- MESH BUILDING ---
 
@@ -139,29 +150,76 @@ public class World {
                     Block block = chunk.getBlock(x, y, z);
                     if (!block.isSolid()) continue;
 
-                    // Check all 6 neighbors using WORLD coordinates (to check across chunk borders)
+// TOP face — check block above
                     if (!getBlock(wx, y + 1, wz).isSolid()) {
-                        addFace(verts, indices, vertexIndex, topFace(wx, y, wz), block, 1.0f);
+                        float[] ao = {
+                                computeAO(wx-1, y+1, wz,   wx, y+1, wz-1,  wx-1, y+1, wz-1),  // v0
+                                computeAO(wx+1, y+1, wz,   wx, y+1, wz-1,  wx+1, y+1, wz-1),  // v1
+                                computeAO(wx+1, y+1, wz,   wx, y+1, wz+1,  wx+1, y+1, wz+1),  // v2
+                                computeAO(wx-1, y+1, wz,   wx, y+1, wz+1,  wx-1, y+1, wz+1)   // v3
+                        };
+                        addFace(verts, indices, vertexIndex, topFace(wx, y, wz), block, 1.0f, ao);
                         vertexIndex += 4;
                     }
+
+// BOTTOM face — check block below
                     if (!getBlock(wx, y - 1, wz).isSolid()) {
-                        addFace(verts, indices, vertexIndex, bottomFace(wx, y, wz), block, 0.5f);
+                        // Adding proper AO to the bottom face as well!
+                        float[] ao = {
+                                computeAO(wx-1, y-1, wz,   wx, y-1, wz+1,  wx-1, y-1, wz+1),  // v0
+                                computeAO(wx+1, y-1, wz,   wx, y-1, wz+1,  wx+1, y-1, wz+1),  // v1
+                                computeAO(wx+1, y-1, wz,   wx, y-1, wz-1,  wx+1, y-1, wz-1),  // v2
+                                computeAO(wx-1, y-1, wz,   wx, y-1, wz-1,  wx-1, y-1, wz-1)   // v3
+                        };
+                        addFace(verts, indices, vertexIndex, bottomFace(wx, y, wz), block, 0.4f, ao);
                         vertexIndex += 4;
                     }
+
+// FRONT face (+Z)
                     if (!getBlock(wx, y, wz + 1).isSolid()) {
-                        addFace(verts, indices, vertexIndex, frontFace(wx, y, wz), block, 0.75f);
+                        float[] ao = {
+                                computeAO(wx-1, y, wz+1,  wx, y-1, wz+1,  wx-1, y-1, wz+1),   // v0
+                                computeAO(wx+1, y, wz+1,  wx, y-1, wz+1,  wx+1, y-1, wz+1),   // v1
+                                computeAO(wx+1, y, wz+1,  wx, y+1, wz+1,  wx+1, y+1, wz+1),   // v2
+                                computeAO(wx-1, y, wz+1,  wx, y+1, wz+1,  wx-1, y+1, wz+1)    // v3
+                        };
+                        addFace(verts, indices, vertexIndex, frontFace(wx, y, wz), block, 0.8f, ao);
                         vertexIndex += 4;
                     }
+
+// BACK face (-Z)
                     if (!getBlock(wx, y, wz - 1).isSolid()) {
-                        addFace(verts, indices, vertexIndex, backFace(wx, y, wz), block, 0.75f);
+                        float[] ao = {
+                                computeAO(wx+1, y, wz-1,  wx, y-1, wz-1,  wx+1, y-1, wz-1),   // v0
+                                computeAO(wx-1, y, wz-1,  wx, y-1, wz-1,  wx-1, y-1, wz-1),   // v1
+                                computeAO(wx-1, y, wz-1,  wx, y+1, wz-1,  wx-1, y+1, wz-1),   // v2
+                                computeAO(wx+1, y, wz-1,  wx, y+1, wz-1,  wx+1, y+1, wz-1)    // v3
+                        };
+                        addFace(verts, indices, vertexIndex, backFace(wx, y, wz), block, 0.6f, ao);
                         vertexIndex += 4;
                     }
+
+// RIGHT face (+X)
                     if (!getBlock(wx + 1, y, wz).isSolid()) {
-                        addFace(verts, indices, vertexIndex, rightFace(wx, y, wz), block, 0.6f);
+                        float[] ao = {
+                                computeAO(wx+1, y-1, wz,  wx+1, y, wz+1,  wx+1, y-1, wz+1),   // v0
+                                computeAO(wx+1, y-1, wz,  wx+1, y, wz-1,  wx+1, y-1, wz-1),   // v1
+                                computeAO(wx+1, y+1, wz,  wx+1, y, wz-1,  wx+1, y+1, wz-1),   // v2
+                                computeAO(wx+1, y+1, wz,  wx+1, y, wz+1,  wx+1, y+1, wz+1)    // v3
+                        };
+                        addFace(verts, indices, vertexIndex, rightFace(wx, y, wz), block, 0.6f, ao);
                         vertexIndex += 4;
                     }
+
+// LEFT face (-X)
                     if (!getBlock(wx - 1, y, wz).isSolid()) {
-                        addFace(verts, indices, vertexIndex, leftFace(wx, y, wz), block, 0.6f);
+                        float[] ao = {
+                                computeAO(wx-1, y-1, wz,  wx-1, y, wz-1,  wx-1, y-1, wz-1),   // v0
+                                computeAO(wx-1, y-1, wz,  wx-1, y, wz+1,  wx-1, y-1, wz+1),   // v1
+                                computeAO(wx-1, y+1, wz,  wx-1, y, wz+1,  wx-1, y+1, wz+1),   // v2
+                                computeAO(wx-1, y+1, wz,  wx-1, y, wz-1,  wx-1, y+1, wz-1)    // v3
+                        };
+                        addFace(verts, indices, vertexIndex, leftFace(wx, y, wz), block, 0.8f, ao);
                         vertexIndex += 4;
                     }
                 }
@@ -181,31 +239,31 @@ public class World {
     // --- FACE HELPER: adds 4 vertices + 6 indices for one quad face ---
     private void addFace(List<Float> verts, List<Integer> indices,
                          int baseIndex, float[] faceVertices,
-                         Block block, float brightness) {
-
-        // faceVertices is an array of 12 floats: 4 vertices × (x, y, z)
-        // We interleave position and color into the vertex buffer: x, y, z, r, g, b
+                         Block block, float brightness, float[] ao) {
 
         for (int i = 0; i < 4; i++) {
-            // Position (from the face definition)
-            verts.add(faceVertices[i * 3]);      // x
-            verts.add(faceVertices[i * 3 + 1]);  // y
-            verts.add(faceVertices[i * 3 + 2]);  // z
+            verts.add(faceVertices[i * 3]);        // x
+            verts.add(faceVertices[i * 3 + 1]);    // y
+            verts.add(faceVertices[i * 3 + 2]);    // z
 
-            // Color (block color × brightness for shading)
-            verts.add(block.r * brightness);
-            verts.add(block.g * brightness);
-            verts.add(block.b * brightness);
+            float light = brightness * ao[i];      // face direction × corner occlusion
+            verts.add(block.r * light);            // r
+            verts.add(block.g * light);            // g
+            verts.add(block.b * light);            // b
         }
 
-        // Two triangles from 4 vertices (same pattern as Phase 1)
-        // v0-v1-v2 and v2-v3-v0
-        indices.add(baseIndex);
-        indices.add(baseIndex + 1);
-        indices.add(baseIndex + 2);
-        indices.add(baseIndex + 2);
-        indices.add(baseIndex + 3);
-        indices.add(baseIndex);
+        // Anisotropy fix: choose which diagonal to split the quad on.
+        // Without this, skewed AO creates a visible dark crease on some corners.
+        // Rule: choose the diagonal where AO is more "balanced" between the two triangles.
+        if (ao[0] + ao[2] > ao[1] + ao[3]) {
+            // Standard split: 0-1-2  and  2-3-0
+            indices.add(baseIndex);     indices.add(baseIndex + 1); indices.add(baseIndex + 2);
+            indices.add(baseIndex + 2); indices.add(baseIndex + 3); indices.add(baseIndex);
+        } else {
+            // Flipped split: 0-1-3  and  1-2-3
+            indices.add(baseIndex);     indices.add(baseIndex + 1); indices.add(baseIndex + 3);
+            indices.add(baseIndex + 1); indices.add(baseIndex + 2); indices.add(baseIndex + 3);
+        }
     }
 
     // --- FACE GEOMETRY DEFINITIONS ---
@@ -273,4 +331,26 @@ public class World {
         };
     }
 
+    private static final float AO_STRENGTH = 0.2f; // how dark each occluder makes a corner
+
+    /**
+     * Computes the AO factor for one vertex.
+     * s1, s2 = the two "side" neighbor block positions
+     * cx, cy, cz = the "corner" diagonal neighbor block position
+     * Returns a float from 0.0 (fully occluded) to 1.0 (no occlusion).
+     */
+    private float computeAO(int s1x, int s1y, int s1z,
+                            int s2x, int s2y, int s2z,
+                            int  cx, int  cy, int  cz) {
+        boolean s1 = getBlock(s1x, s1y, s1z).isSolid();
+        boolean s2 = getBlock(s2x, s2y, s2z).isSolid();
+        boolean co = getBlock( cx,  cy,  cz).isSolid();
+
+        // If both sides are solid, the corner is fully enclosed — maximum darkness.
+        // Corner check is skipped in this case (doesn't matter).
+        if (s1 && s2) return 1.0f - 3 * AO_STRENGTH;
+
+        int count = (s1 ? 1 : 0) + (s2 ? 1 : 0) + (co ? 1 : 0);
+        return 1.0f - count * AO_STRENGTH;
+    }
 }

@@ -1,13 +1,12 @@
 #version 330 core
 
-// Input coming from the vertex shader
 in vec3 vertexColor;
-
-// The final output color of the pixel
 out vec4 FragColor;
 
 void main()
 {
-    // Set the pixel color (RGB + Alpha for transparency)
-    FragColor = vec4(vertexColor, 1.0);
+    // Apply gamma correction (typically 2.2) to make the lighting pop naturally
+    vec3 gammaCorrected = pow(vertexColor, vec3(1.0 / 1.2));
+
+    FragColor = vec4(gammaCorrected, 1.0);
 }
