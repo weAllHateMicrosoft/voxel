@@ -71,7 +71,7 @@ public class Window {
 
     // Fixed 9 Slots
     private final Block[] hotbar = {
-            Block.GRASS, Block.DIRT, Block.STONE, Block.WATER, // Added Water!
+            Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
             Block.AIR, Block.AIR, Block.AIR, Block.AIR, Block.AIR
     };
 
@@ -81,6 +81,13 @@ public class Window {
     private float  breakProgress = 0.0f;
     private int    breakX, breakY, breakZ;
     private boolean breakingActive = false;
+
+    // ── PRE-GENERATION STATES ────────────────────────────────────────────────
+    private boolean isPreloading = false;
+    private int preloadRadius = 10; // Can be set up to 100 now!
+    private final List<Chunk> chunksToGenerate = new ArrayList<>();
+    private int totalPreloadCount = 0;
+    private int currentPreloadProgress = 0;
 
     public void run() {
         init();
@@ -107,7 +114,7 @@ public class Window {
         if (window == NULL) throw new RuntimeException("Failed to create window");
 
         glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
-            if (!networkInitialized) return;
+            if (!networkInitialized || isPreloading) return;
 
             if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
                 if (showChat) {
@@ -117,13 +124,12 @@ public class Window {
                     showNoiseViewer = false;
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 } else {
-                    // Toggle Pause Menu
                     isPaused = !isPaused;
                     glfwSetInputMode(window, GLFW_CURSOR, isPaused ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
                 }
             }
 
-            if (isPaused) return; // Block game inputs while paused
+            if (isPaused) return;
 
             if (key == GLFW_KEY_F3 && action == GLFW_RELEASE && !showChat) {
                 showDebug = !showDebug;
@@ -148,7 +154,7 @@ public class Window {
         });
 
         glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
-            if (!networkInitialized || showDebug || showChat || showNoiseViewer || isPaused) return;
+            if (!networkInitialized || isPreloading || showDebug || showChat || showNoiseViewer || isPaused) return;
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 breakingActive = (action == GLFW_PRESS || action == GLFW_REPEAT);
@@ -182,7 +188,7 @@ public class Window {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         glfwSetCursorPosCallback(window, (win, xpos, ypos) -> {
-            if (!networkInitialized || showDebug || showChat || showNoiseViewer || isPaused) return;
+            if (!networkInitialized || isPreloading || showDebug || showChat || showNoiseViewer || isPaused) return;
 
             if (firstMouse[0]) {
                 lastMouseX[0] = xpos;
@@ -200,6 +206,28 @@ public class Window {
             camera.pitch -= dy * GameConfig.mouseSensitivity;
             camera.clampPitch();
         });
+    }
+
+    private void startPreload() {
+        if (preloadRadius > 0) {
+            int startCX = Math.floorDiv((int) player.position.x, Chunk.SIZE);
+            int startCZ = Math.floorDiv((int) player.position.z, Chunk.SIZE);
+            chunksToGenerate.clear();
+
+            for (int dx = -preloadRadius; dx <= preloadRadius; dx++) {
+                for (int dz = -preloadRadius; dz <= preloadRadius; dz++) {
+                    chunksToGenerate.add(world.getOrCreateChunk(startCX + dx, startCZ + dz));
+                }
+            }
+            // Multiply by 2 because we run 2 distinct passes (Block Gen, then Mesh Compile)
+            totalPreloadCount = chunksToGenerate.size() * 2;
+            currentPreloadProgress = 0;
+            isPreloading = true;
+        }
+        networkInitialized = true;
+        if (!isPreloading) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
     }
 
     private void loop() {
@@ -232,7 +260,46 @@ public class Window {
             glfwGetWindowSize(window, ww, wh);
 
             if (networkInitialized) {
-                if (!showChat && !showDebug && !showNoiseViewer && !isPaused) {
+                // ── 1. PRE-LOAD WORKER (Generates chunks frame-by-frame) ──
+                // ── 1. TWO-PHASE PRE-LOAD WORKER ──
+                if (isPreloading) {
+                    int halfCount = totalPreloadCount / 2;
+                    if (currentPreloadProgress < halfCount) {
+                        // PHASE 1: GENERATE BLOCKS (Extremely fast, process huge batches)
+                        int batchSize = 64;
+                        for (int i = 0; i < batchSize && currentPreloadProgress < halfCount; i++) {
+                            Chunk chunk = chunksToGenerate.get(currentPreloadProgress);
+                            worldGen.generateChunk(chunk);
+                            currentPreloadProgress++;
+                        }
+                    } else {
+                        // PHASE 2: COMPILE MESHES (Slower, process smaller batches)
+                        // Every block is already in memory, so borders and water align perfectly!
+                        int batchSize = 12;
+                        for (int i = 0; i < batchSize && currentPreloadProgress < totalPreloadCount; i++) {
+                            int index = currentPreloadProgress - halfCount;
+                            Chunk chunk = chunksToGenerate.get(index);
+                            world.buildChunkMeshes(chunk);
+                            currentPreloadProgress++;
+                        }
+                    }
+
+                    if (currentPreloadProgress >= totalPreloadCount) {
+                        isPreloading = false;
+                        // Safe landing logic
+                        int spawnX = (int)Math.floor(player.position.x);
+                        int spawnZ = (int)Math.floor(player.position.z);
+                        for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
+                            if (world.getBlock(spawnX, ly, spawnZ).isSolid()) {
+                                player.position.y = ly + 2.0f;
+                                break;
+                            }
+                        }
+                        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    }
+                }
+
+                if (!isPreloading && !showChat && !showDebug && !showNoiseViewer && !isPaused) {
                     player.update(window, camera, world, deltaTime);
                     updateBreaking(deltaTime);
                 } else {
@@ -283,20 +350,22 @@ public class Window {
                     }
                 }
 
-                lastTarget = player.getTargetBlock(camera, world);
-                world.tickLiquids(deltaTime);
-                world.updateChunks(world, worldGen, player);
+                if (!isPreloading) {
+                    lastTarget = player.getTargetBlock(camera, world);
+                    world.tickLiquids(deltaTime);
+                    world.updateChunks(world, worldGen, player);
 
-                Vector3f chestPos = new Vector3f(player.position.x, player.position.y + 0.9f, player.position.z);
-                for (int i = droppedItems.size() - 1; i >= 0; i--) {
-                    DroppedItem item = droppedItems.get(i);
-                    item.update(deltaTime, player.position);
+                    Vector3f chestPos = new Vector3f(player.position.x, player.position.y + 0.9f, player.position.z);
+                    for (int i = droppedItems.size() - 1; i >= 0; i--) {
+                        DroppedItem item = droppedItems.get(i);
+                        item.update(deltaTime, player.position);
 
-                    if (chestPos.distance(item.position) < 0.5f) {
-                        inventory.addBlock(item.blockType);
-                        item.alive = false;
-                        if (network != null && network.connected) network.sendPickup(item.originX, item.originY, item.originZ);
-                        droppedItems.remove(i);
+                        if (chestPos.distance(item.position) < 0.5f) {
+                            inventory.addBlock(item.blockType);
+                            item.alive = false;
+                            if (network != null && network.connected) network.sendPickup(item.originX, item.originY, item.originZ);
+                            droppedItems.remove(i);
+                        }
                     }
                 }
             }
@@ -308,7 +377,7 @@ public class Window {
                 shader.setUniform("sunDirection",    new org.joml.Vector3f(GameConfig.sunDirX, GameConfig.sunDirY, GameConfig.sunDirZ));
                 shader.setUniform("sunStrength",     GameConfig.sunStrength);
                 shader.setUniform("ambientStrength", GameConfig.ambientStrength);
-                // Set the underwater uniform
+
                 boolean isCameraUnderwater = world.getBlock(
                         (int)Math.floor(camera.position.x),
                         (int)Math.floor(camera.position.y),
@@ -318,15 +387,31 @@ public class Window {
                 Matrix4f view       = camera.getViewMatrix();
                 Matrix4f projection = camera.getProjectionMatrix();
 
+                // Get local player chunk coordinate to define render limits
+                int playerCX = Math.floorDiv((int) player.position.x, Chunk.SIZE);
+                int playerCZ = Math.floorDiv((int) player.position.z, Chunk.SIZE);
+                int R = GameConfig.renderDistance;
+
+                int meshCompilesThisFrame = 0;
+                int maxMeshCompilesPerFrame = 1; // strictly limit runtime builds to 1 per frame to eliminate stutter [1]
+
                 // ── PASS 1: OPAQUE (Stone, Dirt, Grass, Sand) ──
-                for (Chunk chunk : world.getAllChunks()) {
-                    if (chunk.dirty) {
-                        world.buildChunkMeshes(chunk); // Builds both opaque and transparent meshes
-                    }
-                    if (chunk.opaqueMesh != null) {
-                        Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
-                        shader.setUniform("mvp", mvp);
-                        chunk.opaqueMesh.render();
+                for (int dx = -R; dx <= R; dx++) {
+                    for (int dz = -R; dz <= R; dz++) {
+                        Chunk chunk = world.getChunk(playerCX + dx, playerCZ + dz);
+                        if (chunk != null) {
+                            if ((chunk.dirty || chunk.opaqueMesh == null) && !isPreloading) {
+                                if (meshCompilesThisFrame < maxMeshCompilesPerFrame) {
+                                    world.buildChunkMeshes(chunk);
+                                    meshCompilesThisFrame++;
+                                }
+                            }
+                            if (chunk.opaqueMesh != null) {
+                                Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
+                                shader.setUniform("mvp", mvp);
+                                chunk.opaqueMesh.render();
+                            }
+                        }
                     }
                 }
 
@@ -334,17 +419,20 @@ public class Window {
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-                for (Chunk chunk : world.getAllChunks()) {
-                    if (chunk.transparentMesh != null) {
-                        Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
-                        shader.setUniform("mvp", mvp);
-                        chunk.transparentMesh.render();
+                for (int dx = -R; dx <= R; dx++) {
+                    for (int dz = -R; dz <= R; dz++) {
+                        Chunk chunk = world.getChunk(playerCX + dx, playerCZ + dz);
+                        if (chunk != null && chunk.transparentMesh != null) {
+                            Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
+                            shader.setUniform("mvp", mvp);
+                            chunk.transparentMesh.render();
+                        }
                     }
                 }
 
-                glDisable(GL_BLEND); // Turn blending off so ImGui and other things draw normally
+                glDisable(GL_BLEND);
 
-                // ── RENDER DROPPED ITEMS ──
+                // Render items
                 for (DroppedItem item : droppedItems) {
                     Mesh itemMesh = getItemMesh(item.blockType);
                     float bob = (float) Math.sin(item.age * 3.0f) * 0.05f;
@@ -368,12 +456,16 @@ public class Window {
             if (!networkInitialized) {
                 renderConnectionMenu(ww[0], wh[0]);
             } else {
-                renderHUD(ww[0], wh[0]);
-                renderTargetCracks(camera, ww[0], wh[0]);
-                if (showDebug) renderDebugMenu();
-                if (showNoiseViewer) noiseVis.renderWindow(player);
-                if (showChat || !chatHistory.isEmpty()) renderChatBox(wh[0]);
-                if (isPaused) renderPauseMenu(ww[0], wh[0]);
+                if (isPreloading) {
+                    renderPreloadProgress(ww[0], wh[0]);
+                } else {
+                    renderHUD(ww[0], wh[0]);
+                    renderTargetCracks(camera, ww[0], wh[0]);
+                    if (showDebug) renderDebugMenu();
+                    if (showNoiseViewer) noiseVis.renderWindow(player);
+                    if (showChat || !chatHistory.isEmpty()) renderChatBox(wh[0]);
+                    if (isPaused) renderPauseMenu(ww[0], wh[0]);
+                }
             }
 
             ImGui.render();
@@ -381,8 +473,9 @@ public class Window {
 
             glfwSwapBuffers(window);
             glfwPollEvents();
+        }
 
-        }for (Chunk chunk : world.getAllChunks()) {
+        for (Chunk chunk : world.getAllChunks()) {
             if (chunk.opaqueMesh != null) chunk.opaqueMesh.cleanup();
             if (chunk.transparentMesh != null) chunk.transparentMesh.cleanup();
         }
@@ -395,107 +488,137 @@ public class Window {
         if (remotePlayer != null) remotePlayer.cleanup();
     }
 
-    private void renderConnectionMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 150.0f, h / 2.0f - 140.0f);
-        ImGui.setNextWindowSize(300.0f, 280.0f);
-        ImGui.begin("Start Screen", imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
+            private void renderConnectionMenu(float w, float h) {
+                ImGui.setNextWindowPos(w / 2.0f - 150.0f, h / 2.0f - 180.0f);
+                ImGui.setNextWindowSize(300.0f, 340.0f);
+                ImGui.begin("Start Screen", imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
 
-        ImGui.text("Minecraft Voxel Engine");
-        ImGui.separator();
-        ImGui.spacing();
+                ImGui.text("Minecraft Voxel Engine");
+                ImGui.separator();
+                ImGui.spacing();
 
-        if (ImGui.button("Single Player", 280, 30)) {
-            network = null;
-            networkInitialized = true;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        }
-
-        ImGui.spacing();
-        if (SaveManager.saveExists()) {
-            if (ImGui.button("Load Saved Game", 280, 30)) {
-                SaveManager.loadGame(world, player, inventory);
-                worldGen.resetSeed(GameConfig.seed);
-                world.clearAllChunks();
-                network = null;
-                networkInitialized = true;
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            }
-            ImGui.spacing();
-        }
-
-        ImGui.separator();
-        ImGui.spacing();
-
-        if (ImGui.button("Host Multiplayer Game", 280, 30)) {
-            network = new NetworkSession(true, null);
-            network.start();
-            remotePlayer = new RemotePlayer();
-            networkInitialized = true;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        }
-
-        ImGui.spacing();
-        ImGui.inputText("Host IP", ipInput);
-        if (ImGui.button("Join Multiplayer Game", 280, 30)) {
-            network = new NetworkSession(false, ipInput.get().trim());
-            network.start();
-            remotePlayer = new RemotePlayer();
-            networkInitialized = true;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        }
-
-        ImGui.end();
-    }
-
-    private void renderPauseMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 100.0f, h / 2.0f - 80.0f);
-        ImGui.setNextWindowSize(200.0f, 160.0f);
-        ImGui.begin("Paused", imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
-
-        ImGui.text("Game Paused");
-        ImGui.separator();
-        ImGui.spacing();
-
-        if (ImGui.button("Resume", 180, 30)) {
-            isPaused = false;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        }
-        ImGui.spacing();
-        if (ImGui.button("Save Game", 180, 30)) {
-            SaveManager.saveGame(world, player, inventory);
-        }
-        ImGui.spacing();
-        if (ImGui.button("Save & Quit", 180, 30)) {
-            SaveManager.saveGame(world, player, inventory);
-            glfwSetWindowShouldClose(window, true);
-        }
-        ImGui.end();
-    }
-
-    private void renderChatBox(int screenHeight) {
-        ImGui.setNextWindowPos(10, screenHeight - 280);
-        ImGui.setNextWindowSize(400, 200);
-
-        int flags = imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove;
-        if (!showChat) flags |= imgui.flag.ImGuiWindowFlags.NoBackground;
-
-        ImGui.begin("Chat", flags);
-        for (int i = Math.max(0, chatHistory.size() - 10); i < chatHistory.size(); i++) ImGui.text(chatHistory.get(i));
-
-        if (showChat) {
-            ImGui.setKeyboardFocusHere();
-            if (ImGui.inputText("##chat", chatInput, imgui.flag.ImGuiInputTextFlags.EnterReturnsTrue)) {
-                String msg = chatInput.get().trim();
-                if (!msg.isEmpty()) {
-                    chatHistory.add("[You]: " + msg);
-                    if (network != null && network.connected) network.sendChat(msg);
-                    chatInput.set("");
+                ImGui.text("Pre-generate Radius:");
+                int[] rad = { preloadRadius };
+                if (ImGui.sliderInt("##rad", rad, 0, 100)) { // Slider now goes up to 100!
+                    preloadRadius = rad[0];
                 }
-                showChat = false;
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                if (preloadRadius > 40) {
+                    ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "WARNING: Radii > 40 require");
+                    ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "allocating extra JVM RAM!");
+                } else {
+                    ImGui.textDisabled("(0=instant, 10=fast, 50=massive, 100=epic)");
+                }
+                ImGui.spacing();
+
+                if (ImGui.button("Single Player", 280, 30)) {
+                    network = null;
+                    startPreload();
+                }
+
+                ImGui.spacing();
+                if (SaveManager.saveExists()) {
+                    if (ImGui.button("Load Saved Game", 280, 30)) {
+                        SaveManager.loadGame(world, player, inventory);
+                        worldGen.resetSeed(GameConfig.seed);
+                        world.clearAllChunks();
+                        network = null;
+                        startPreload();
+                    }
+                    ImGui.spacing();
+                }
+
+                ImGui.separator();
+                ImGui.spacing();
+
+                if (ImGui.button("Host Multiplayer Game", 280, 30)) {
+                    network = new NetworkSession(true, null);
+                    network.start();
+                    remotePlayer = new RemotePlayer();
+                    startPreload();
+                }
+
+                ImGui.spacing();
+                ImGui.inputText("Host IP", ipInput);
+                if (ImGui.button("Join Multiplayer Game", 280, 30)) {
+                    network = new NetworkSession(false, ipInput.get().trim());
+                    network.start();
+                    remotePlayer = new RemotePlayer();
+                    startPreload();
+                }
+
+                ImGui.end();
+            }
+
+    private void renderPreloadProgress(float w, float h) {
+        ImGui.setNextWindowPos(w / 2.0f - 160.0f, h / 2.0f - 65.0f);
+        ImGui.setNextWindowSize(320.0f, 130.0f);
+        ImGui.begin("Pre-generating Terrain", imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
+
+        int halfCount = totalPreloadCount / 2;
+        if (currentPreloadProgress < halfCount) {
+            ImGui.text("Phase 1: Generating block data...");
+            ImGui.text(String.format("Progress: %d / %d chunks", currentPreloadProgress, halfCount));
+        } else {
+            ImGui.text("Phase 2: Compiling GPU meshes...");
+            ImGui.text(String.format("Progress: %d / %d chunks", currentPreloadProgress - halfCount, halfCount));
+        }
+        ImGui.spacing();
+
+        float progress = (float) currentPreloadProgress / Math.max(1, totalPreloadCount);
+        ImGui.progressBar(progress, 300, 24);
+
+        ImGui.end();
+    }
+
+            private void renderPauseMenu(float w, float h) {
+                ImGui.setNextWindowPos(w / 2.0f - 100.0f, h / 2.0f - 80.0f);
+                ImGui.setNextWindowSize(200.0f, 160.0f);
+                ImGui.begin("Paused", imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
+
+                ImGui.text("Game Paused");
+                ImGui.separator();
+                ImGui.spacing();
+
+                if (ImGui.button("Resume", 180, 30)) {
+                    isPaused = false;
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                }
+                ImGui.spacing();
+                if (ImGui.button("Save Game", 180, 30)) {
+                    SaveManager.saveGame(world, player, inventory);
+                }
+                ImGui.spacing();
+                if (ImGui.button("Save & Quit", 180, 30)) {
+                    SaveManager.saveGame(world, player, inventory);
+                    glfwSetWindowShouldClose(window, true);
+                }
+                ImGui.end();
+            }
+
+        private void renderChatBox(int screenHeight) {
+            ImGui.setNextWindowPos(10, screenHeight - 280);
+            ImGui.setNextWindowSize(400, 200);
+
+            int flags = imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove;
+            if (!showChat) flags |= imgui.flag.ImGuiWindowFlags.NoBackground;
+
+            ImGui.begin("Chat", flags);
+            for (int i = Math.max(0, chatHistory.size() - 10); i < chatHistory.size(); i++) ImGui.text(chatHistory.get(i));
+
+            if (showChat) {
+                ImGui.setKeyboardFocusHere();
+        if (ImGui.inputText("##chat", chatInput, imgui.flag.ImGuiInputTextFlags.EnterReturnsTrue)) {
+            String msg = chatInput.get().trim();
+            if (!msg.isEmpty()) {
+                chatHistory.add("[You]: " + msg);
+                if (network != null && network.connected) network.sendChat(msg);
+                chatInput.set("");
+            }
+            showChat = false;
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             }
         }
-        ImGui.end();
+    ImGui.end();
     }
 
     private void renderTargetCracks(Camera camera, float w, float h) {
@@ -537,13 +660,13 @@ public class Window {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
 
-        // ── CROSSHAIR ──
+        // Crosshair
         int white = ImGui.colorConvertFloat4ToU32(1, 1, 1, 0.9f);
         int black = ImGui.colorConvertFloat4ToU32(0, 0, 0, 0.6f);
         draw.addLine(cx - 11, cy, cx + 11, cy, black, 3.0f); draw.addLine(cx, cy - 11, cx, cy + 11, black, 3.0f);
         draw.addLine(cx - 10, cy, cx + 10, cy, white, 1.5f); draw.addLine(cx, cy - 10, cx, cy + 10, white, 1.5f);
 
-        // ── HEALTH BAR ──
+        // Health Bar
         float hpWidth = 200f;
         float hpHeight = 15f;
         float hpX = cx - (hpWidth / 2.0f);
@@ -553,7 +676,7 @@ public class Window {
         draw.addRectFilled(hpX, hpY, hpX + fillW, hpY + hpHeight, ImGui.colorConvertFloat4ToU32(0.8f, 0.1f, 0.1f, 1.0f));
         draw.addRect(hpX, hpY, hpX + hpWidth, hpY + hpHeight, black, 0f, 0, 2.0f);
 
-        // ── FIXED 9-SLOT HOTBAR ──
+        // Hotbar
         float slotSize = 40.0f;
         float spacing = 5.0f;
         int numSlots = 9;
@@ -574,7 +697,6 @@ public class Window {
             Block b = hotbar[i];
             int count = inventory.getCount(b);
 
-            // Only draw block graphic and count if we actually have some!
             if (b != Block.AIR && count > 0) {
                 float shrink = 8.0f;
                 int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
@@ -621,24 +743,6 @@ public class Window {
         ImGui.end();
     }
 
-    private void regenerateWorld() {
-        for (Chunk chunk : world.getAllChunks()) {
-        if (chunk.opaqueMesh != null) chunk.opaqueMesh.cleanup();
-        if (chunk.transparentMesh != null) chunk.transparentMesh.cleanup();
-        }
-        world.clearAllChunks();
-        worldGen.resetSeed(GameConfig.seed);
-        player.position.y = 100.0f;
-    }
-
-    private void markNeighborChunksDirty(int wx, int wy, int wz) {
-        int[][] neighbors = { {wx+1, wy, wz}, {wx-1, wy, wz}, {wx, wy+1, wz}, {wx, wy-1, wz}, {wx, wy, wz+1}, {wx, wy, wz-1} };
-        for (int[] n : neighbors) {
-            Chunk neighbor = world.getChunk(Math.floorDiv(n[0], Chunk.SIZE), Math.floorDiv(n[2], Chunk.SIZE));
-            if (neighbor != null) neighbor.dirty = true;
-        }
-    }
-
     private boolean playerOccupies(int bx, int by, int bz) {
         float px = player.position.x, py = player.position.y, pz = player.position.z;
         return px + 0.3f > bx && px - 0.3f < bx + 1 && py + 1.8f > by && py < by + 1 && pz + 0.3f > bz && pz - 0.3f < bz + 1;
@@ -669,17 +773,16 @@ public class Window {
         });
     }
 
-    // Helper to generate 3D boxes for items cleanly with Alpha support!
     private void addBox(List<Float> verts, List<Integer> idx, int[] vIndex,
                         float minX, float minY, float minZ,
                         float maxX, float maxY, float maxZ, float[] col) {
         float[][] corners = {
-                {minX, minY, maxZ}, {maxX, minY, maxZ}, {maxX, maxY, maxZ}, {minX, maxY, maxZ}, // Front
-                {maxX, minY, minZ}, {minX, minY, minZ}, {minX, maxY, minZ}, {maxX, maxY, minZ}, // Back
-                {minX, maxY, minZ}, {maxX, maxY, minZ}, {maxX, maxY, maxZ}, {minX, maxY, maxZ}, // Top
-                {minX, minY, maxZ}, {maxX, minY, maxZ}, {maxX, minY, minZ}, {minX, minY, minZ}, // Bottom
-                {maxX, minY, maxZ}, {maxX, minY, minZ}, {maxX, maxY, minZ}, {maxX, maxY, maxZ}, // Right
-                {minX, minY, minZ}, {minX, minY, maxZ}, {minX, maxY, maxZ}, {minX, maxY, minZ}  // Left
+                {minX, minY, maxZ}, {maxX, minY, maxZ}, {maxX, maxY, maxZ}, {minX, maxY, maxZ},
+                {maxX, minY, minZ}, {minX, minY, minZ}, {minX, maxY, minZ}, {maxX, maxY, minZ},
+                {minX, maxY, minZ}, {maxX, maxY, minZ}, {maxX, maxY, maxZ}, {minX, maxY, maxZ},
+                {minX, minY, maxZ}, {maxX, minY, maxZ}, {maxX, minY, minZ}, {minX, minY, minZ},
+                {maxX, minY, maxZ}, {maxX, minY, minZ}, {maxX, maxY, minZ}, {maxX, maxY, maxZ},
+                {minX, minY, minZ}, {minX, minY, maxZ}, {minX, maxY, maxZ}, {minX, maxY, minZ}
         };
 
         for (int face = 0; face < 6; face++) {
@@ -688,7 +791,7 @@ public class Window {
                 float[] corner = corners[face * 4 + i];
                 verts.add(corner[0]); verts.add(corner[1]); verts.add(corner[2]);
                 verts.add(col[0]*shade); verts.add(col[1]*shade); verts.add(col[2]*shade);
-                verts.add(1.0f); // <--- THE MISSING ALPHA CHANNEL THAT BROKE IT!
+                verts.add(1.0f);
                 verts.add(0f); verts.add(1f); verts.add(0f);
             }
             int b = vIndex[0];

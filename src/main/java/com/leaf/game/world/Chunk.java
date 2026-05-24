@@ -9,6 +9,7 @@ public class Chunk {
     public Mesh opaqueMesh;
     public Mesh transparentMesh;
     public boolean dirty;
+    public boolean meshBuilt = false;
 
     public final int cx, cz;
 
