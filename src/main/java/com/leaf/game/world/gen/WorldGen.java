@@ -21,11 +21,11 @@ public class WorldGen {
     private Noise riverNoise;
     private Noise biomeJitter;
 
-    // ── The Shadertoy Mountain Math ──
+    private Noise mountainMask;
+
     private ErodedFbmGenerator eroFbm;
     private BlockCladder       cladder;
 
-    // Cave noises
     private Noise cheeseCave;
     private Noise spagNoise1;
     private Noise spagNoise2;
@@ -46,14 +46,14 @@ public class WorldGen {
         spagNoise1      = new Noise(seed + 8000L);
         spagNoise2      = new Noise(seed + 9000L);
         biomeJitter     = new Noise(seed + 10000L);
+        mountainMask    = new Noise(seed + 30000L);
 
-        // Tuned specifically to look like the Shadertoy mountains
         eroFbm  = new ErodedFbmGenerator(
                 seed + 20000L,
-                7,             // octaves for rich detail
-                0.0035f,       // frequency (makes mountains fit nicely on screen)
-                2.0f,          // lacunarity
-                0.5f           // gain
+                7,
+                0.0025f,
+                2.0f,
+                0.5f
         );
         cladder = new BlockCladder(GameConfig.mountainSnowAltitude);
     }
@@ -98,32 +98,43 @@ public class WorldGen {
                 float shape = computeFinalShape(c, e, pv);
                 float targetY = GameConfig.heightBase + shape * GameConfig.heightRange;
 
-                // ── 1. SHADERTOY MOUNTAIN BLEND ──
                 boolean isAlpine = false;
                 float fbmSlope = 0f;
 
-                // If we are inland (continentalness > 0.05), raise massive mountains!
-                if (c > 0.05f) {
+                // ── FIX: TECTONIC RIDGE MASK ──
+                // Use ridged noise! It naturally creates long, connected mountain lines
+                // instead of isolated circular blobs.
+                float mMask = mountainMask.ridgedOctave(wx * 0.001f, wz * 0.001f, 2, 0.5f);
+
+                // Ridged noise is [-1, 1]. A threshold of 0.3 creates nice wide mountain bases.
+                float mountainSpawnThreshold = 0.30f;
+
+                if (c > 0.05f && mMask > mountainSpawnThreshold) {
                     float[] ero = eroFbm.sampleFull(wx, wz);
                     float fbmH = ero[0];
                     fbmSlope = ero[1];
 
-                    // Smooth blend: 0.0 at coast (c=0.05) to 1.0 deep inland (c=0.35)
-                    float blend = Math.max(0f, Math.min(1f, (c - 0.05f) / 0.30f));
-                    blend = blend * blend * (3f - 2f * blend); // smoothstep
+                    // Map [0.3, 1.0] to [0.0, 1.0] for blending
+                    float blend = (mMask - mountainSpawnThreshold) / (1f - mountainSpawnThreshold);
+                    blend = Math.max(0f, Math.min(1f, blend));
+                    blend = blend * blend * (3f - 2f * blend);
 
-                    // Massive peak height (Up to Y=240)
-                    float massiveY = GameConfig.seaLevel + 10f + (fbmH * 210f);
+                    float coastFade = Math.max(0f, Math.min(1f, (c - 0.05f) / 0.15f));
+                    blend *= coastFade;
+
+                    float massiveY = GameConfig.seaLevel + 5f + (fbmH * 225f);
 
                     targetY = lerp(targetY, massiveY, blend);
-                    if (blend > 0.3f) isAlpine = true; // Flag for Block Cladding
+
+                    if (blend > 0.05f) {
+                        isAlpine = true;
+                    }
                 }
 
                 int ty = (int) targetY;
                 float eNorm = (e + 1f) / 2f;
                 float flatness = erosionFlatnessSpline(eNorm);
 
-                // ── 2. RIVERS ──
                 float river = sampleRiver(wx, wz);
                 float absRiver = Math.abs(river);
                 boolean isRiver = absRiver < GameConfig.riverThreshold && shape >= (seaFrac - 0.01f);
@@ -133,16 +144,13 @@ public class WorldGen {
                     targetY = Math.max(seaFrac - GameConfig.riverFloorMargin, shape - GameConfig.riverCarveDepth * carveT);
                 }
 
-                // ── 3. PERFORMANCE FIX: NO 3D NOISE IN MOUNTAINS ──
                 boolean[] solid = new boolean[Chunk.HEIGHT];
                 for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
                     if (ly > targetY + 1) {
-                        solid[ly] = false; // Empty sky
+                        solid[ly] = false;
                     } else if (isAlpine && ly > GameConfig.seaLevel + 20) {
-                        // ZERO LAG: Mountains are solid 2D heightmaps. No 3D noise evaluated here!
                         solid[ly] = (ly <= targetY);
                     } else {
-                        // Lowlands: Evaluate 3D density noise for overhangs
                         float vertScale = lerp(GameConfig.densityVerticalScale, 0.55f, flatness);
                         float d3dAmp = (isRiver || flatness > 0.9f) ? 0f : GameConfig.density3DAmplitude * (1f - flatness);
                         float heightBias = (targetY - ly) * vertScale;
@@ -154,13 +162,11 @@ public class WorldGen {
                     }
                 }
 
-                // Calculate Surface
                 int surfaceY = 0;
                 for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
                     if (solid[ly]) { surfaceY = ly; break; }
                 }
 
-                // ── 4. CAVES (Disabled under mountains to save FPS) ──
                 if (!isAlpine) {
                     int caveTop = surfaceY - GameConfig.caveSurfaceBuffer;
                     for (int ly = GameConfig.caveBedrockFloor; ly < caveTop; ly++) {
@@ -170,7 +176,6 @@ public class WorldGen {
                     }
                 }
 
-                // ── 5. PLACEMENT & CLADDING ──
                 Biome biome = BiomeRegistry.evaluate(shape, seaFrac, isRiver, ty, temp, hum);
                 boolean hitSurface = false;
                 int dirtCount = 0;
@@ -183,7 +188,6 @@ public class WorldGen {
                             hitSurface = true;
                             dirtCount = 0;
                             if (ly >= GameConfig.seaLevel) {
-                                // Apply the Shadertoy Rock/Snow look!
                                 Block surf = isAlpine ? cladder.surfaceBlock(ly, fbmSlope) : biome.surfaceBlock();
                                 chunk.setBlock(lx, ly, lz, surf);
                             } else if (ly >= GameConfig.seaLevel - 4) {
@@ -201,7 +205,6 @@ public class WorldGen {
                     }
                 }
 
-                // River post-pass
                 if (isRiver && !isAlpine) {
                     for (int ly = Chunk.HEIGHT - 1; ly >= 1; ly--) {
                         Block b = chunk.getBlock(lx, ly, lz);
@@ -215,7 +218,6 @@ public class WorldGen {
         }
     }
 
-    // -- SPLINE UTILS --
     private float computeFinalShape(float c, float e, float pv) {
         float eNorm = (e + 1f) / 2f;
         float contH = continentalnessSpline(c);
