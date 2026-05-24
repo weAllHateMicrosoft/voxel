@@ -27,23 +27,44 @@ public class World {
     public World() {}
 
     public Map<Long, Map<Integer, Block>> getModifiedBlocksMap() { return modifiedBlocks; }
-    private static long chunkKey(int cx, int cz) { return ((long) cx << 32) | (cz & 0xFFFFFFFFL); }
 
-    public Chunk getChunk(int cx, int cz) { return chunks.get(chunkKey(cx, cz)); }
-    public Chunk getOrCreateChunk(int cx, int cz) { return chunks.computeIfAbsent(chunkKey(cx, cz), k -> new Chunk(cx, cz)); }
+    // ── Chunk key encoding ────────────────────────────────────────────────────
+    // 3D key: 21 bits each for cx, cy, cz — handles ±1M chunks per axis.
+    // worldY of any block = chunk.cy * Chunk.HEIGHT + localY.
+    private static long chunkKey(int cx, int cy, int cz) {
+        return ((long)(cx & 0x1FFFFF) << 42)
+             | ((long)(cy & 0x1FFFFF) << 21)
+             |  (long)(cz & 0x1FFFFF);
+    }
+    // 2D surface key kept for modifiedBlocks (player edits are surface-only)
+    private static long chunkKey2D(int cx, int cz) { return ((long) cx << 32) | (cz & 0xFFFFFFFFL); }
 
+    // ── 3D chunk access ───────────────────────────────────────────────────────
+    public Chunk getChunk(int cx, int cy, int cz) { return chunks.get(chunkKey(cx, cy, cz)); }
+    /** Backward-compatible overload — assumes surface chunk (cy=0). */
+    public Chunk getChunk(int cx, int cz) { return getChunk(cx, 0, cz); }
+
+    public Chunk getOrCreateChunk(int cx, int cy, int cz) {
+        return chunks.computeIfAbsent(chunkKey(cx, cy, cz), k -> new Chunk(cx, cy, cz));
+    }
+    /** Backward-compatible overload — creates surface chunk (cy=0). */
+    public Chunk getOrCreateChunk(int cx, int cz) { return getOrCreateChunk(cx, 0, cz); }
+
+    // ── Block access (routes to the correct vertical chunk) ───────────────────
     public Block getBlock(int wx, int wy, int wz) {
-        if (wy < 0 || wy >= Chunk.HEIGHT) return Block.AIR;
-        Chunk chunk = getChunk(Math.floorDiv(wx, Chunk.SIZE), Math.floorDiv(wz, Chunk.SIZE));
+        int cy = Math.floorDiv(wy, Chunk.HEIGHT);
+        int ly = Math.floorMod(wy, Chunk.HEIGHT);
+        Chunk chunk = getChunk(Math.floorDiv(wx, Chunk.SIZE), cy, Math.floorDiv(wz, Chunk.SIZE));
         if (chunk == null) return Block.AIR;
-        return chunk.getBlock(Math.floorMod(wx, Chunk.SIZE), wy, Math.floorMod(wz, Chunk.SIZE));
+        return chunk.getBlock(Math.floorMod(wx, Chunk.SIZE), ly, Math.floorMod(wz, Chunk.SIZE));
     }
 
     public byte getMeta(int wx, int wy, int wz) {
-        if (wy < 0 || wy >= Chunk.HEIGHT) return 0;
-        Chunk chunk = getChunk(Math.floorDiv(wx, Chunk.SIZE), Math.floorDiv(wz, Chunk.SIZE));
+        int cy = Math.floorDiv(wy, Chunk.HEIGHT);
+        int ly = Math.floorMod(wy, Chunk.HEIGHT);
+        Chunk chunk = getChunk(Math.floorDiv(wx, Chunk.SIZE), cy, Math.floorDiv(wz, Chunk.SIZE));
         if (chunk == null) return 0;
-        return chunk.getMeta(Math.floorMod(wx, Chunk.SIZE), wy, Math.floorMod(wz, Chunk.SIZE));
+        return chunk.getMeta(Math.floorMod(wx, Chunk.SIZE), ly, Math.floorMod(wz, Chunk.SIZE));
     }
 
     public void setBlock(int wx, int wy, int wz, Block b) {
@@ -51,17 +72,23 @@ public class World {
     }
 
     public void setBlockWithMeta(int wx, int wy, int wz, Block b, byte meta, boolean triggerUpdate) {
-        if (wy < 0 || wy >= Chunk.HEIGHT) return;
+        int cy = Math.floorDiv(wy, Chunk.HEIGHT);
+        int ly = Math.floorMod(wy, Chunk.HEIGHT);
+        // Safety guard: don't allocate chunks absurdly far from the surface
+        if (cy < -32 || cy > 4) return;
         int cx = Math.floorDiv(wx, Chunk.SIZE), cz = Math.floorDiv(wz, Chunk.SIZE);
-        Chunk chunk = getOrCreateChunk(cx, cz);
+        Chunk chunk = getOrCreateChunk(cx, cy, cz);
         int lx = Math.floorMod(wx, Chunk.SIZE), lz = Math.floorMod(wz, Chunk.SIZE);
 
-        chunk.setBlock(lx, wy, lz, b);
-        chunk.setMeta(lx, wy, lz, meta);
+        chunk.setBlock(lx, ly, lz, b);
+        chunk.setMeta(lx, ly, lz, meta);
         chunk.dirty = true;
 
-        int localIdx = (wy << 8) | (lz << 4) | lx;
-        modifiedBlocks.computeIfAbsent(chunkKey(cx, cz), k -> new HashMap<>()).put(localIdx, b);
+        // Track player-placed block modifications (surface world only)
+        if (cy == 0) {
+            int localIdx = (ly << 8) | (lz << 4) | lx;
+            modifiedBlocks.computeIfAbsent(chunkKey2D(cx, cz), k -> new HashMap<>()).put(localIdx, b);
+        }
 
         if (triggerUpdate) {
             scheduleFluidUpdate(wx, wy, wz);
@@ -78,56 +105,82 @@ public class World {
         int RENDER_DISTANCE = GameConfig.renderDistance;
         int playerCX = Math.floorDiv((int) player.position.x, Chunk.SIZE);
         int playerCZ = Math.floorDiv((int) player.position.z, Chunk.SIZE);
+        // Which vertical chunk-slab the player is currently in
+        int playerCY = Math.floorDiv((int) player.position.y, Chunk.HEIGHT);
 
         for (int dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
             for (int dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
                 int cx = playerCX + dx;
                 int cz = playerCZ + dz;
 
-                if (world.getChunk(cx, cz) == null) {
-                    Chunk chunk = world.getOrCreateChunk(cx, cz);
-                    gen.generateChunk(chunk);
+                // Always load the surface chunk (cy=0)
+                loadChunkIfNeeded(world, gen, cx, 0, cz);
 
-                    Map<Integer, Block> mods = modifiedBlocks.get(chunkKey(cx, cz));
-                    if (mods != null) {
-                        for (Map.Entry<Integer, Block> entry : mods.entrySet()) {
-                            int idx = entry.getKey();
-                            chunk.setBlock(idx & 15, (idx >> 8) & 1023, (idx >> 4) & 15, entry.getValue());
-                        }
+                // For columns that overlap the Abyss zone, also generate the deep
+                // chunks below.  We load two chunk-heights ahead of the player so
+                // the shaft is always ready before they arrive.
+                if (gen.isChunkInAbyssZone(cx, cz)) {
+                    int deepestNeeded = Math.min(playerCY - 2, -1);  // always at least -1
+                    for (int cy = -1; cy >= deepestNeeded; cy--) {
+                        loadChunkIfNeeded(world, gen, cx, cy, cz);
                     }
-
-                    int worldX = cx * Chunk.SIZE;
-                    int worldZ = cz * Chunk.SIZE;
-                    for (int lx = 0; lx < Chunk.SIZE; lx++) {
-                        for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
-                            for (int lz = 0; lz < Chunk.SIZE; lz++) {
-                                if (chunk.getBlock(lx, ly, lz) == Block.WATER) {
-                                    boolean exposed = false;
-                                    if (lx == 0 || lx == Chunk.SIZE - 1 || lz == 0 || lz == Chunk.SIZE - 1) {
-                                        exposed = true;
-                                    } else if (chunk.getBlock(lx+1, ly, lz) == Block.AIR ||
-                                            chunk.getBlock(lx-1, ly, lz) == Block.AIR ||
-                                            chunk.getBlock(lx, ly, lz+1) == Block.AIR ||
-                                            chunk.getBlock(lx, ly, lz-1) == Block.AIR ||
-                                            (ly > 0 && chunk.getBlock(lx, ly-1, lz) == Block.AIR)) {
-                                        exposed = true;
-                                    }
-
-                                    if (exposed) {
-                                        world.scheduleFluidUpdate(worldX + lx, ly, worldZ + lz);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Chunk nX = world.getChunk(cx + 1, cz); if (nX != null) nX.dirty = true;
-                    Chunk pX = world.getChunk(cx - 1, cz); if (pX != null) pX.dirty = true;
-                    Chunk nZ = world.getChunk(cx, cz + 1); if (nZ != null) nZ.dirty = true;
-                    Chunk pZ = world.getChunk(cx, cz - 1); if (pZ != null) pZ.dirty = true;
                 }
             }
         }
+    }
+
+    /**
+     * Generates and initialises a chunk at (cx, cy, cz) if it does not yet exist.
+     * Applies any saved player-block modifications (surface chunks only),
+     * schedules water updates, and marks horizontal + vertical neighbours dirty.
+     */
+    private void loadChunkIfNeeded(World world, WorldGen gen, int cx, int cy, int cz) {
+        if (world.getChunk(cx, cy, cz) != null) return;
+
+        Chunk chunk = world.getOrCreateChunk(cx, cy, cz);
+        gen.generateChunk(chunk);
+
+        // Restore player-placed block edits (only tracked for cy=0)
+        if (cy == 0) {
+            Map<Integer, Block> mods = modifiedBlocks.get(chunkKey2D(cx, cz));
+            if (mods != null) {
+                for (Map.Entry<Integer, Block> entry : mods.entrySet()) {
+                    int idx = entry.getKey();
+                    chunk.setBlock(idx & 15, (idx >> 8) & 1023, (idx >> 4) & 15, entry.getValue());
+                }
+            }
+
+            // Schedule fluid updates for exposed water (surface world only)
+            int worldX = cx * Chunk.SIZE;
+            int worldZ = cz * Chunk.SIZE;
+            for (int lx = 0; lx < Chunk.SIZE; lx++) {
+                for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
+                    for (int lz = 0; lz < Chunk.SIZE; lz++) {
+                        if (chunk.getBlock(lx, ly, lz) == Block.WATER) {
+                            boolean exposed = false;
+                            if (lx == 0 || lx == Chunk.SIZE - 1 || lz == 0 || lz == Chunk.SIZE - 1) {
+                                exposed = true;
+                            } else if (chunk.getBlock(lx+1, ly, lz) == Block.AIR ||
+                                    chunk.getBlock(lx-1, ly, lz) == Block.AIR ||
+                                    chunk.getBlock(lx, ly, lz+1) == Block.AIR ||
+                                    chunk.getBlock(lx, ly, lz-1) == Block.AIR ||
+                                    (ly > 0 && chunk.getBlock(lx, ly-1, lz) == Block.AIR)) {
+                                exposed = true;
+                            }
+                            if (exposed) world.scheduleFluidUpdate(worldX + lx, ly, worldZ + lz);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Mark horizontal and vertical neighbours dirty so their meshes update
+        Chunk nX = world.getChunk(cx + 1, cy, cz); if (nX != null) nX.dirty = true;
+        Chunk pX = world.getChunk(cx - 1, cy, cz); if (pX != null) pX.dirty = true;
+        Chunk nZ = world.getChunk(cx, cy, cz + 1); if (nZ != null) nZ.dirty = true;
+        Chunk pZ = world.getChunk(cx, cy, cz - 1); if (pZ != null) pZ.dirty = true;
+        Chunk uY = world.getChunk(cx, cy + 1, cz); if (uY != null) uY.dirty = true;
+        Chunk dY = world.getChunk(cx, cy - 1, cz); if (dY != null) dY.dirty = true;
     }
 
     public void scheduleFluidUpdate(int wx, int wy, int wz) {

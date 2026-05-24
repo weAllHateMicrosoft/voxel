@@ -18,21 +18,28 @@ public class ChunkMesher {
 
         int worldXStart = chunk.cx * Chunk.SIZE;
         int worldZStart = chunk.cz * Chunk.SIZE;
+        // worldYStart offsets local y (0..HEIGHT-1) to absolute world coordinates.
+        // For surface chunks (cy=0) this is 0; for deep abyss chunks it is negative.
+        int worldYStart = chunk.cy * Chunk.HEIGHT;
 
         // ── 1. POPULATE LOCAL BLOCKS & META CACHE (Eliminates HashMap Lookups) ──
         Block[][][] blockCache = new Block[18][Chunk.HEIGHT + 2][18];
         byte[][][]  metaCache  = new byte[18][Chunk.HEIGHT + 2][18];
 
-        // Fetch neighbor chunks once to avoid HashMap queries inside the coordinate loops
+        // Fetch horizontal neighbour chunks (same cy)
         Chunk center = chunk;
-        Chunk nX = world.getChunk(chunk.cx + 1, chunk.cz);
-        Chunk pX = world.getChunk(chunk.cx - 1, chunk.cz);
-        Chunk nZ = world.getChunk(chunk.cx, chunk.cz + 1);
-        Chunk pZ = world.getChunk(chunk.cx, chunk.cz - 1);
-        Chunk nXnZ = world.getChunk(chunk.cx + 1, chunk.cz + 1);
-        Chunk pXpZ = world.getChunk(chunk.cx - 1, chunk.cz - 1);
-        Chunk nXpZ = world.getChunk(chunk.cx + 1, chunk.cz - 1);
-        Chunk pXnZ = world.getChunk(chunk.cx - 1, chunk.cz + 1);
+        int cy_ = chunk.cy;  // use a local alias to distinguish from loop var
+        Chunk nX   = world.getChunk(chunk.cx + 1, cy_, chunk.cz);
+        Chunk pX   = world.getChunk(chunk.cx - 1, cy_, chunk.cz);
+        Chunk nZ   = world.getChunk(chunk.cx,     cy_, chunk.cz + 1);
+        Chunk pZ   = world.getChunk(chunk.cx,     cy_, chunk.cz - 1);
+        Chunk nXnZ = world.getChunk(chunk.cx + 1, cy_, chunk.cz + 1);
+        Chunk pXpZ = world.getChunk(chunk.cx - 1, cy_, chunk.cz - 1);
+        Chunk nXpZ = world.getChunk(chunk.cx + 1, cy_, chunk.cz - 1);
+        Chunk pXnZ = world.getChunk(chunk.cx - 1, cy_, chunk.cz + 1);
+        // Vertical neighbours — needed for y-boundary face culling and AO
+        Chunk chunkAbove = world.getChunk(chunk.cx, cy_ + 1, chunk.cz);
+        Chunk chunkBelow = world.getChunk(chunk.cx, cy_ - 1, chunk.cz);
 
         for (int x = -1; x <= Chunk.SIZE; x++) {
             for (int z = -1; z <= Chunk.SIZE; z++) {
@@ -41,13 +48,30 @@ public class ChunkMesher {
                 int lz = (z < 0) ? 15 : (z >= 16 ? 0 : z);
 
                 for (int y = -1; y <= Chunk.HEIGHT; y++) {
-                    if (y < 0 || y >= Chunk.HEIGHT || target == null) {
-                        blockCache[x + 1][y + 1][z + 1] = Block.AIR;
-                        metaCache[x + 1][y + 1][z + 1]  = 0;
-                    } else {
-                        blockCache[x + 1][y + 1][z + 1] = target.getBlock(lx, y, lz);
-                        metaCache[x + 1][y + 1][z + 1]  = target.getMeta(lx, y, lz);
+                    Block b = Block.AIR;
+                    byte  m = 0;
+
+                    if (y < 0) {
+                        // Below this chunk — look at the chunk directly underneath.
+                        // Only valid for the main (non-padded) columns; corner/lateral
+                        // neighbour overhangs stay AIR (they render in their own chunk).
+                        if (target == center && chunkBelow != null) {
+                            b = chunkBelow.getBlock(lx, Chunk.HEIGHT - 1, lz);
+                            m = chunkBelow.getMeta(lx, Chunk.HEIGHT - 1, lz);
+                        }
+                    } else if (y >= Chunk.HEIGHT) {
+                        // Above this chunk — look at the chunk directly above.
+                        if (target == center && chunkAbove != null) {
+                            b = chunkAbove.getBlock(lx, 0, lz);
+                            m = chunkAbove.getMeta(lx, 0, lz);
+                        }
+                    } else if (target != null) {
+                        b = target.getBlock(lx, y, lz);
+                        m = target.getMeta(lx, y, lz);
                     }
+
+                    blockCache[x + 1][y + 1][z + 1] = b;
+                    metaCache[x + 1][y + 1][z + 1]  = m;
                 }
             }
         }
@@ -66,6 +90,9 @@ public class ChunkMesher {
 
                     int wx = worldXStart + x;
                     int wz = worldZStart + z;
+                    // wy is the absolute world Y of this block's base.
+                    // For deep abyss chunks (cy < 0) this is negative.
+                    float wy = worldYStart + y;
 
                     boolean isTrans = !block.isOpaque();
                     List<Float> verts = isTrans ? tVerts : oVerts;
@@ -77,12 +104,12 @@ public class ChunkMesher {
                     float h11 = block.isLiquid() ? getLiquidCornerHeight(blockCache, metaCache, x, y, z, 1, 1) : 1f;
                     float h01 = block.isLiquid() ? getLiquidCornerHeight(blockCache, metaCache, x, y, z, 0, 1) : 1f;
 
-                    float[] top   = { wx, y+h00, wz,  wx+1, y+h10, wz,  wx+1, y+h11, wz+1,  wx, y+h01, wz+1 };
-                    float[] bot   = { wx, y, wz+1,  wx+1, y, wz+1,  wx+1, y, wz,  wx, y, wz };
-                    float[] front = { wx, y, wz+1,  wx+1, y, wz+1,  wx+1, y+h11, wz+1,  wx, y+h01, wz+1 };
-                    float[] back  = { wx+1, y, wz,  wx, y, wz,  wx, y+h00, wz,  wx+1, y+h10, wz };
-                    float[] right = { wx+1, y, wz+1,  wx+1, y, wz,  wx+1, y+h10, wz,  wx+1, y+h11, wz+1 };
-                    float[] left  = { wx, y, wz,  wx, y, wz+1,  wx, y+h01, wz+1,  wx, y+h00, wz };
+                    float[] top   = { wx, wy+h00, wz,  wx+1, wy+h10, wz,  wx+1, wy+h11, wz+1,  wx, wy+h01, wz+1 };
+                    float[] bot   = { wx, wy, wz+1,  wx+1, wy, wz+1,  wx+1, wy, wz,  wx, wy, wz };
+                    float[] front = { wx, wy, wz+1,  wx+1, wy, wz+1,  wx+1, wy+h11, wz+1,  wx, wy+h01, wz+1 };
+                    float[] back  = { wx+1, wy, wz,  wx, wy, wz,  wx, wy+h00, wz,  wx+1, wy+h10, wz };
+                    float[] right = { wx+1, wy, wz+1,  wx+1, wy, wz,  wx+1, wy+h10, wz,  wx+1, wy+h11, wz+1 };
+                    float[] left  = { wx, wy, wz,  wx, wy, wz+1,  wx, wy+h01, wz+1,  wx, wy+h00, wz };
 
                     if (shouldDrawFace(block, blockCache[cx][cy + 1][cz])) {
                         float[] ao = {
@@ -148,13 +175,16 @@ public class ChunkMesher {
         chunk.transparentMesh = buildMesh(tVerts, tIdx);
         chunk.dirty = false;
 
-        // Neighbor mesh update triggers
+        // Neighbor mesh update triggers (horizontal + vertical)
         if (!chunk.meshBuilt) {
             chunk.meshBuilt = true;
-            Chunk nX_chunk = world.getChunk(chunk.cx + 1, chunk.cz); if (nX_chunk != null) nX_chunk.dirty = true;
-            Chunk pX_chunk = world.getChunk(chunk.cx - 1, chunk.cz); if (pX_chunk != null) pX_chunk.dirty = true;
-            Chunk nZ_chunk = world.getChunk(chunk.cx, chunk.cz + 1); if (nZ_chunk != null) nZ_chunk.dirty = true;
-            Chunk pZ_chunk = world.getChunk(chunk.cx, chunk.cz - 1); if (pZ_chunk != null) pZ_chunk.dirty = true;
+            int cy_m = chunk.cy;
+            Chunk nX_chunk = world.getChunk(chunk.cx + 1, cy_m, chunk.cz); if (nX_chunk != null) nX_chunk.dirty = true;
+            Chunk pX_chunk = world.getChunk(chunk.cx - 1, cy_m, chunk.cz); if (pX_chunk != null) pX_chunk.dirty = true;
+            Chunk nZ_chunk = world.getChunk(chunk.cx, cy_m, chunk.cz + 1); if (nZ_chunk != null) nZ_chunk.dirty = true;
+            Chunk pZ_chunk = world.getChunk(chunk.cx, cy_m, chunk.cz - 1); if (pZ_chunk != null) pZ_chunk.dirty = true;
+            Chunk uY_chunk = world.getChunk(chunk.cx, cy_m + 1, chunk.cz); if (uY_chunk != null) uY_chunk.dirty = true;
+            Chunk dY_chunk = world.getChunk(chunk.cx, cy_m - 1, chunk.cz); if (dY_chunk != null) dY_chunk.dirty = true;
         }
     }
 

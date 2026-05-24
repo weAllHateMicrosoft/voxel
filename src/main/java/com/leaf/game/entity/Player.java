@@ -14,8 +14,8 @@ public class Player {
     public Vector3f position;
 
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
-    public float health    = 20.0f;
-    public float maxHealth = 20.0f;
+    public float health    = 2000.0f;
+    public float maxHealth = 2000.0f;
     public float highestY  = -1000f;
 
     private float   velocityY   = 0.0f;
@@ -158,7 +158,7 @@ public class Player {
                     health -= (fallDist * 0.5f - 2.0f);
                     if (health <= 0) {
                         System.out.println("You died!");
-                        position.set(0, 100, 0);
+                        position.set(400, 200, 400);
                         health = maxHealth;
                     }
                 }

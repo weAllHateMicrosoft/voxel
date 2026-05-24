@@ -1,9 +1,23 @@
 package com.leaf.game.core;
 
 public class GameConfig {
-    public static long  seed           = 69420L;
+    public static long  seed           = 12563L;
     public static int   renderDistance = 6;
-    public static int   seaLevel       = 20;
+    //public static int   seaLevel       = 20;
+
+    // ── HEIGHT MAPPING ────────────────────────────────────────────────────────
+// heightBase=200 puts the surface in the middle of the 512-block column.
+// That leaves ~200 blocks underground for the abyss to descend through.
+// Mountains still peak at seaLevel(220) + 5 + 225 = ~450 — well under 512.
+    public static int heightBase  = 200;   // was 8
+    public static int heightRange = 100;   // was 52 — more vertical range
+    public static int seaLevel    = 220;   // was 20
+
+    // ── BIOME THRESHOLDS ─────────────────────────────────────────────────────
+    public static int   beachMaxAltitude  = 2;
+    public static int   snowAltitude      = 310;   // was 48 — rescaled
+    public static float coldTempThreshold = -0.25f;
+    public static int   mountainSnowAltitude = 350; // for BlockCladder
 
     // Lower frequency = larger continents. Gives mountains room to form!
     public static float contFreq    = 0.001f;
@@ -35,8 +49,7 @@ public class GameConfig {
     public static float riverCarveDepth      = 0.045f;
     public static float riverFloorMargin     = 0.025f;
 
-    public static int heightBase  = 8;
-    public static int heightRange = 52;
+    //public static int heightBase  = 8;
 
     public static float density3DFreq             = 0.05f;
     public static float density3DVerticalCompress = 0.35f;
@@ -60,10 +73,6 @@ public class GameConfig {
 
     public static int caveSurfaceBuffer = 6;
     public static int caveBedrockFloor  = 4;
-
-    public static int beachMaxAltitude  = 2;
-    public static int snowAltitude      = 44;
-    public static int mountainSnowAltitude = 120;
 
     public static float sunDirX         = 0.6f;
     public static float sunDirY         = 1.0f;

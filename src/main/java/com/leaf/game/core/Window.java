@@ -209,6 +209,10 @@ public class Window {
     }
 
     private void startPreload() {
+        // Apply whatever seed is currently written in GameConfig
+        worldGen.resetSeed(GameConfig.seed);
+        world.clearAllChunks();
+
         if (preloadRadius > 0) {
             int startCX = Math.floorDiv((int) player.position.x, Chunk.SIZE);
             int startCZ = Math.floorDiv((int) player.position.z, Chunk.SIZE);
@@ -219,7 +223,6 @@ public class Window {
                     chunksToGenerate.add(world.getOrCreateChunk(startCX + dx, startCZ + dz));
                 }
             }
-            // Multiply by 2 because we run 2 distinct passes (Block Gen, then Mesh Compile)
             totalPreloadCount = chunksToGenerate.size() * 2;
             currentPreloadProgress = 0;
             isPreloading = true;
@@ -395,21 +398,30 @@ public class Window {
                 int meshCompilesThisFrame = 0;
                 int maxMeshCompilesPerFrame = 1; // strictly limit runtime builds to 1 per frame to eliminate stutter [1]
 
+                // Which vertical chunk slab the player occupies (0 = surface, -1 = first deep, etc.)
+                int playerCY = Math.floorDiv((int) player.position.y, Chunk.HEIGHT);
+                // Render surface (cy=0) plus any deep abyss slabs occupied or visible from the player
+                int cyMin = Math.min(playerCY - 1, -1);  // always include at least cy=-1 when in abyss
+
                 // ── PASS 1: OPAQUE (Stone, Dirt, Grass, Sand) ──
+                // Render cy=0 (surface) first, then any deep abyss slabs.
                 for (int dx = -R; dx <= R; dx++) {
                     for (int dz = -R; dz <= R; dz++) {
-                        Chunk chunk = world.getChunk(playerCX + dx, playerCZ + dz);
-                        if (chunk != null) {
-                            if ((chunk.dirty || chunk.opaqueMesh == null) && !isPreloading) {
-                                if (meshCompilesThisFrame < maxMeshCompilesPerFrame) {
-                                    world.buildChunkMeshes(chunk);
-                                    meshCompilesThisFrame++;
+                        // Iterate: cy=0 (surface) + any generated deep chunks
+                        for (int cy = 0; cy >= cyMin; cy--) {
+                            Chunk chunk = world.getChunk(playerCX + dx, cy, playerCZ + dz);
+                            if (chunk != null) {
+                                if ((chunk.dirty || chunk.opaqueMesh == null) && !isPreloading) {
+                                    if (meshCompilesThisFrame < maxMeshCompilesPerFrame) {
+                                        world.buildChunkMeshes(chunk);
+                                        meshCompilesThisFrame++;
+                                    }
                                 }
-                            }
-                            if (chunk.opaqueMesh != null) {
-                                Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
-                                shader.setUniform("mvp", mvp);
-                                chunk.opaqueMesh.render();
+                                if (chunk.opaqueMesh != null) {
+                                    Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
+                                    shader.setUniform("mvp", mvp);
+                                    chunk.opaqueMesh.render();
+                                }
                             }
                         }
                     }
@@ -421,11 +433,13 @@ public class Window {
 
                 for (int dx = -R; dx <= R; dx++) {
                     for (int dz = -R; dz <= R; dz++) {
-                        Chunk chunk = world.getChunk(playerCX + dx, playerCZ + dz);
-                        if (chunk != null && chunk.transparentMesh != null) {
-                            Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
-                            shader.setUniform("mvp", mvp);
-                            chunk.transparentMesh.render();
+                        for (int cy = 0; cy >= cyMin; cy--) {
+                            Chunk chunk = world.getChunk(playerCX + dx, cy, playerCZ + dz);
+                            if (chunk != null && chunk.transparentMesh != null) {
+                                Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
+                                shader.setUniform("mvp", mvp);
+                                chunk.transparentMesh.render();
+                            }
                         }
                     }
                 }
