@@ -4,6 +4,7 @@ package com.leaf.game.world;
 import com.leaf.game.render.Mesh;
 import com.leaf.game.entity.Player;
 import com.leaf.game.core.GameConfig;
+import com.leaf.game.world.gen.WorldGen;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -14,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class World {
     public static final int WIDTH  = 128;
-    public static final int HEIGHT = 64;
+    public static final int HEIGHT = 256;
     public static final int DEPTH  = 128;
 
     private final HashMap<Long, Chunk> chunks = new HashMap<>();

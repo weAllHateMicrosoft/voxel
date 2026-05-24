@@ -14,7 +14,7 @@ import com.leaf.game.util.RaycastResult;
 import com.leaf.game.world.Block;
 import com.leaf.game.world.Chunk;
 import com.leaf.game.world.World;
-import com.leaf.game.world.WorldGen;
+import com.leaf.game.world.gen.WorldGen;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.*;

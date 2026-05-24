@@ -1,4 +1,6 @@
-package com.leaf.game.world;
+package com.leaf.game.world.gen.biome;
+
+import com.leaf.game.world.Block;
 
 /**
  * All biomes in the world.

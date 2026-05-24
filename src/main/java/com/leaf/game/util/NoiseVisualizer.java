@@ -1,7 +1,7 @@
 package com.leaf.game.util;
 
 import com.leaf.game.entity.Player;
-import com.leaf.game.world.WorldGen;
+import com.leaf.game.world.gen.WorldGen;
 import imgui.ImGui;
 import org.lwjgl.system.MemoryUtil;
 

@@ -4,7 +4,7 @@ import com.leaf.game.render.Mesh;
 
 public class Chunk {
     public static final int SIZE = 16;
-    public static final int HEIGHT = 64;
+    public static final int HEIGHT = 256;
 
     public Mesh opaqueMesh;
     public Mesh transparentMesh;
