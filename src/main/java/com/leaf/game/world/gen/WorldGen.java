@@ -313,15 +313,22 @@ public class WorldGen {
 
                 Biome biome = BiomeRegistry.evaluate(shape, seaFrac, isRiver, ty, temp, hum);
                 boolean hitSurface = false;
+                boolean underGround = false; // Tracks if we have passed the terrain surface
                 int dirtCount = 0;
 
                 for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
+                    if (solid[ly]) underGround = true; // We hit earth, everything below is underground
+
                     // For cy=0, worldY == ly
                     if (!solid[ly]) {
                         // ── ABYSS HOOK ③a: Suppress Water (worldY = ly for cy=0) ──
                         boolean noWater = aCol != null && abyss.suppressWater(aCol, ly);
+
+                        // Only place water if we are NOT underground (prevents flooded caves)
+                        boolean isOcean = !underGround && ly <= GameConfig.seaLevel;
+
                         chunk.setBlock(lx, ly, lz,
-                                (!noWater && ly <= GameConfig.seaLevel) ? Block.WATER : Block.AIR);
+                                (!noWater && isOcean) ? Block.WATER : Block.AIR);
                     } else {
                         // ── ABYSS HOOK ③b: Apply Layer Palette (worldY = ly for cy=0) ──
                         if (aCol != null && abyss.isAbyssBlock(aCol, ly)) {

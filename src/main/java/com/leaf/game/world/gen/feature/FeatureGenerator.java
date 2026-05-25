@@ -97,6 +97,9 @@ public class FeatureGenerator {
         // Phase 4 — template-paste point features
         applyFossils(chunk, worldGen);
         applyMegaliths(chunk, worldGen);
+
+        // Phase 5 — General Surface Polish (Trees & Shrines)
+        applyVegetationAndShrines(chunk, worldGen);
     }
 
     // =========================================================================
@@ -728,5 +731,101 @@ public class FeatureGenerator {
         h = (h ^ (h >>> 30)) * 0xBF58476D1CE4E5B9L;
         h = (h ^ (h >>> 27)) * 0x94D049BB133111EBL;
         return h ^ (h >>> 31);
+    }
+
+    // =========================================================================
+    //  ⑦ SURFACE VEGETATION & SUMMIT SHRINES
+    // =========================================================================
+
+    private void applyVegetationAndShrines(Chunk chunk, WorldGen worldGen) {
+        int worldX = chunk.cx * Chunk.SIZE;
+        int worldZ = chunk.cz * Chunk.SIZE;
+
+        for (int lx = 0; lx < Chunk.SIZE; lx++) {
+            for (int lz = 0; lz < Chunk.SIZE; lz++) {
+                int wx = worldX + lx;
+                int wz = worldZ + lz;
+
+                int sy = surfaceY(chunk, lx, lz);
+                if (sy < 220) continue; // No underwater trees
+
+                Block ground = chunk.getBlock(lx, sy, lz);
+                if (ground != Block.GRASS && ground != Block.DIRT && ground != Block.STONE && ground != Block.SNOW) continue;
+
+                // Use regionHash to get a consistent random number for this column
+                long rng = regionHash(seed, wx, wz, 99);
+
+                // 1. Summit Shrines (Only on majestic peaks > 360)
+                if (sy > 360 && (rng % 300) == 0) {
+                    buildShrine(chunk, lx, sy, lz);
+                    continue;
+                }
+
+                // 2. Temperate Oak Trees (Only on standard plains/forests <= 240 - Keeps Mountains pristine!)
+                if (sy <= 240 && ground == Block.GRASS) {
+                    float hum = worldGen.sampleHumidity(wx, wz);
+                    int treeChance = (hum > 0.1f) ? 15 : 60; // Dense in forests, sparse in plains
+                    if ((rng % treeChance) == 0) {
+                        buildOakTree(chunk, lx, sy, lz);
+                    }
+                }
+            }
+        }
+    }
+
+    private void buildShrine(Chunk chunk, int lx, int sy, int lz) {
+        // 3x3 platform, 4 corner pillars, glowing center
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                place(chunk, lx + dx, sy + 1, lz + dz, Block.MEGALITH);
+                if (Math.abs(dx) == 1 && Math.abs(dz) == 1) {
+                    place(chunk, lx + dx, sy + 2, lz + dz, Block.MEGALITH_CARVED);
+                }
+            }
+        }
+        place(chunk, lx, sy + 2, lz, Block.CRYSTAL_QUARTZ);
+    }
+
+    private void buildPineTree(Chunk chunk, int lx, int sy, int lz) {
+        int height = 6 + (int)(Math.random() * 4);
+        for (int y = 1; y <= height; y++) place(chunk, lx, sy + y, lz, Block.OAK_LOG);
+
+        for (int y = height / 2; y <= height + 1; y++) {
+            int radius = (y > height - 1) ? 1 : 2 - ((y % 2 == 0) ? 0 : 1);
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx == 0 && dz == 0 && y <= height) continue;
+                    if (Math.abs(dx) == radius && Math.abs(dz) == radius && radius > 1) continue;
+                    int px = lx + dx, pz = lz + dz;
+                    // Don't overwrite solid blocks
+                    if (px >= 0 && px < Chunk.SIZE && pz >= 0 && pz < Chunk.SIZE) {
+                        if (chunk.getBlock(px, sy + y, pz) == Block.AIR) {
+                            place(chunk, px, sy + y, pz, Block.OAK_LEAVES);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void buildOakTree(Chunk chunk, int lx, int sy, int lz) {
+        int height = 4 + (int)(Math.random() * 3);
+        for (int y = 1; y <= height; y++) place(chunk, lx, sy + y, lz, Block.OAK_LOG);
+
+        for (int y = height - 2; y <= height + 1; y++) {
+            int radius = (y >= height) ? 1 : 2;
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx == 0 && dz == 0 && y <= height) continue;
+                    if (Math.abs(dx) == radius && Math.abs(dz) == radius && (y == height + 1 || Math.random() < 0.5)) continue;
+                    int px = lx + dx, pz = lz + dz;
+                    if (px >= 0 && px < Chunk.SIZE && pz >= 0 && pz < Chunk.SIZE) {
+                        if (chunk.getBlock(px, sy + y, pz) == Block.AIR) {
+                            place(chunk, px, sy + y, pz, Block.OAK_LEAVES);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

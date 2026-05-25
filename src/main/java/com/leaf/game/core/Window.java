@@ -349,13 +349,17 @@ public class Window {
                     if (chat != null) chatHistory.add("[Friend]: " + chat);
 
                     int[] pk = network.pollPickup();
-                    if (pk != null) {
-                        for (int i = 0; i < droppedItems.size(); i++) {
-                            DroppedItem item = droppedItems.get(i);
-                            if (item.originX == pk[0] && item.originY == pk[1] && item.originZ == pk[2]) {
-                                droppedItems.remove(i);
-                                break;
-                            }
+                    Vector3f chestPos = new Vector3f(player.position.x, player.position.y + 0.9f, player.position.z);
+                    for (int i = droppedItems.size() - 1; i >= 0; i--) {
+                        DroppedItem item = droppedItems.get(i);
+                        item.update(deltaTime, player.position);
+
+                        if (chestPos.distance(item.position) < 0.5f) {
+                            inventory.addBlock(item.blockType);
+                            addBlockToHotbar(item.blockType); // <-- ADD THIS LINE HERE
+                            item.alive = false;
+                            if (network != null && network.connected) network.sendPickup(item.originX, item.originY, item.originZ);
+                            droppedItems.remove(i);
                         }
                     }
                 }
@@ -562,7 +566,18 @@ public class Window {
                 ImGui.spacing();
                 if (SaveManager.saveExists()) {
                     if (ImGui.button("Load Saved Game", 280, 30)) {
+                        // Clear hotbar first
+                        java.util.Arrays.fill(hotbar, Block.AIR);
+
                         SaveManager.loadGame(world, player, inventory);
+
+                        // Repopulate hotbar with whatever saved blocks are in your inventory
+                        for (Block b : Block.values()) {
+                            if (inventory.getCount(b) > 0) {
+                                addBlockToHotbar(b);
+                            }
+                        }
+
                         worldGen.resetSeed(GameConfig.seed);
                         world.clearAllChunks();
                         network = null;
@@ -912,5 +927,25 @@ public class Window {
             }
         }
         return true;
+    }
+
+    /**
+     * Dynamically maps a collected block to an empty hotbar slot so players can select/place it.
+     */
+    private void addBlockToHotbar(Block block) {
+        if (block == Block.AIR) return;
+
+        // 1. If it's already on the hotbar, do nothing
+        for (Block b : hotbar) {
+            if (b == block) return;
+        }
+
+        // 2. Look for an empty slot (either AIR or a block we have 0 of in our inventory)
+        for (int i = 0; i < hotbar.length; i++) {
+            if (hotbar[i] == Block.AIR || inventory.getCount(hotbar[i]) <= 0) {
+                hotbar[i] = block;
+                return;
+            }
+        }
     }
 }
