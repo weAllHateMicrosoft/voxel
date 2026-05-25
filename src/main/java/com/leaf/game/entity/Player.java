@@ -42,6 +42,11 @@ public class Player {
     // Track last debugMode state to detect the transition and pick up launch vel
     private boolean wasFlying = false;
 
+    // ── ABILITIES ─────────────────────────────────────────────────────────────
+    // Q=Dash  G=Cannonball  Z=Rewind  E=Blink
+    // All abilities disabled while debugMode (flight) is active.
+    public final AbilityController abilities = new AbilityController(this);
+
     // ── GROUND SMASH ─────────────────────────────────────────────────────────
     private boolean isSmashing = false;
     private boolean lastShift  = false;   // edge detector for smash trigger
@@ -122,6 +127,14 @@ public class Player {
 
         flightController.decayEffects(deltaTime);
 
+        // ── ABILITY TICK ───────────────────────────────────────────────────────
+        // Runs before physics. Returns true when ability has full positional
+        // control (Rewind) — caller skips the physics block entirely.
+        if (abilities.tick(window, camera, world, deltaTime)) {
+            camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
+            return;
+        }
+
         float dx = 0f, dy = 0f, dz = 0f;
 
         // ── GROUND SMASH — pre-empt normal input while smashing ───────────────
@@ -129,6 +142,23 @@ public class Player {
             velocityY = -GameConfig.smashDescentSpeed;
             float targetPitch = -(float)(Math.PI * 0.305);
             camera.pitch += (targetPitch - camera.pitch) * Math.min(1f, 4f * deltaTime);
+
+        } else if (abilities.isDashing) {
+            // ── DASH — override WASD with dash velocity ────────────────────────
+            // Vertical physics (gravity, jumping) still runs normally below.
+            dx = abilities.dashDirX * GameConfig.dashSpeed * deltaTime;
+            dz = abilities.dashDirZ * GameConfig.dashSpeed * deltaTime;
+
+        } else if (abilities.isCannonballing) {
+            // ── CANNONBALL — override horizontal movement ──────────────────────
+            // Vertical physics runs normally (gravity decelerates velocityY).
+            // Camera spins to face velocity vector.
+            dx = abilities.cannonVelX * deltaTime;
+            dz = abilities.cannonVelZ * deltaTime;
+            if (abilities.cannonVelX != 0f || abilities.cannonVelZ != 0f) {
+                float targetYaw = (float)Math.atan2(abilities.cannonVelZ, abilities.cannonVelX);
+                camera.yaw += (targetYaw - camera.yaw) * Math.min(1f, 6f * deltaTime);
+            }
 
         } else {
             if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
@@ -211,6 +241,13 @@ public class Player {
                 isSmashing   = false;
                 velocityY    = 0f;
                 camera.pitch = (float)Math.toRadians(-30.0);
+            } else if (abilities.isCannonballing) {
+                // Cannonball landing: end ballistic flight, no fall damage
+                abilities.isCannonballing = false;
+                abilities.cannonVelX      = 0f;
+                abilities.cannonVelZ      = 0f;
+                velocityY = 0f;
+                // highestY already set to launch point so fallDist ≤ 0; no damage
             } else {
                 float fallDist = highestY - position.y;
                 if (fallDist > 4.0f) {
@@ -233,12 +270,19 @@ public class Player {
         camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
     }
 
-    public float getCameraRoll() { return flightController.getCameraRoll(); }
+    public float getCameraRoll() {
+        return flightController.getCameraRoll() + abilities.getCameraRoll();
+    }
     public float getCameraFovBoost() {
         if (isSmashing) return -8f;
-        return flightController.getFovBoost();
+        return flightController.getFovBoost() + abilities.getCameraFovBoost();
     }
     public boolean isSmashing() { return isSmashing; }
+
+    // ── Package-private accessors for AbilityController ───────────────────────
+    // AbilityController is in the same package so these stay package-visible.
+    float getVelocityY()        { return velocityY; }
+    void  setVelocityY(float v) { this.velocityY = v; }
 
     private boolean isBlockLiquid(World world, float x, float y, float z) {
         return world.getBlock(

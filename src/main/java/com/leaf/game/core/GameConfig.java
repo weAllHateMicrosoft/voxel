@@ -121,4 +121,34 @@ public class GameConfig {
     public static float timeFastScale       = 4.0f;   // scale while Y held
     // Linear ramp rate: covers full slow range (1.0→0.15 = 0.85) in ~0.3 s
     public static float timeTransitionSpeed = 2.83f;
+
+    // ── ABILITIES ─────────────────────────────────────────────────────────────
+    // These only activate in survival mode (!debugMode). None conflict with
+    // existing keys: Q/E/G/Z are unused everywhere else.
+
+    // Dash (tap Q) — instant horizontal burst, wall-stopped, no vertical override
+    public static float dashSpeed        = 48f;   // blocks/sec during dash
+    public static float dashDuration     = 0.16f; // seconds per dash
+    public static float dashCooldown     = 1.4f;  // seconds
+    public static int   dashGhostCount   = 10;    // ghost trail positions kept
+
+    // Cannonball (hold G to charge, release to fire)
+    public static float cannonMinPower   = 25f;   // launch speed at zero charge
+    public static float cannonMaxPower   = 65f;   // launch speed at full charge
+    public static float cannonMaxCharge  = 2.0f;  // seconds to reach full power
+    public static float cannonHorizDrag  = 0.997f; // per-frame horizontal drag base
+    public static float cannonCooldown   = 3.0f;
+    public static int   cannonArcPoints  = 22;    // trajectory preview dot count
+
+    // State Rewind (hold Z to rewind 5 s of your own history)
+    // World state is NOT rewound — only player position/velocity/camera.
+    public static float rewindBufferSecs = 5.0f;
+    public static float rewindSnapshotHz = 20f;   // snapshots/s recorded
+    public static float rewindSpeed      = 3.0f;  // playback is 3× real-time
+    public static float rewindCooldown   = 5.0f;
+
+    // Blink (tap E) — teleport to crosshair target up to blinkRange blocks away
+    public static float blinkRange       = 22f;   // blocks
+    public static float blinkCooldown    = 2.0f;
+    public static float blinkFlashDecay  = 0.30f; // seconds for white flash to fade
 }

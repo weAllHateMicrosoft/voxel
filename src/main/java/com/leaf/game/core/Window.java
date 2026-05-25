@@ -232,8 +232,8 @@ public class Window {
             float dy = (float)(ypos - lastMouseY[0]);
             lastMouseX[0] = xpos; lastMouseY[0] = ypos;
 
-            // Suppress mouse look while smashing (camera is auto-pitched)
-            if (!player.isSmashing()) {
+            // Suppress mouse look while smashing or during abilities that own the camera
+            if (!player.isSmashing() && !player.abilities.isCannonballing && !player.abilities.isRewinding) {
                 camera.yaw   += dx * GameConfig.mouseSensitivity;
                 camera.pitch -= dy * GameConfig.mouseSensitivity;
                 camera.clampPitch();
@@ -519,6 +519,12 @@ public class Window {
                 shader.setUniform("timeVignetteStrength", vignetteStrength);
                 shader.setUniform("timeVignetteColor",    vignetteColor);
 
+                // ── ABILITY OVERLAY VIGNETTE ──────────────────────────────────
+                shader.setUniform("overlayVignetteStrength", player.abilities.getOverlayStrength());
+                shader.setUniform("overlayVignetteColor",    player.abilities.getOverlayColor());
+                // Default alpha multiplier (1.0 = no change). Ghost rendering overrides this.
+                shader.setUniform("alphaMultiplier", 1.0f);
+
                 // ── FLIGHT CAMERA EFFECTS ─────────────────────────────────────
                 // Set dynamic FOV from flight controller boost
                 float fovBoost = player.getCameraFovBoost();
@@ -678,6 +684,12 @@ public class Window {
                 if (network != null && network.connected) {
                     remotePlayer.render(shader, projection, view);
                 }
+
+                // ── ABILITY GHOST TRAILS ──────────────────────────────────────
+                // Rendered in transparent pass (GL_BLEND already disabled above,
+                // re-enable just for this section).
+                renderAbilityGhosts(shader, projection, view);
+
                 shader.unbind();
             }
 
@@ -1099,11 +1111,40 @@ public class Window {
             }
         }
 
+        // ── CANNONBALL CHARGE BAR ─────────────────────────────────────────────
+        if (player.abilities.isCharging()) {
+            float barW = 160f, barH = 12f;
+            float barX = cx - barW / 2f, barY = cy + 42f;
+            draw.addRectFilled(barX, barY, barX + barW, barY + barH,
+                    ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 0.7f), 4f);
+            float fill = player.abilities.chargePower;
+            int barColor = fill >= 0.99f
+                    ? ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.05f, 1.0f)  // full = red-orange
+                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.1f, 1.0f); // charging = gold
+            draw.addRectFilled(barX, barY, barX + barW * fill, barY + barH, barColor, 4f);
+            draw.addRect(barX, barY, barX + barW, barY + barH, black, 4f, 0, 1.5f);
+            String label = fill >= 0.99f ? "FULL POWER [G]" : String.format("CHARGING... %.0f%%", fill * 100f);
+            draw.addText(cx - 45, barY + 16f, black, label);
+            draw.addText(cx - 46, barY + 15f, barColor, label);
+        }
+
+        // ── REWIND TRAIL INDICATOR ────────────────────────────────────────────
+        if (player.abilities.isRewinding) {
+            draw.addText(cx - 42, cy - 90, black, "⟲ REWINDING ⟲");
+            draw.addText(cx - 43, cy - 91,
+                    ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, 1.0f), "⟲ REWINDING ⟲");
+        }
+
         // ── SMASH INDICATOR ───────────────────────────────────────────────────
         if (player.isSmashing()) {
             draw.addText(cx - 35, cy - 90, black, "▼ SMASHING ▼");
             draw.addText(cx - 36, cy - 91,
                     ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.1f, 1.0f), "▼ SMASHING ▼");
+        }
+
+        // ── ABILITY COOLDOWN ICONS ────────────────────────────────────────────
+        if (!player.debugMode) {
+            renderAbilityHUD(draw, screenW, screenH);
         }
 
         // ── TIME SCALE INDICATOR ──────────────────────────────────────────────
@@ -1117,6 +1158,158 @@ public class Window {
                     : ImGui.colorConvertFloat4ToU32(1.0f, 0.65f, 0.2f, 0.9f);
             draw.addText(screenW - 80f, 12f, black, timeLabel);
             draw.addText(screenW - 81f, 11f, timeColor, timeLabel);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  ABILITY VISUAL RENDERING
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Renders ghost trails for dash/rewind and trajectory arc for cannonball.
+     * Called after normal item rendering, inside the main GL block.
+     * Uses the alphaMultiplier uniform to control transparency per ghost.
+     */
+    private void renderAbilityGhosts(Shader shader, Matrix4f projection, Matrix4f view) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(false); // don't write to depth buffer for ghosts
+
+        Mesh ghostMesh = getItemMesh(Block.SNOW); // clean white-ish block colour
+        Mesh arcDotMesh = getItemMesh(Block.CRATER_BLOOM); // orange/gold dot
+
+        // ── DASH GHOST TRAIL ─────────────────────────────────────────────────
+        // Show last dashTrail.size() positions as fading cyan ghosts.
+        // Alpha: 0.05 at oldest, 0.35 at newest.
+        List<Vector3f> dashT = player.abilities.dashTrail;
+        if (!dashT.isEmpty()) {
+            float ageBoost = Math.max(0f, 1f - player.abilities.dashTrailAge * 2.5f);
+            for (int i = 0; i < dashT.size(); i++) {
+                float t      = (float)(i + 1) / dashT.size();
+                float alpha  = (0.05f + t * 0.30f) * ageBoost;
+                if (alpha < 0.01f) continue;
+                Vector3f pos = dashT.get(i);
+                Matrix4f ghostModel = new Matrix4f()
+                        .translate(pos.x - 0.2f, pos.y + 0.6f, pos.z - 0.2f)
+                        .scale(0.4f, 0.9f, 0.4f);
+                shader.setUniform("alphaMultiplier", alpha);
+                shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(ghostModel));
+                ghostMesh.render();
+            }
+        }
+
+        // ── REWIND TRAIL ─────────────────────────────────────────────────────
+        // Always visible (very faint) so player can see their history.
+        // Becomes brighter and blue-shifted when actively rewinding.
+        List<Vector3f> rewindT = player.abilities.rewindTrail;
+        if (!rewindT.isEmpty()) {
+            boolean rewinding = player.abilities.isRewinding;
+            for (int i = 0; i < rewindT.size(); i++) {
+                float t     = (float)(i + 1) / rewindT.size(); // 0=oldest, 1=newest
+                float alpha = rewinding ? (0.08f + t * 0.25f) : (0.02f + t * 0.06f);
+                if (alpha < 0.01f) continue;
+                Vector3f pos = rewindT.get(i);
+                Matrix4f ghostModel = new Matrix4f()
+                        .translate(pos.x - 0.15f, pos.y + 0.5f, pos.z - 0.15f)
+                        .scale(0.3f, 0.8f, 0.3f);
+                shader.setUniform("alphaMultiplier", alpha);
+                // Rewind ghosts use CRYSTAL_AMETHYST (blue-purple) for clear identification
+                shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(ghostModel));
+                getItemMesh(Block.CRYSTAL_AMETHYST).render();
+            }
+        }
+
+        // ── BLINK TRAIL ──────────────────────────────────────────────────────
+        // For blinkFlashDecay seconds after a blink: show dots along the blink line.
+        if (player.abilities.blinkFlashTimer > 0f) {
+            float progress = player.abilities.blinkFlashTimer / GameConfig.blinkFlashDecay;
+            Vector3f o = player.abilities.blinkOrigin;
+            Vector3f d = player.abilities.blinkDest;
+            for (int i = 0; i <= 6; i++) {
+                float t   = (float)i / 6f;
+                float alpha = progress * (0.1f + t * 0.3f);
+                Vector3f pos = new Vector3f(o).lerp(d, t);
+                Matrix4f ghostModel = new Matrix4f()
+                        .translate(pos.x, pos.y + 0.9f, pos.z)
+                        .scale(0.25f, 0.25f, 0.25f);
+                shader.setUniform("alphaMultiplier", alpha);
+                shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(ghostModel));
+                getItemMesh(Block.CRYSTAL_QUARTZ).render(); // white/clear
+            }
+        }
+
+        // ── CANNONBALL TRAJECTORY ARC ─────────────────────────────────────────
+        // Show predicted ballistic path when charging. Dots fade from bright at
+        // player to dim at end. Alternating size gives dotted-line appearance.
+        List<Vector3f> arc = player.abilities.trajectoryArc;
+        if (!arc.isEmpty()) {
+            for (int i = 0; i < arc.size(); i++) {
+                float t      = (float)i / arc.size();
+                float alpha  = 0.7f - t * 0.5f;
+                float scale  = (i % 2 == 0) ? 0.18f : 0.10f;
+                Vector3f pos = arc.get(i);
+                Matrix4f dotModel = new Matrix4f()
+                        .translate(pos.x, pos.y, pos.z)
+                        .scale(scale, scale, scale);
+                shader.setUniform("alphaMultiplier", alpha);
+                shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(dotModel));
+                arcDotMesh.render();
+            }
+        }
+
+        // Restore defaults
+        shader.setUniform("alphaMultiplier", 1.0f);
+        glDepthMask(true);
+        glDisable(GL_BLEND);
+    }
+
+    /**
+     * Renders four ability cooldown icons (Q / E / G / Z) in the bottom-right
+     * corner of the screen. Each icon shows a coloured fill based on the
+     * ability's ready fraction: full = coloured, on-cooldown = grey fill.
+     */
+    private void renderAbilityHUD(imgui.ImDrawList draw, float screenW, float screenH) {
+        // ── Ability icon layout: row of 4, bottom-right ───────────────────────
+        float iconSize = 28f;
+        float spacing  = 6f;
+        float totalW   = 4 * iconSize + 3 * spacing;
+        float startX   = screenW - totalW - 14f;
+        float startY   = screenH - iconSize - 14f;
+        int   black    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
+        int   grey     = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
+
+        String[]  labels   = { "Q",  "E",  "G",  "Z"  };
+        String[]  tooltips = { "Dash", "Blink", "Canon", "Rewind" };
+        float[]   fracs    = {
+                player.abilities.getDashCooldownFrac(),
+                player.abilities.getBlinkCooldownFrac(),
+                player.abilities.getCannonCooldownFrac(),
+                player.abilities.getRewindCooldownFrac()
+        };
+        int[] colors = {
+                ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),  // dash: cyan
+                ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),  // blink: white
+                ImGui.colorConvertFloat4ToU32(1.0f,  0.65f, 0.1f, 1.0f),  // cannonball: gold
+                ImGui.colorConvertFloat4ToU32(0.3f,  0.6f,  1.0f, 1.0f)   // rewind: blue
+        };
+
+        for (int i = 0; i < 4; i++) {
+            float x = startX + i * (iconSize + spacing);
+            // Background
+            draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
+            // Filled based on cooldown (from bottom up)
+            float fillH = iconSize * fracs[i];
+            if (fillH > 0.5f) {
+                draw.addRectFilled(x, startY + iconSize - fillH,
+                        x + iconSize, startY + iconSize, colors[i], 5f);
+            }
+            // Outline
+            draw.addRect(x, startY, x + iconSize, startY + iconSize, black, 5f, 0, 1.5f);
+            // Key label
+            draw.addText(x + 9f, startY + 7f, black, labels[i]);
+            draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels[i]);
+            // Ability name (small, below icon)
+            draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips[i]);
         }
     }
 

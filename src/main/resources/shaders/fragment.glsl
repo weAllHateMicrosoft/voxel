@@ -10,12 +10,19 @@ uniform int   isUnderwater;
 uniform float cameraY;        // camera eye world-Y, set each frame from Java
 
 // ── TIME DILATION VIGNETTE ────────────────────────────────────────────────────
-// timeVignetteStrength : 0 = no tint, ~0.30 at peak slow/fast
-// timeVignetteColor    : blue-grey (slow) or warm orange (fast)
-// These are cheap full-screen colour blends, not post-process passes.
-// Both are set by Window.java each frame from TimeController.*Factor().
 uniform float timeVignetteStrength;
 uniform vec3  timeVignetteColor;
+
+// ── ABILITY OVERLAY VIGNETTE ──────────────────────────────────────────────────
+// Used by dash (cyan), cannonball (orange), rewind (blue), blink (white flash).
+// Set by Window.java from player.abilities.getOverlayStrength/Color().
+uniform float overlayVignetteStrength;
+uniform vec3  overlayVignetteColor;
+
+// ── GHOST TRAIL TRANSPARENCY ──────────────────────────────────────────────────
+// Multiplied into vertexColor.a when rendering ghost/trail meshes.
+// Window.java sets this per-draw-call (0.05–0.40) then resets to 1.0.
+uniform float alphaMultiplier;
 
 out vec4 FragColor;
 
@@ -45,11 +52,15 @@ void main() {
     }
 
     // ── TIME SCALE VIGNETTE ───────────────────────────────────────────────────
-    // Applied last so it overlays everything including abyss/underwater effects.
-    // Slow motion → subtle blue-grey wash.  Fast time → warm orange tint.
     if (timeVignetteStrength > 0.001) {
         gammaCorrected = mix(gammaCorrected, timeVignetteColor, timeVignetteStrength);
     }
 
-    FragColor = vec4(gammaCorrected, vertexColor.a);
+    // ── ABILITY OVERLAY VIGNETTE ──────────────────────────────────────────────
+    // Applied after time vignette so abilities visually "win" during activation.
+    if (overlayVignetteStrength > 0.001) {
+        gammaCorrected = mix(gammaCorrected, overlayVignetteColor, overlayVignetteStrength);
+    }
+
+    FragColor = vec4(gammaCorrected, vertexColor.a * alphaMultiplier);
 }
