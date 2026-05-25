@@ -376,6 +376,7 @@ public class Window {
 
                         if (chestPos.distance(item.position) < 0.5f) {
                             inventory.addBlock(item.blockType);
+                            addBlockToHotbar(item.blockType);
                             item.alive = false;
                             if (network != null && network.connected) network.sendPickup(item.originX, item.originY, item.originZ);
                             droppedItems.remove(i);
