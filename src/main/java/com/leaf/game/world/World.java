@@ -263,7 +263,7 @@ public class World {
             try {
                 gen.generateChunk(chunk); // Heavy 3D math runs in background!
 
-                // Restore player-placed block edits (only tracked for cy=0)
+                /// Restore player-placed block edits (only tracked for cy=0)
                 if (cy == 0) {
                     Map<Integer, Block> mods = modifiedBlocks.get(chunkKey2D(cx, cz));
                     if (mods != null) {
@@ -272,22 +272,29 @@ public class World {
                             chunk.setBlock(idx & 15, (idx >> 8) & 1023, (idx >> 4) & 15, entry.getValue());
                         }
                     }
+                }
 
-                    // Schedule fluid updates for exposed water
+                // Schedule fluid updates for exposed water (run for ALL cy <= 0 so deep waterfalls tick!)
+                if (cy <= 0) {
                     int worldX = cx * Chunk.SIZE;
                     int worldZ = cz * Chunk.SIZE;
+                    int worldYOffset = cy * Chunk.HEIGHT;
                     for (int lx = 0; lx < Chunk.SIZE; lx++) {
                         for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
                             for (int lz = 0; lz < Chunk.SIZE; lz++) {
                                 if (chunk.getBlock(lx, ly, lz) == Block.WATER) {
+                                    // A water block is exposed if it is adjacent to AIR in any of the 6 directions
                                     boolean exposed = (lx == 0 || lx == Chunk.SIZE - 1
                                             || lz == 0 || lz == Chunk.SIZE - 1)
                                             || chunk.getBlock(lx+1, ly, lz) == Block.AIR
                                             || chunk.getBlock(lx-1, ly, lz) == Block.AIR
                                             || chunk.getBlock(lx, ly, lz+1) == Block.AIR
                                             || chunk.getBlock(lx, ly, lz-1) == Block.AIR
-                                            || (ly > 0 && chunk.getBlock(lx, ly-1, lz) == Block.AIR);
-                                    if (exposed) world.scheduleFluidUpdate(worldX + lx, ly, worldZ + lz);
+                                            || (ly > 0 && chunk.getBlock(lx, ly-1, lz) == Block.AIR)
+                                            || (ly < Chunk.HEIGHT - 1 && chunk.getBlock(lx, ly+1, lz) == Block.AIR);
+                                    if (exposed) {
+                                        world.scheduleFluidUpdate(worldX + lx, worldYOffset + ly, worldZ + lz);
+                                    }
                                 }
                             }
                         }
@@ -452,6 +459,102 @@ public class World {
      * @param wz  world Z of smash impact
      * @param radius  sphere radius in blocks (GameConfig.smashCraterRadius)
      */
+    /**
+     * Preloads a tube of chunks surrounding the full ballistic trajectory.
+     *
+     * Called at CHARGE START (not fire) so the background thread pool has the
+     * entire charge window (~2.5 s) to generate terrain before the player
+     * arrives. Uses MAX-power velocity so the tube covers the longest possible
+     * path; shorter actual shots land inside the already-loaded zone.
+     *
+     * The tube radius is sideRadius chunk-columns wide on each side of the path.
+     * This covers what the player sees when they rotate during flight. A radius
+     * of 4 gives an 8-chunk-wide corridor (128 blocks) — enough for any look
+     * direction while tumbling.
+     *
+     * loadChunkIfNeeded is idempotent (skips already-generating/meshed chunks)
+     * so calling this every charge frame is safe but wasteful; Window calls it
+     * once on the leading edge of charging instead.
+     *
+     * @param sideRadius  chunk columns loaded on each side of path centre
+     */
+    public void preloadChunksAroundPath(float ox, float oy, float oz,
+                                        float vx, float vy, float vz,
+                                        com.leaf.game.world.gen.WorldGen gen,
+                                        int sideRadius) {
+        float gravity = com.leaf.game.core.GameConfig.GRAVITY;
+        float px = ox, py = oy, pz = oz;
+        float dvx = vx, dvy = vy, dvz = vz;
+        float simDt = 0.10f;
+
+        // Collect unique chunk columns to avoid redundant loadChunkIfNeeded calls
+        java.util.Set<Long> queued = new java.util.HashSet<>();
+
+        for (int step = 0; step < 250; step++) {
+            dvy -= gravity * simDt;
+            px  += dvx * simDt;
+            py  += dvy * simDt;
+            pz  += dvz * simDt;
+            if (py < -64f) break;
+
+            int cx = Math.floorDiv((int)px, Chunk.SIZE);
+            int cz = Math.floorDiv((int)pz, Chunk.SIZE);
+
+            // Load a square sideRadius×sideRadius around each trajectory column
+            for (int dx = -sideRadius; dx <= sideRadius; dx++) {
+                for (int dz = -sideRadius; dz <= sideRadius; dz++) {
+                    int nx = cx + dx, nz = cz + dz;
+                    long key = ((long)(nx + 32768) << 32) | (long)(nz + 32768);
+                    if (queued.add(key)) {
+                        loadChunkIfNeeded(this, gen, nx, 0, nz);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Count how many chunk columns along a path are fully meshed.
+     * Window.java uses this to show a readiness percentage during charging.
+     * Returns a float 0..1 (1 = all path chunks ready).
+     */
+    public float pathReadinessFraction(float ox, float oy, float oz,
+                                       float vx, float vy, float vz) {
+        float gravity = com.leaf.game.core.GameConfig.GRAVITY;
+        float px = ox, py = oy, pz = oz;
+        float dvx = vx, dvy = vy, dvz = vz;
+        float simDt = 0.15f;
+        int total = 0, ready = 0;
+        int prevCX = Integer.MIN_VALUE, prevCZ = Integer.MIN_VALUE;
+
+        for (int step = 0; step < 200; step++) {
+            dvy -= gravity * simDt;
+            px  += dvx * simDt;
+            py  += dvy * simDt;
+            pz  += dvz * simDt;
+            if (py < -64f) break;
+
+            int cx = Math.floorDiv((int)px, Chunk.SIZE);
+            int cz = Math.floorDiv((int)pz, Chunk.SIZE);
+            if (cx == prevCX && cz == prevCZ) continue;
+            prevCX = cx; prevCZ = cz;
+            total++;
+            Chunk c = getChunk(cx, 0, cz);
+            // BLOCKS_READY means generation is done, just waiting for meshing.
+            // It counts as "ready" since it only needs ~1ms of CPU on next drain.
+            if (c != null && (c.state == Chunk.ChunkState.MESHED
+                    || c.state == Chunk.ChunkState.BLOCKS_READY)) ready++;
+        }
+        return (total == 0) ? 1f : (float) ready / total;
+    }
+
+    // Legacy thin-path version kept for compatibility (used by smash/network sync)
+    public void preloadChunksAlongPath(float ox, float oy, float oz,
+                                       float vx, float vy, float vz,
+                                       com.leaf.game.world.gen.WorldGen gen) {
+        preloadChunksAroundPath(ox, oy, oz, vx, vy, vz, gen, 0);
+    }
+
     public void createImpactCrater(int wx, int wy, int wz, int radius) {
         Set<Chunk> dirtyChunks = new java.util.HashSet<>();
         float rSq      = (float)(radius * radius);

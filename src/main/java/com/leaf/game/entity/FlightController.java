@@ -386,9 +386,8 @@ public class FlightController {
             hooked = true;
             hookTime = 0f; // Reset the phase timer!
 
-            // ── THE INITIAL POP ──
-            // Instantly launches you high into the air, completely resetting downward fall damage momentum.
-            velocity.y = Math.max(velocity.y, 14.0f); // Higher than a normal jump (10.0f)!
+            // Cancel downward falling momentum, but do NOT launch the player upward
+            velocity.y = Math.max(velocity.y, 0f);
 
             // Give a tiny bump in the direction of the hook so it feels immediately responsive
             Vector3f toHook = new Vector3f(hookPoint).sub(player.position).normalize();

@@ -58,10 +58,17 @@ public class AbilityController {
     /** 0–1, used by Window for power-bar and FOV boost. */
     public  float    chargePower     = 0f;
     private float    cannonCooldown  = 0f;
-    /** Accumulated spin angle (radians) — exposed via getCameraRoll(). */
-    private float    cannonSpin      = 0f;
-    private float    cannonSpinRate  = 0f;
+    /** Forward pitch oscillation during flight (radians, added to camera.pitch). */
+    private float    cannonPitchSpin = 0f;   // accumulated pitch offset
+    private float    cannonPitchRate = 0f;   // radians/sec set at fire time
     private boolean  lastG           = false;
+    /**
+     * Launch direction locked at the moment charging begins (yaw only).
+     * Arc preview and chunk preloading use this so they don't change if
+     * the player swings the camera mid-charge.
+     */
+    public  float    lockedYaw       = 0f;
+    public  float    lockedPitch     = 0f;
     /** Trajectory preview dots for the charging arc. Window renders these. */
     public  final List<Vector3f> trajectoryArc = new ArrayList<>();
 
@@ -135,25 +142,38 @@ public class AbilityController {
         updateRewindTrail();
 
         // ── REWIND (Z) — full takeover ────────────────────────────────────────
+        // FIX: lastZ updated unconditionally at end of block so edge-detect works.
         boolean zHeld = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
+
         if (isRewinding) {
             if (!zHeld || snapshots.isEmpty()) {
+                // Z released or ran out of history — end rewind
                 isRewinding    = false;
                 rewindCooldown = GameConfig.rewindCooldown;
+                lastZ = zHeld;
+                // Fall through to normal physics this frame
             } else {
                 applyRewind(camera, dt);
                 blendOverlay(new Vector3f(0.25f, 0.55f, 1.0f), 0.26f, dt);
                 decayCameraEffects(0f, 0f, dt);
-                return true; // caller must skip physics
+                lastZ = zHeld;
+                return true; // caller skips physics
             }
+        } else {
+            // Start rewind on leading edge of Z (need history + not on cooldown)
+            if (zHeld && !lastZ && rewindCooldown <= 0f
+                    && !isAnyAbilityActive() && snapshots.size() >= 4) {
+                isRewinding = true;
+                rewindAccum = 0f;
+                // Start consuming immediately this frame
+                applyRewind(camera, dt);
+                blendOverlay(new Vector3f(0.25f, 0.55f, 1.0f), 0.26f, dt);
+                decayCameraEffects(0f, 0f, dt);
+                lastZ = zHeld;
+                return true;
+            }
+            lastZ = zHeld;
         }
-        // Start rewind (need at least a few snapshots)
-        if (zHeld && !lastZ && rewindCooldown <= 0f
-                && !isAnyAbilityActive() && snapshots.size() >= 4) {
-            isRewinding  = true;
-            rewindAccum  = 0f;
-        }
-        lastZ = zHeld;
 
         // ── BLINK (E) — instant ───────────────────────────────────────────────
         boolean eHeld = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
@@ -189,35 +209,48 @@ public class AbilityController {
         // ── CANNONBALL (hold G) ───────────────────────────────────────────────
         boolean gHeld = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS;
         if (isCannonballing) {
-            // Apply drag to horizontal velocity each frame
             float drag = (float)Math.pow(GameConfig.cannonHorizDrag, dt * 60f);
             cannonVelX *= drag;
             cannonVelZ *= drag;
-            // Camera spin
-            cannonSpin += cannonSpinRate * dt;
-            // Decay chargePower for HUD
+            // Forward pitch spin: accumulate and apply to camera.pitch directly.
+            // This tilts the view forward (toward ground) continuously, giving
+            // the tumbling sensation. Player can still adjust yaw freely.
+            cannonPitchSpin += cannonPitchRate * dt;
+            camera.pitch    += cannonPitchRate * dt;
+            // No clampPitch — Window already skips it during cannonball so full
+            // 360° is maintained.
             chargePower = Math.max(0f, chargePower - dt * 0.4f);
-            // Cannonball ends when Player detects landing (isCannonballing = false set there)
             blendOverlay(new Vector3f(1.0f, 0.62f, 0.1f), 0.13f, dt);
-            // Roll = accumulated spin; FOV = large boost
             float fovTarget = 10f + chargePower * 18f;
             smoothFovBoost += (fovTarget - smoothFovBoost) * Math.min(1f, GameConfig.cameraLerpSpeed * dt);
-            // Smooth roll toward current spin (fast catch-up)
-            smoothRoll += (cannonSpin - smoothRoll) * Math.min(1f, 20f * dt);
-        } else if (!isAnyAbilityActive()) {
-            if (gHeld && cannonCooldown <= 0f) {
-                if (!isCharging_) { isCharging_ = true; chargeTime = 0f; }
-                chargeTime  = Math.min(chargeTime + dt, GameConfig.cannonMaxCharge);
-                chargePower = chargeTime / GameConfig.cannonMaxCharge;
-                updateTrajectoryArc(camera);
-                decayCameraEffects(0f, 0f, dt);
-            } else if (!gHeld && isCharging_) {
-                // Released G → FIRE
+        } else if (cannonCooldown <= 0f) {
+            // ── KEY FIX: charging is outside isAnyAbilityActive() gate ──────
+            // Once isCharging_ is true it must always be able to continue or
+            // fire on release. Putting it inside isAnyAbilityActive() caused
+            // isCharging_ to get permanently stuck (it excluded itself).
+            if (gHeld) {
+                if (!isCharging_ && !isAnyAbilityActive()) {
+                    isCharging_ = true;
+                    chargeTime  = 0f;
+                    // Lock look direction at charge-start — arc and chunk preload
+                    // use this fixed direction; camera still rotates freely.
+                    lockedYaw   = camera.yaw;
+                    lockedPitch = camera.pitch;
+                }
+                if (isCharging_) {
+                    chargeTime  = Math.min(chargeTime + dt, GameConfig.cannonMaxCharge);
+                    chargePower = chargeTime / GameConfig.cannonMaxCharge;
+                    updateTrajectoryArc(camera);
+                    decayCameraEffects(0f, 0f, dt);
+                }
+            } else if (isCharging_) {
+                // G released → FIRE
                 fireCannonball(camera);
                 isCharging_    = false;
                 trajectoryArc.clear();
             } else {
-                if (isCharging_) isCharging_ = false;
+                // Clean up any stale state
+                isCharging_ = false;
                 trajectoryArc.clear();
             }
         }
@@ -266,24 +299,35 @@ public class AbilityController {
 
         float speed = GameConfig.cannonMinPower
                 + chargePower * (GameConfig.cannonMaxPower - GameConfig.cannonMinPower);
-        Vector3f dir = camera.getLookDirection().normalize();
+        // Fire along the locked direction, not where player is currently looking
+        Vector3f dir = new Vector3f(
+                (float)(Math.cos(lockedPitch) * Math.cos(lockedYaw)),
+                (float)(Math.sin(lockedPitch)),
+                (float)(Math.cos(lockedPitch) * Math.sin(lockedYaw))
+        ).normalize();
 
         cannonVelX = dir.x * speed;
         cannonVelZ = dir.z * speed;
-        // Vertical launch: set as velocityY in Player (package-private accessor)
         player.setVelocityY(dir.y * speed);
-        // Prevent fall damage from the launch height
         player.highestY = player.position.y;
 
-        cannonSpinRate = speed * 0.065f; // faster launch = faster spin
-        cannonSpin     = 0f;
+        // Forward pitch-roll: spin around the lateral (left-right) axis so the
+        // player tumbles forward — ground sweeps into view from below, sky from
+        // above. Rate scales with speed so a full charge spins visibly fast.
+        cannonPitchRate = speed * 0.005f;  // ~0.7 rad/s at max power ≈ one rotation per 9s
+        cannonPitchSpin = 0f;
     }
 
     private void updateTrajectoryArc(Camera camera) {
         trajectoryArc.clear();
         float speed = GameConfig.cannonMinPower
                 + chargePower * (GameConfig.cannonMaxPower - GameConfig.cannonMinPower);
-        Vector3f dir = camera.getLookDirection().normalize();
+        // Use locked direction, not current camera look — arc stays stable while aiming
+        Vector3f dir = new Vector3f(
+                (float)(Math.cos(lockedPitch) * Math.cos(lockedYaw)),
+                (float)(Math.sin(lockedPitch)),
+                (float)(Math.cos(lockedPitch) * Math.sin(lockedYaw))
+        ).normalize();
         float vx = dir.x * speed, vy = dir.y * speed, vz = dir.z * speed;
         float px = player.position.x, py = player.position.y + 0.9f, pz = player.position.z;
         float simDt = 0.075f;
@@ -307,7 +351,7 @@ public class AbilityController {
 
         snapshots.addLast(new float[]{
                 player.position.x, player.position.y, player.position.z,
-                player.getVelocityY(), camera.yaw, camera.pitch
+                player.getVelocityY(), camera.yaw, camera.pitch, player.health
         });
         int maxSnaps = (int)(GameConfig.rewindBufferSecs * GameConfig.rewindSnapshotHz);
         while (snapshots.size() > maxSnaps) snapshots.pollFirst();
@@ -324,6 +368,7 @@ public class AbilityController {
             camera.yaw    = snap[4];
             camera.pitch  = snap[5];
             player.highestY = snap[1]; // prevent fall-damage surprise when rewind ends
+            player.health   = snap[6]; // restore health state
         }
         if (snapshots.isEmpty()) {
             isRewinding    = false;
@@ -351,13 +396,20 @@ public class AbilityController {
         float    rx   = camera.position.x, ry = camera.position.y, rz = camera.position.z;
         float    lastFX = rx, lastFY = ry - 1.6f, lastFZ = rz; // feet
 
-        for (float dist = 0f; dist < GameConfig.blinkRange; dist += step) {
+        // No hard range cap: cast until we hit a solid block OR reach an unloaded
+        // chunk. Unloaded chunks return AIR and would send the player into the void,
+        // so we stop there — "if you can see it, you get there" is naturally bounded
+        // by render distance. Loop cap (10000 steps * 0.45 = 4500 blocks) is a
+        // safety ceiling that should never be hit in practice.
+        for (int step_i = 0; step_i < 10000; step_i++) {
             rx += dir.x * step;
             ry += dir.y * step;
             rz += dir.z * step;
-            if (world.getBlock((int)Math.floor(rx), (int)Math.floor(ry), (int)Math.floor(rz)).isSolid()) {
-                break;
-            }
+            int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
+            // Stop at unloaded chunk boundary
+            int cx = Math.floorDiv(bx, 16), cz = Math.floorDiv(bz, 16);
+            if (world.getChunk(cx, 0, cz) == null) break;
+            if (world.getBlock(bx, by, bz).isSolid()) break;
             lastFX = rx;
             lastFY = ry - 1.6f;
             lastFZ = rz;
@@ -381,6 +433,21 @@ public class AbilityController {
         return isDashing || isCannonballing || isCharging_ || isRewinding;
     }
 
+    /**
+     * Cancel cannonball mid-flight (e.g. player enters water).
+     * Zeros out horizontal override velocity so normal water physics take over.
+     */
+    public void cancelCannonball() {
+        if (isCannonballing || isCharging_) {
+            isCannonballing = false;
+            isCharging_     = false;
+            cannonVelX      = 0f;
+            cannonVelZ      = 0f;
+            cannonPitchRate = 0f;
+            trajectoryArc.clear();
+        }
+    }
+
     private void tickCooldowns(float dt) {
         if (dashCooldown   > 0f) dashCooldown   -= dt;
         if (cannonCooldown > 0f) cannonCooldown -= dt;
@@ -390,15 +457,11 @@ public class AbilityController {
 
     /**
      * Smooth-lerps roll and FOV boost toward target values.
-     * When isCannonballing, roll tracks cannonSpin directly.
      */
     private void decayCameraEffects(float targetRoll, float targetFov, float dt) {
-        if (isCannonballing) {
-            // Cannonball spin: direct tracking (no lerp lag)
-            smoothRoll += (cannonSpin - smoothRoll) * Math.min(1f, 20f * dt);
-        } else {
-            smoothRoll     += (targetRoll - smoothRoll)     * Math.min(1f, GameConfig.rollLerpSpeed * dt);
-        }
+        // Since cannonball now uses pitch-tumbles (cannonPitchSpin),
+        // we can let roll always smoothly track targetRoll (including manual leans)
+        smoothRoll     += (targetRoll - smoothRoll)     * Math.min(1f, GameConfig.rollLerpSpeed * dt);
         smoothFovBoost += (targetFov - smoothFovBoost) * Math.min(1f, GameConfig.cameraLerpSpeed * dt);
     }
 

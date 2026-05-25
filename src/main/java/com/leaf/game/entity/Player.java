@@ -15,8 +15,8 @@ public class Player {
     public Vector3f position;
 
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
-    public float health    = 2000.0f;
-    public float maxHealth = 2000.0f;
+    public float health    = 20.0f;
+    public float maxHealth = 20.0f;
     public float highestY  = -1000f;
 
     private float   velocityY  = 0.0f;
@@ -53,7 +53,7 @@ public class Player {
 
     public int  smashImpactX = Integer.MIN_VALUE;
     public int  smashImpactY, smashImpactZ;
-
+    public int  currentSmashRadius = GameConfig.smashCraterRadius; // Tracks the height-scaled radius
     // ─────────────────────────────────────────────────────────────────────────
     //  Constructor
     // ─────────────────────────────────────────────────────────────────────────
@@ -152,13 +152,9 @@ public class Player {
         } else if (abilities.isCannonballing) {
             // ── CANNONBALL — override horizontal movement ──────────────────────
             // Vertical physics runs normally (gravity decelerates velocityY).
-            // Camera spins to face velocity vector.
+            // Camera is NOT rotated — player can look around freely mid-flight.
             dx = abilities.cannonVelX * deltaTime;
             dz = abilities.cannonVelZ * deltaTime;
-            if (abilities.cannonVelX != 0f || abilities.cannonVelZ != 0f) {
-                float targetYaw = (float)Math.atan2(abilities.cannonVelZ, abilities.cannonVelX);
-                camera.yaw += (targetYaw - camera.yaw) * Math.min(1f, 6f * deltaTime);
-            }
 
         } else {
             if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
@@ -194,6 +190,7 @@ public class Player {
             if (isSprinting) { dx *= 0.90f; dz *= 0.90f; } else { dx *= 0.55f; dz *= 0.55f; }
             highestY = position.y;
             isSmashing = false;
+            abilities.cancelCannonball(); // water takes over, cannonball ends cleanly
 
         } else if (!isSmashing) {
             velocityY -= GameConfig.GRAVITY * deltaTime;
@@ -238,6 +235,15 @@ public class Player {
                 smashImpactX = (int)Math.floor(position.x);
                 smashImpactY = (int)Math.floor(position.y);
                 smashImpactZ = (int)Math.floor(position.z);
+
+                // Calculate dynamic smash radius based on how far we fell
+                float fallDist = highestY - position.y;
+                currentSmashRadius = GameConfig.smashCraterRadius
+                        + (int) Math.floor((fallDist - GameConfig.smashMinHeight) * 0.08f);
+
+                // Cap the radius at 12 blocks to keep performance stable during massive drops
+                currentSmashRadius = Math.max(GameConfig.smashCraterRadius, Math.min(12, currentSmashRadius));
+
                 isSmashing   = false;
                 velocityY    = 0f;
                 camera.pitch = (float)Math.toRadians(-30.0);
@@ -281,7 +287,7 @@ public class Player {
 
     // ── Package-private accessors for AbilityController ───────────────────────
     // AbilityController is in the same package so these stay package-visible.
-    float getVelocityY()        { return velocityY; }
+    public float getVelocityY()  { return velocityY; }
     void  setVelocityY(float v) { this.velocityY = v; }
 
     private boolean isBlockLiquid(World world, float x, float y, float z) {

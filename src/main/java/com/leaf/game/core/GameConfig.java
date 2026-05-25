@@ -127,18 +127,18 @@ public class GameConfig {
     // existing keys: Q/E/G/Z are unused everywhere else.
 
     // Dash (tap Q) — instant horizontal burst, wall-stopped, no vertical override
-    public static float dashSpeed        = 48f;   // blocks/sec during dash
-    public static float dashDuration     = 0.16f; // seconds per dash
+    public static float dashSpeed        = 55f;   // blocks/sec during dash
+    public static float dashDuration     = 0.26f; // seconds per dash
     public static float dashCooldown     = 1.4f;  // seconds
     public static int   dashGhostCount   = 10;    // ghost trail positions kept
 
     // Cannonball (hold G to charge, release to fire)
-    public static float cannonMinPower   = 25f;   // launch speed at zero charge
-    public static float cannonMaxPower   = 65f;   // launch speed at full charge
-    public static float cannonMaxCharge  = 2.0f;  // seconds to reach full power
-    public static float cannonHorizDrag  = 0.997f; // per-frame horizontal drag base
+    public static float cannonMinPower   = 40f;   // launch speed at zero charge
+    public static float cannonMaxPower   = 140f;  // launch speed at full charge (~2x old)
+    public static float cannonMaxCharge  = 2.5f;  // seconds to reach full power
+    public static float cannonHorizDrag  = 0.998f; // slightly less drag → longer range
     public static float cannonCooldown   = 3.0f;
-    public static int   cannonArcPoints  = 22;    // trajectory preview dot count
+    public static int   cannonArcPoints  = 30;    // more dots = longer visible arc
 
     // State Rewind (hold Z to rewind 5 s of your own history)
     // World state is NOT rewound — only player position/velocity/camera.

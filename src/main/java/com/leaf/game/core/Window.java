@@ -104,12 +104,17 @@ public class Window {
     // it so Player's position accounting is unaffected.
     private float smashShakeTimer = 0f;   // counts down from smashShakeDuration
     private final Random shakeRng = new Random();
+    private float activeShakeAmplitude = GameConfig.smashShakeAmplitude; // Dynamic amplitude
+    private float activeShakeDuration  = GameConfig.smashShakeDuration;  // Dynamic duration
 
     // ── METEOR EFFECT (Smash visual) ─────────────────────────────────────────
     // When a ground smash begins, a STAR_IRON DroppedItem is spawned high above
     // the player and falls at high speed — giving the descent a "meteor crashing
     // from the sky" visual without requiring a particle system.
-    private boolean wasSmashing = false;
+    private boolean wasSmashing      = false;
+    private boolean wasCannonballing = false;
+    private boolean wasCharging      = false;   // edge-detect for preload trigger
+    private float   pathReadiness    = 0f;      // 0..1 shown in HUD during charging
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -232,11 +237,17 @@ public class Window {
             float dy = (float)(ypos - lastMouseY[0]);
             lastMouseX[0] = xpos; lastMouseY[0] = ypos;
 
-            // Suppress mouse look while smashing or during abilities that own the camera
-            if (!player.isSmashing() && !player.abilities.isCannonballing && !player.abilities.isRewinding) {
+            // Smashing/Rewinding: camera auto-driven, block mouse entirely.
+            // Charging: camera locked to aim direction — the system needs this
+            //   window to preload exactly the chunks the player will see.
+            // Flying (isCannonballing): full 360° free look, no pitch clamp.
+            if (!player.isSmashing() && !player.abilities.isRewinding
+                    && !player.abilities.isCharging()) {
                 camera.yaw   += dx * GameConfig.mouseSensitivity;
                 camera.pitch -= dy * GameConfig.mouseSensitivity;
-                camera.clampPitch();
+                if (!player.abilities.isCannonballing) {
+                    camera.clampPitch();
+                }
             }
         });
     }
@@ -325,7 +336,14 @@ public class Window {
 
             if (networkInitialized) {
                 // ── ASYNC MESH DRAINER ─────────────────────────────────────────
-                int maxMeshesPerFrame = isPreloading ? 12 : 3;
+                // During cannonball and charging: drain the mesh queue much faster.
+                // At 140 blocks/s the player crosses ~4 chunk columns per second;
+                // the default cap of 3 per frame can't keep up. 20 per frame clears
+                // a full preloaded queue within one second without spiking frame time
+                // (each buildChunkMeshes call is ~0.5–1 ms on average hardware).
+                boolean cannonActive = player.abilities.isCannonballing
+                        || player.abilities.isCharging();
+                int maxMeshesPerFrame = isPreloading ? 24 : cannonActive ? 20 : 4;
                 int meshedThisFrame = 0;
                 Chunk readyChunk;
                 while (meshedThisFrame < maxMeshesPerFrame
@@ -389,6 +407,51 @@ public class Window {
 
                         // ── SMASH IMPACT HANDLING ──────────────────────────────
                         handleSmashImpact(camera);
+
+                        // ── CANNONBALL: preload chunks at CHARGE START ─────────
+                        // The charge window (~2.5 s) is used as preload time.
+                        // On the leading edge of isCharging(), immediately queue
+                        // a full tube of chunks around the max-power trajectory.
+                        // Camera is locked during charging so the preload direction
+                        // exactly matches what the player will see in flight.
+                        //
+                        // pathReadiness polls on every frame during charging so the
+                        // HUD shows a live percentage as chunks become meshed.
+                        boolean nowCharging      = player.abilities.isCharging();
+                        boolean nowCannonballing = player.abilities.isCannonballing;
+
+                        if (nowCharging && !wasCharging) {
+                            // Leading edge: calculate max-power velocity along locked dir
+                            float lYaw   = player.abilities.lockedYaw;
+                            float lPitch = player.abilities.lockedPitch;
+                            float speed  = GameConfig.cannonMaxPower;
+                            float mvx = (float)(Math.cos(lPitch) * Math.cos(lYaw)) * speed;
+                            float mvy = (float)(Math.sin(lPitch))                  * speed;
+                            float mvz = (float)(Math.cos(lPitch) * Math.sin(lYaw)) * speed;
+                            int sideR = Math.min(GameConfig.renderDistance, 4);
+                            world.preloadChunksAroundPath(
+                                    player.position.x, player.position.y, player.position.z,
+                                    mvx, mvy, mvz, worldGen, sideR);
+                            pathReadiness = 0f;
+                        }
+
+                        if (nowCharging) {
+                            // Poll readiness fraction every frame for the HUD
+                            float lYaw   = player.abilities.lockedYaw;
+                            float lPitch = player.abilities.lockedPitch;
+                            float speed  = GameConfig.cannonMaxPower;
+                            float mvx = (float)(Math.cos(lPitch) * Math.cos(lYaw)) * speed;
+                            float mvy = (float)(Math.sin(lPitch))                  * speed;
+                            float mvz = (float)(Math.cos(lPitch) * Math.sin(lYaw)) * speed;
+                            pathReadiness = world.pathReadinessFraction(
+                                    player.position.x, player.position.y, player.position.z,
+                                    mvx, mvy, mvz);
+                        } else {
+                            pathReadiness = 0f;
+                        }
+
+                        wasCharging      = nowCharging;
+                        wasCannonballing = nowCannonballing;
 
                     } else {
                         breakingActive = false;
@@ -751,7 +814,7 @@ public class Window {
         int ix = player.smashImpactX;
         int iy = player.smashImpactY;
         int iz = player.smashImpactZ;
-        int r  = GameConfig.smashCraterRadius;
+        int r  = player.currentSmashRadius; // Read the dynamic radius
 
         // 1. Carve crater
         world.createImpactCrater(ix, iy, iz, r);
@@ -759,16 +822,16 @@ public class Window {
         // 2. Ejecta burst
         spawnCraterEjecta(ix, iy, iz, r);
 
-        // 3. Screen shake
-        smashShakeTimer = GameConfig.smashShakeDuration;
+        // 3. Dynamic Screen Shake scaling based on the radius size
+        float scaleFactor = (float) r / GameConfig.smashCraterRadius;
+        activeShakeDuration  = GameConfig.smashShakeDuration * Math.min(2.5f, scaleFactor);
+        activeShakeAmplitude = GameConfig.smashShakeAmplitude * Math.min(3.0f, scaleFactor);
+        smashShakeTimer      = activeShakeDuration;
 
         // 4. Network sync
         if (network != null && network.connected) {
             network.sendCrater(ix, iy, iz, r);
         }
-
-        // Reset camera pitch to neutral after smash (already done in Player.java
-        // but this is a belt-and-suspenders clear)
     }
 
     /**
@@ -778,23 +841,23 @@ public class Window {
      * if the crater is in empty air (unlikely) we default to GRAVEL.
      */
     private void spawnCraterEjecta(int ix, int iy, int iz, int radius) {
-        int ejectedCount = 12;
-        // Sample the impacted block type for a flavourful ejecta colour
+        // Scale ejecta particle count with crater size
+        int ejectedCount = Math.min(96, 6 * radius);
         Block ejectBlock = world.getBlock(ix, iy, iz);
         if (ejectBlock == Block.AIR || !ejectBlock.isSolid()) ejectBlock = Block.GRAVEL;
 
         for (int i = 0; i < ejectedCount; i++) {
-            // Random hemisphere outward-and-upward direction
             double azimuth  = shakeRng.nextDouble() * 2.0 * Math.PI;
-            double elevation = shakeRng.nextDouble() * Math.PI * 0.5 + 0.1; // 0.1..PI/2+0.1
+            double elevation = shakeRng.nextDouble() * Math.PI * 0.5 + 0.1;
             float vx = (float)(Math.cos(azimuth) * Math.cos(elevation));
             float vy = (float)(Math.sin(elevation));
             float vz = (float)(Math.sin(azimuth) * Math.cos(elevation));
 
-            float ejectionSpeed = 6f + shakeRng.nextFloat() * 10f;
+            // Scale speed so that higher falls launch particles faster and wider
+            float speedScale = 0.6f + 0.4f * ((float) radius / GameConfig.smashCraterRadius);
+            float ejectionSpeed = (6f + shakeRng.nextFloat() * 10f) * speedScale;
             Vector3f launchVel = new Vector3f(vx, vy, vz).mul(ejectionSpeed);
 
-            // Offset origin slightly so items aren't inside the crater wall
             int ox = ix + (int)(vx * (radius + 1));
             int oy = iy + (int)(vy * (radius + 1));
             int oz = iz + (int)(vz * (radius + 1));
@@ -823,13 +886,11 @@ public class Window {
 
         smashShakeTimer = Math.max(0f, smashShakeTimer - rawDt);
 
-        float progress    = smashShakeTimer / GameConfig.smashShakeDuration; // 1→0
-        float amplitude   = progress * GameConfig.smashShakeAmplitude;
+        float progress    = smashShakeTimer / activeShakeDuration; // Dynamic duration
+        float amplitude   = progress * activeShakeAmplitude;       // Dynamic amplitude
         float timeSecs    = (float)glfwGetTime();
         float freq        = GameConfig.smashShakeFrequency;
 
-        // Two-axis shake: X and Y channels at slightly different frequencies
-        // for an organic non-repeating feel.
         float shakeX = amplitude * (float)Math.sin(timeSecs * freq * 1.0);
         float shakeY = amplitude * (float)Math.sin(timeSecs * freq * 1.3 + 0.7);
 
@@ -1111,21 +1172,48 @@ public class Window {
             }
         }
 
-        // ── CANNONBALL CHARGE BAR ─────────────────────────────────────────────
+        // ── CANNONBALL CHARGE BAR + READINESS ────────────────────────────────
         if (player.abilities.isCharging()) {
-            float barW = 160f, barH = 12f;
+            float barW = 180f, barH = 12f;
             float barX = cx - barW / 2f, barY = cy + 42f;
+
+            // Power bar (gold → red-orange)
             draw.addRectFilled(barX, barY, barX + barW, barY + barH,
                     ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 0.7f), 4f);
             float fill = player.abilities.chargePower;
             int barColor = fill >= 0.99f
-                    ? ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.05f, 1.0f)  // full = red-orange
-                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.1f, 1.0f); // charging = gold
+                    ? ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.05f, 1.0f)
+                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.1f, 1.0f);
             draw.addRectFilled(barX, barY, barX + barW * fill, barY + barH, barColor, 4f);
             draw.addRect(barX, barY, barX + barW, barY + barH, black, 4f, 0, 1.5f);
-            String label = fill >= 0.99f ? "FULL POWER [G]" : String.format("CHARGING... %.0f%%", fill * 100f);
-            draw.addText(cx - 45, barY + 16f, black, label);
-            draw.addText(cx - 46, barY + 15f, barColor, label);
+
+            String powerLabel = fill >= 0.99f ? "FULL POWER" : String.format("CHARGING %.0f%%", fill * 100f);
+            draw.addText(cx - 43, barY + 16f, black, powerLabel);
+            draw.addText(cx - 44, barY + 15f, barColor, powerLabel);
+
+            // Readiness bar (blue — shows chunk generation progress)
+            float rdyBarY = barY + 30f;
+            draw.addRectFilled(barX, rdyBarY, barX + barW, rdyBarY + barH,
+                    ImGui.colorConvertFloat4ToU32(0.05f, 0.05f, 0.15f, 0.7f), 4f);
+            int rdyColor = pathReadiness >= 0.95f
+                    ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.4f, 1.0f)   // ready = green
+                    : ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, 1.0f);  // loading = blue
+            draw.addRectFilled(barX, rdyBarY, barX + barW * pathReadiness, rdyBarY + barH, rdyColor, 4f);
+            draw.addRect(barX, rdyBarY, barX + barW, rdyBarY + barH, black, 4f, 0, 1.5f);
+
+            String rdyLabel = pathReadiness >= 0.95f
+                    ? "PATH CLEAR — release [G] to fire!"
+                    : String.format("Loading terrain... %.0f%%", pathReadiness * 100f);
+            int rdyTextColor = pathReadiness >= 0.95f
+                    ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.4f, 0.95f)
+                    : ImGui.colorConvertFloat4ToU32(0.5f, 0.75f, 1.0f, 0.85f);
+            draw.addText(cx - 70, rdyBarY + 16f, black, rdyLabel);
+            draw.addText(cx - 71, rdyBarY + 15f, rdyTextColor, rdyLabel);
+
+            // Crosshair lock indicator (camera is frozen to aim direction)
+            draw.addText(cx - 55, cy - 22, black, "[ AIM LOCKED ]");
+            draw.addText(cx - 56, cy - 23,
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.3f, 0.85f), "[ AIM LOCKED ]");
         }
 
         // ── REWIND TRAIL INDICATOR ────────────────────────────────────────────
