@@ -4,6 +4,7 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.system.MemoryStack;
 
+import java.io.InputStream;
 import java.nio.FloatBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -27,7 +28,19 @@ public class Shader {
     private int createShader(String path, int shaderType) {
         String shaderCode;
         try {
-            shaderCode = new String(Files.readAllBytes(Paths.get(path)));
+            // Strip "src/main/resources" prefix to get the classpath path.
+            // This works both inside a fat JAR and when run from IntelliJ.
+            String cpPath = path.contains("resources/")
+                    ? path.substring(path.lastIndexOf("resources/") + "resources".length())
+                    : (path.startsWith("/") ? path : "/" + path);
+            InputStream is = Shader.class.getResourceAsStream(cpPath);
+            if (is != null) {
+                shaderCode = new String(is.readAllBytes());
+                is.close();
+            } else {
+                // Fallback: read directly from disk (IntelliJ without a build step)
+                shaderCode = new String(Files.readAllBytes(Paths.get(path)));
+            }
         } catch (Exception e) {
             throw new RuntimeException("Error reading shader file: " + path, e);
         }
