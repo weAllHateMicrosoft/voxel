@@ -2,6 +2,7 @@ package com.leaf.game.entity;
 
 import com.leaf.game.core.GameConfig;
 import com.leaf.game.util.Camera;
+import com.leaf.game.world.Chunk;
 import com.leaf.game.world.World;
 import org.joml.Vector3f;
 
@@ -406,6 +407,8 @@ public class AbilityController {
             ry += dir.y * step;
             rz += dir.z * step;
             int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
+            // Prevent teleporting to the sky or below the world floor.
+            if (by < 0 || by >= Chunk.HEIGHT) break;
             // Stop at unloaded chunk boundary
             int cx = Math.floorDiv(bx, 16), cz = Math.floorDiv(bz, 16);
             if (world.getChunk(cx, 0, cz) == null) break;

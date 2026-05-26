@@ -84,7 +84,7 @@ public class GameConfig {
 
     // ── FLIGHT ENGINE ─────────────────────────────────────────────────────────
     // SKIM: low-altitude terrain-hugging burst mode
-    public static float skimHeightTarget = 3.0f;   // base hover height above terrain (dynamic; was 5.0)
+    public static float skimHeightTarget = 4.5f;   // base hover height above terrain (dynamic; raised for better feel)
     public static float skimSpeed        = 32.0f;  // horizontal blocks/sec
 
     // SOAR: full-3D free flight

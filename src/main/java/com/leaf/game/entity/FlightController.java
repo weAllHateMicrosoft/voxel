@@ -127,13 +127,15 @@ public class FlightController {
         int groundY = findGroundBelow(world, player.position.x, player.position.y, player.position.z, 80);
         float horizSpeed    = (float)Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
         float speedFraction = Math.min(1f, horizSpeed / Math.max(1f, GameConfig.skimSpeed));
-        float dynamicHeight = GameConfig.skimHeightTarget * (0.3f + 0.8f * speedFraction);
+        float dynamicHeight = GameConfig.skimHeightTarget * (0.5f + 0.7f * speedFraction);
         float targetY       = groundY + dynamicHeight;
         float yErr          = targetY - player.position.y;
 
         float yGain = (yErr > 0) ? 10f : 3.5f;
         player.position.y += yErr * yGain * dt;
-        player.position.y = Math.max(groundY + 0.3f, player.position.y);
+        // Keep player at least (dynamicHeight * 0.5) above the surface so they
+        // never clip into the ground or water.
+        player.position.y = Math.max(groundY + dynamicHeight * 0.5f, player.position.y);
 
         Vector3f horizPos = new Vector3f(player.position);
         if (collidesAt(world, horizPos)) {
@@ -386,8 +388,8 @@ public class FlightController {
             hooked = true;
             hookTime = 0f; // Reset the phase timer!
 
-            // Cancel downward falling momentum, but do NOT launch the player upward
-            velocity.y = Math.max(velocity.y, 0f);
+            // Give an upward pop so the player rises toward the hook point.
+            velocity.y = Math.max(velocity.y, 14.0f);
 
             // Give a tiny bump in the direction of the hook so it feels immediately responsive
             Vector3f toHook = new Vector3f(hookPoint).sub(player.position).normalize();
@@ -460,11 +462,17 @@ public class FlightController {
         int bx     = (int)Math.floor(x);
         int bz     = (int)Math.floor(z);
         int startY = (int)Math.floor(y);
+        // Clamp scan floor to y=1 so skim never targets below the world floor.
+        // Also limit maxDrop to 30 — prevents diving down into open cave mouths.
+        int floorY = Math.max(1, startY - Math.min(maxDrop, 30));
 
-        for (int by = startY; by >= startY - maxDrop; by--) {
-            if (world.getBlock(bx, by, bz).isSolid()) return by + 1;
+        for (int by = startY; by >= floorY; by--) {
+            Block b = world.getBlock(bx, by, bz);
+            // Treat the water surface as ground so skim glides over water, not
+            // down to the seabed.
+            if (b.isSolid() || b.isLiquid()) return by + 1;
         }
-        return startY - maxDrop;
+        return floorY;
     }
 
     public boolean isHooked() { return hooked; }

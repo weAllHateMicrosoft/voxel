@@ -379,6 +379,9 @@ public class Window {
                                 break;
                             }
                         }
+                        // Zero out any velocity accumulated during loading so the player
+                        // doesn't punch straight through the freshly-meshed ground.
+                        player.setVelocityY(0f);
                         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     }
 
@@ -687,6 +690,9 @@ public class Window {
                 // ── PASS 2: TRANSPARENT ───────────────────────────────────────
                 glEnable(GL_BLEND);
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                // Disable depth writes for transparent geometry so water faces
+                // don't clobber the depth buffer and cause surface flickering.
+                glDepthMask(false);
 
                 for (int dx = -R; dx <= R; dx++) {
                     for (int dz = -R; dz <= R; dz++) {
@@ -699,6 +705,7 @@ public class Window {
                         }
                     }
                 }
+                glDepthMask(true);
                 glDisable(GL_BLEND);
                 // ── RENDER GRAPPLE CABLE & LASER SIGHT ─────────────────────────
                 FlightController fc = player.flightController;
@@ -855,7 +862,7 @@ public class Window {
 
             // Scale speed so that higher falls launch particles faster and wider
             float speedScale = 0.6f + 0.4f * ((float) radius / GameConfig.smashCraterRadius);
-            float ejectionSpeed = (6f + shakeRng.nextFloat() * 10f) * speedScale;
+            float ejectionSpeed = (18f + shakeRng.nextFloat() * 22f) * speedScale;
             Vector3f launchVel = new Vector3f(vx, vy, vz).mul(ejectionSpeed);
 
             int ox = ix + (int)(vx * (radius + 1));

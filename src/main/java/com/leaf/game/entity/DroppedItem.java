@@ -57,12 +57,12 @@ public class DroppedItem {
         // Once velocity is negligible, the normal lock-on logic takes over.
         float velSq = velocity.lengthSquared();
         if (velSq > 0.01f && !isLockedOn) {
-            // Gravity
-            velocity.y -= 18f * deltaTime;
+            // Gravity — match player gravity so debris feels consistent
+            velocity.y -= 35f * deltaTime;
             // Integrate
             position.add(new Vector3f(velocity).mul(deltaTime));
-            // Air resistance — exponential drag
-            float drag = (float)Math.pow(0.80f, deltaTime * 60f);
+            // Air resistance — light drag so debris carries its arc properly
+            float drag = (float)Math.pow(0.98f, deltaTime * 60f);
             velocity.mul(drag);
             // Do NOT do the magnet logic while in ballistic flight
             return;
