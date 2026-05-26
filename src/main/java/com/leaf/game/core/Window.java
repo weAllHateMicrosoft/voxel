@@ -794,10 +794,25 @@ public class Window {
                 glDisable(GL_BLEND);
                 // ── RENDER GRAPPLE CABLE & LASER SIGHT ─────────────────────────
                 FlightController fc = player.flightController;
-                if (player.debugMode && fc.getMode() == FlightController.FlightMode.GRAPPLE) {
+                boolean grappleActive = player.debugMode && fc.getMode() == FlightController.FlightMode.GRAPPLE;
+                boolean voidAiming = player.attacks.getChargeFrac() > 0f;
+
+                if (grappleActive || voidAiming) {
                     Vector3f playerHand = new Vector3f(player.position.x, player.position.y + 0.9f, player.position.z);
-                    Vector3f targetPoint = fc.isHooked() ? fc.getHookPoint() : fc.getAimTarget(camera, world);
-                    boolean isLaser = !fc.isHooked();
+                    Vector3f targetPoint = null;
+                    boolean isLaser = false;
+                    Block renderBlock = Block.CRYSTAL_AMETHYST;
+
+                    if (grappleActive) {
+                        targetPoint = fc.isHooked() ? fc.getHookPoint() : fc.getAimTarget(camera, world);
+                        isLaser = !fc.isHooked();
+                        renderBlock = isLaser ? Block.CRYSTAL_ROSE : Block.CRYSTAL_AMETHYST;
+                    } else if (voidAiming) {
+                        // Void shard laser sight!
+                        targetPoint = player.attacks.getAimTarget(camera, world);
+                        isLaser = true;
+                        renderBlock = Block.CRYSTAL_AMETHYST;
+                    }
 
                     if (targetPoint != null) {
                         Vector3f ropeDir  = new Vector3f(targetPoint).sub(playerHand);
@@ -808,8 +823,9 @@ public class Window {
                             org.joml.Quaternionf ropeRot = new org.joml.Quaternionf().rotationTo(new org.joml.Vector3f(0, 0, 1), ropeDir);
 
                             float thickness = isLaser ? 0.008f : 0.04f;
+                            // Make Void Shard laser pulse slightly with charge
+                            if (voidAiming) thickness += player.attacks.getChargeFrac() * 0.015f;
 
-                            // CRITICAL FIX: Translate by half distance in Z so it actually starts at the hand!
                             Matrix4f ropeModel = new Matrix4f()
                                     .translate(playerHand.x, playerHand.y, playerHand.z)
                                     .rotate(ropeRot)
@@ -819,7 +835,6 @@ public class Window {
                             Matrix4f ropeMvp = new Matrix4f(projection).mul(view).mul(ropeModel);
                             shader.setUniform("mvp", ropeMvp);
 
-                            Block renderBlock = isLaser ? Block.CRYSTAL_ROSE : Block.CRYSTAL_AMETHYST;
                             getItemMesh(renderBlock).render();
                         }
                     }
@@ -1356,6 +1371,27 @@ public class Window {
                     : ImGui.colorConvertFloat4ToU32(1.0f, 0.65f, 0.2f, 0.9f);
             draw.addText(screenW - 80f, 12f, black, timeLabel);
             draw.addText(screenW - 81f, 11f, timeColor, timeLabel);
+
+            // ── VOID SHARD AIMING RETICLE ─────────────────────────────────────────
+            float chargeF = player.attacks.getChargeFrac();
+            if (chargeF > 0f) {
+                int purpleBg = ImGui.colorConvertFloat4ToU32(0.4f, 0.1f, 0.8f, 0.5f);
+                int purpleFg = ImGui.colorConvertFloat4ToU32(0.7f, 0.3f, 1.0f, 0.9f);
+
+                // Reticle shrinks as the shot reaches maximum power
+                float reticleRadius = 20f - (10f * chargeF);
+                draw.addCircle(cx, cy, reticleRadius, purpleBg, 16, 2.0f);
+
+                float chLen = 8f + 12f * chargeF;
+                draw.addLine(cx - chLen, cy, cx - 4f, cy, purpleFg, 2.0f);
+                draw.addLine(cx + 4f, cy, cx + chLen, cy, purpleFg, 2.0f);
+                draw.addLine(cx, cy - chLen, cx, cy - 4f, purpleFg, 2.0f);
+                draw.addLine(cx, cy + 4f, cx, cy + chLen, purpleFg, 2.0f);
+
+                String aimText = String.format("POWER %.0f%%", chargeF * 100f);
+                draw.addText(cx - 30, cy + 25, black, aimText);
+                draw.addText(cx - 31, cy + 24, purpleFg, aimText);
+            }
         }
     }
 

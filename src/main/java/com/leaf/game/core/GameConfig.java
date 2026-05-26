@@ -160,6 +160,7 @@ public class GameConfig {
     public static float meleeRecoilDuration  = 0.22f;  // seconds
     public static float meleeCooldown        = 0.80f;  // seconds between strikes
     public static float meleeShakeStrength   = 0.13f;  // shake timer length (s)
+    public static boolean melee3DAiming = true;
 
     // ── RANGED ATTACK (Void Shard — C key) ───────────────────────────────────
     // Hold C to charge, release fires a straight crystal bolt (no gravity).

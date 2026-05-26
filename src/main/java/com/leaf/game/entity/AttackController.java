@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.lwjgl.glfw.GLFW.*;
+import com.leaf.game.world.Chunk;
 
 /**
  * AttackController — two combat abilities wired to F and C.
@@ -210,42 +211,103 @@ public class AttackController {
     }
 
     /**
-     * Destroys solid blocks in a 3×3×3 arc ahead of the player,
-     * launching each shattered block as a DebrisSpawn.
-     * Skips ultra-hard blocks (STONE and STAR_IRON) so the player
-     * can't trivially strip-mine mountains.
+     * Destroys solid blocks in a wide, mathematical horizontal semicircle (crescent),
+     * launching shattered blocks as ejecta and baking a scorched stone scar into
+     * the newly exposed walls to leave a menacing visual trace.
+     */
+    /**
+     * Carves a double-tapered, 3D ellipsoidal crescent in the direction the player is facing,
+     * cleanly supporting vertical pitch and tilt if enabled, while leaving a scorched
+     * stone scar along the boundary wall.
+     */
+    /**
+     * Carves a clean, double-tapered 3D ellipsoidal crescent in the direction
+     * the player is facing. This version removes the noisy boundary blocks,
+     * leaving a sharp, clean incision in the terrain.
      */
     private void executeStrike(Camera camera, World world) {
-        Vector3f fwd   = camera.getForward();   // yaw-only (no pitch component)
-        Vector3f right = camera.getRight();
+        // 1. Establish the 3D basis vectors based on the configuration toggle
+        Vector3f lookVec  = new Vector3f();
+        Vector3f rightVec = new Vector3f(camera.getRight());
+        Vector3f upVec    = new Vector3f();
 
-        // Centre the sweep at mid-torso height
-        int eyeY = (int) Math.floor(player.position.y + 1.1f);
+        if (GameConfig.melee3DAiming) {
+            lookVec.set(camera.getLookDirection());
+            // Up vector is orthogonal to the look direction and horizontal right vector
+            new Vector3f(lookVec).cross(rightVec, upVec).normalize();
+        } else {
+            lookVec.set(camera.getForward()); // Lock to horizontal forward only
+            upVec.set(0f, 1f, 0f);            // Lock to vertical up only
+        }
 
-        for (int depth = 1; depth <= 3; depth++) {
-            for (int side = -1; side <= 1; side++) {
-                for (int vert = -1; vert <= 1; vert++) {
-                    int bx = (int) Math.floor(player.position.x + fwd.x * depth + right.x * side);
-                    int by = eyeY + vert;
-                    int bz = (int) Math.floor(player.position.z + fwd.z * depth + right.z * side);
+        // Origin point: player's mid-torso/eye-level
+        Vector3f origin = new Vector3f(player.position.x, player.position.y + 1.1f, player.position.z);
+
+        int R = 7; // Maximum horizontal sweep radius of the crescent (blocks)
+        int vMin = -1;
+        int vMax = 2;
+
+        // 2. Iterate vertically from bottom (-1) to top (2)
+        for (int vert = vMin; vert <= vMax; vert++) {
+            // Calculate distance fraction from the vertical center (0.5 is the midpoint of [-1, 2])
+            float dy = (vert - 0.5f) / 2.0f;
+
+            // Semicircular vertical scaling factor (tapering the top and bottom)
+            float scaleV = (float) Math.sqrt(Math.max(0.0, 1.0 - dy * dy));
+
+            // Effective horizontal radius for this vertical slice
+            float rEff = R * scaleV;
+            int maxSide = (int) Math.floor(rEff);
+
+            // 3. Iterate horizontally across the tapered width
+            for (int side = -maxSide; side <= maxSide; side++) {
+                // Calculate the final depth threshold at this specific 3D coordinate
+                float maxDepthFloat = (float) Math.sqrt(Math.max(0.0, rEff * rEff - side * side));
+                int maxDepth = (int) Math.floor(maxDepthFloat);
+
+                // 4. Carve along the look direction (loops strictly up to maxDepth for a clean cut)
+                for (int depth = 1; depth <= maxDepth; depth++) {
+                    // Map local (side, vert, depth) offsets directly to 3D world space
+                    float wx = origin.x + side * rightVec.x + vert * upVec.x + depth * lookVec.x;
+                    float wy = origin.y + side * rightVec.y + vert * upVec.y + depth * lookVec.y;
+                    float wz = origin.z + side * rightVec.z + vert * upVec.z + depth * lookVec.z;
+
+                    int bx = (int) Math.floor(wx);
+                    int by = (int) Math.floor(wy);
+                    int bz = (int) Math.floor(wz);
+
+                    // Skip out-of-world coordinates
+                    if (by < 0 || by >= Chunk.HEIGHT) continue;
 
                     Block b = world.getBlock(bx, by, bz);
+
+                    // Keep solid structure blocks and air intact
                     if (!b.isSolid()) continue;
-                    // Leave hard stone intact — feels more meaningful to break soft terrain
-                    if (b == Block.STONE || b == Block.STAR_IRON || b == Block.MEGALITH
+                    if (b == Block.STAR_IRON || b == Block.MEGALITH
                             || b == Block.MEGALITH_CARVED || b == Block.MOSSY_MEGALITH) continue;
 
+                    // Carve to AIR
                     world.setBlock(bx, by, bz, Block.AIR);
 
-                    // Eject debris forward + slight upward arc
-                    float speed = 8f + (float) Math.random() * 7f;
-                    float vx = fwd.x * speed + (float) (Math.random() - 0.5) * 3.5f;
-                    float vy = 2.5f + (float) Math.random() * 4.5f;
-                    float vz = fwd.z * speed + (float) (Math.random() - 0.5) * 3.5f;
-                    pendingDebris.add(new DebrisSpawn(bx, by, bz, b, new Vector3f(vx, vy, vz)));
+                    // Eject debris along the actual direction of the strike
+                    float speed = 12f + (float) Math.random() * 9f;
+                    Vector3f ejectVel = new Vector3f(lookVec).mul(speed);
+
+                    // Add slight randomized vertical and lateral spread
+                    ejectVel.add(
+                            (float) (Math.random() - 0.5) * 4f,
+                            (float) (Math.random() - 0.5) * 4f + 2f,
+                            (float) (Math.random() - 0.5) * 4f
+                    );
+
+                    pendingDebris.add(new DebrisSpawn(bx, by, bz, b, ejectVel));
                 }
             }
         }
+    }
+
+    private boolean isMegalith(Block b) {
+        return b == Block.MEGALITH || b == Block.MEGALITH_CARVED || b == Block.MOSSY_MEGALITH;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -283,7 +345,7 @@ public class AttackController {
             rangedCooldown = GameConfig.voidShardCooldown;
             // Brief purple flash on release
             overlayColor.set(0.75f, 0.40f, 1.0f);
-            overlayStrength = 0.32f;
+            overlayStrength = 0f;
         }
 
         // When nothing is active, let overlay and FOV decay naturally
@@ -422,5 +484,29 @@ public class AttackController {
         smoothPitch += (0f - smoothPitch)    * Math.min(1f, 10f * dt);
         fovBoost    += (0f - fovBoost)       * Math.min(1f, 8f  * dt);
         blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
+    }
+
+    /** Raycasts up to 100 blocks to find where the Void Shard is currently aiming. */
+    public Vector3f getAimTarget(Camera camera, World world) {
+        Vector3f dir  = camera.getLookDirection();
+        float    step = 0.5f;
+        float    max  = 100.0f;
+
+        float rx = camera.position.x, ry = camera.position.y, rz = camera.position.z;
+
+        for (float dist = 0f; dist < max; dist += step) {
+            rx += dir.x * step;
+            ry += dir.y * step;
+            rz += dir.z * step;
+
+            int bx = (int)Math.floor(rx);
+            int by = (int)Math.floor(ry);
+            int bz = (int)Math.floor(rz);
+
+            if (by >= 0 && by < Chunk.HEIGHT && world.getBlock(bx, by, bz).isSolid()) {
+                return new Vector3f(rx, ry, rz);
+            }
+        }
+        return new Vector3f(camera.position).add(dir.mul(max));
     }
 }
