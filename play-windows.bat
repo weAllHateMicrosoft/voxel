@@ -45,8 +45,7 @@ if %JAVA_MAJOR% LSS 17 (
 :: ── 2. Download latest build ──────────────────────────────────────────────────
 echo.
 echo   Checking for updates...
-powershell -NoProfile -Command ^
-  "try { Invoke-WebRequest -Uri '%JAR_URL%' -OutFile '%JAR%.tmp' -UseBasicParsing; exit 0 } catch { exit 1 }"
+curl -fsSL -o "%JAR%.tmp" "%JAR_URL%"
 if %ERRORLEVEL% equ 0 (
     move /y "%JAR%.tmp" "%JAR%" >nul
     echo   Game is up to date!
