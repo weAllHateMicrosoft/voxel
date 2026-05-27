@@ -135,6 +135,7 @@ public class AbilityController {
     public float getRewindCooldownFrac() { return rewindCooldown <= 0 ? 1f : 1f - rewindCooldown / GameConfig.rewindCooldown; }
     public float getBlinkCooldownFrac()  { return blinkCooldown  <= 0 ? 1f : 1f - blinkCooldown  / GameConfig.blinkCooldown; }
     public float getPillarCooldownFrac() { return pillarCooldownTimer <= 0 ? 1f : 1f - pillarCooldownTimer / GameConfig.pillarCooldown; }
+    public float getHealCooldownFrac()   { return healCooldownTimer  <= 0 ? 1f : 1f - healCooldownTimer  / GameConfig.healCooldown;  }
     // ─────────────────────────────────────────────────────────────────────────
     //  Main tick — call from Player.update() every frame, before physics block
     // ─────────────────────────────────────────────────────────────────────────
@@ -326,13 +327,48 @@ public class AbilityController {
         }
         lastG = gHeld;
 
-        // Decay effects when nothing is happening
-        if (!isDashing && !isCannonballing && !isCharging_ && blinkFlashTimer <= 0f) {
-            decayCameraEffects(0f, 0f, dt);
-            blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
+        // ── HEALING (hold L) ──────────────────────────────────────────────────
+        boolean lHeld = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
+        if (lHeld && healCooldownTimer <= 0f && !player.debugMode) {
+            isHealing = true;
+            float gain = GameConfig.healPerSecond * dt;
+            player.health = Math.min(player.maxHealth, player.health + gain);
+            blendOverlay(new Vector3f(0.15f, 0.85f, 0.35f), 0.18f, dt); // gentle green glow
+        } else {
+            if (isHealing && !lHeld) {
+                // Start cooldown when key released after healing
+                healCooldownTimer = GameConfig.healCooldown;
+            }
+            isHealing = false;
         }
 
-        if (!isDashing && !isCannonballing && !isCharging_ && blinkFlashTimer <= 0f && !isPillaring) {
+        // ── STATE REWIND (hold Z) ─────────────────────────────────────────────
+        boolean zHeld = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
+        if (!isRewinding && zHeld && !lastZ
+                && rewindCooldown <= 0f && !snapshots.isEmpty() && !isAnyAbilityActive()) {
+            isRewinding = true;
+            rewindAccum  = 0f;
+        }
+        if (isRewinding) {
+            if (!zHeld) {
+                // Z released — end rewind
+                isRewinding    = false;
+                rewindCooldown = GameConfig.rewindCooldown;
+            } else {
+                // Rewind is active — consume snapshots, show blue vignette, take control
+                applyRewind(camera, dt);
+                blendOverlay(new Vector3f(0.3f, 0.6f, 1.0f), 0.28f, dt);
+                decayCameraEffects(0f, 0f, dt);
+                lastZ = zHeld;
+                return true; // Player.update() skips physics this frame
+            }
+        }
+        lastZ = zHeld;
+
+        // Decay effects when nothing is happening
+        boolean quiet = !isDashing && !isCannonballing && !isCharging_
+                && blinkFlashTimer <= 0f && !isPillaring && !isRewinding;
+        if (quiet) {
             decayCameraEffects(0f, 0f, dt);
             blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
         }

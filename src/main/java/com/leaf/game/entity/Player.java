@@ -188,7 +188,12 @@ public class Player {
             dx = abilities.cannonVelX * deltaTime;
             dz = abilities.cannonVelZ * deltaTime;
 
-        } else {
+        } else if (abilities.isPillaring || abilities.isHealing) {     // <--- ADD THIS BRANCH
+            // Lock horizontal movement while performing stone pillar rise or channeling heal
+            dx = 0f;
+            dz = 0f;
+
+        }else {
             if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
                 dx += forward.x * speed * deltaTime;
                 dz += forward.z * speed * deltaTime;

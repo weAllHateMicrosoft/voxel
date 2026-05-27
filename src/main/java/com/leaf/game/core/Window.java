@@ -95,6 +95,45 @@ public class Window {
     private float   todoSwapCooldown = 0f;
     private boolean lastJ            = false;
 
+    // ── QUAGMIRE (M key) ─────────────────────────────────────────────────────
+    private float   quagmireCooldown = 0f;
+    private boolean lastM            = false;
+    /**
+     * Active mud waves.  Each float[12]:
+     *   [0-2] current position   [3-4] direction (x,z normalised)
+     *   [5]   speed              [6]   dist travelled   [7] total dist
+     *   [8]   target enemy ID    [9]   (reserved)
+     *   [10]  last placed block X  [11] last placed block Z
+     */
+    private final List<float[]> mudWaves = new ArrayList<>();
+
+    // ── STONE CANON (I key) ───────────────────────────────────────────────────
+    private boolean isChargingStoneCanon    = false;
+    private float   stoneCanonCharge        = 0f;
+    private float   stoneCanonNextConsume   = 0f;  // countdown to next block consumed
+    private int     stoneCanonBlocksConsumed = 0;
+    private Vector3f stoneCanonLockedPos    = null; // position locked when charging starts
+    private Vector3f stoneCanonGroundPos   = null; // ground point in front where boulder rises
+    private float   stoneCanonCooldownTimer = 0f;
+    private boolean lastI                   = false;
+    private final List<ActiveStoneShot> stoneShotList = new ArrayList<>();
+
+    /** A stone projectile fired by the Stone Canon ability. */
+    private static class ActiveStoneShot {
+        final Vector3f pos;
+        final Vector3f vel;
+        float scale;
+        final float chargeF;
+        float lifetime;
+        ActiveStoneShot(Vector3f pos, Vector3f vel, float scale, float chargeF) {
+            this.pos = new Vector3f(pos);
+            this.vel = new Vector3f(vel);
+            this.scale   = scale;
+            this.chargeF = chargeF;
+            this.lifetime = GameConfig.stoneCanonLifetime;
+        }
+    }
+
     // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────────────────────────
     /** True while V is held and the ability is ready — next hit will be negated. */
     private boolean substitutePrimed   = false;
@@ -314,7 +353,8 @@ public class Window {
             //   window to preload exactly the chunks the player will see.
             // Flying (isCannonballing): full 360° free look, no pitch clamp.
             if (!player.isSmashing() && !player.abilities.isRewinding
-                    && !player.abilities.isCharging()) {
+                    && !player.abilities.isCharging()
+                    && !isChargingStoneCanon) {
                 camera.yaw   += dx * GameConfig.mouseSensitivity;
                 camera.pitch -= dy * GameConfig.mouseSensitivity;
                 if (!player.abilities.isCannonballing) {
@@ -545,103 +585,60 @@ public class Window {
                         // Update all enemies (gravity, AI, death fade, etc.)
                         enemyManager.update(deltaTime, world, player.position);
 
-                        // Drain enemy damage into player health
-                        if (enemyManager.pendingPlayerDamage > 0f) {
-                            player.health = Math.max(0f,
-                                    player.health - enemyManager.pendingPlayerDamage);
-                            enemyManager.pendingPlayerDamage = 0f;
-                        }
-
-                        // P key — spawn test enemy at crosshair hit point
-                        boolean pHeld = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
-                        if (pHeld && !lastP) {
-                            RaycastResult hit = player.getTargetBlock(camera, world);
-                            if (hit != null && hit.hit) {
-                                // Spawn on top of the targeted surface block
-                                enemyManager.spawnAt(
-                                        hit.placeX + 0.5f,
-                                        hit.placeY,
-                                        hit.placeZ + 0.5f);
-                            }
-                        }
-                        lastP = pHeld;
-
-                        // ── TODO'S TECHNIQUE (J key) ──────────────────────────
-                        // Tap J: swap positions with the nearest visible enemy.
-                        if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
-                        boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS;
-                        if (jHeld && !lastJ && !player.debugMode && todoSwapCooldown <= 0f) {
-                            Vector3f eyePos = new Vector3f(player.position.x,
-                                    player.position.y + 1.6f, player.position.z);
-                            Enemy swapTarget = enemyManager.findClosestVisible(
-                                    world, eyePos, GameConfig.todoRange);
-                            if (swapTarget != null) {
-                                // Save positions
-                                Vector3f oldPlayerPos  = new Vector3f(player.position);
-                                Vector3f oldEnemyPos   = new Vector3f(swapTarget.position);
-                                // Swap
-                                player.position.set(oldEnemyPos);
-                                swapTarget.position.set(oldPlayerPos);
-                                // Re-use blink flash for the teleport visual
-                                player.abilities.blinkFlashTimer = GameConfig.blinkFlashDecay;
-                                player.abilities.blinkOrigin     = oldPlayerPos;
-                                player.abilities.blinkDest       = new Vector3f(oldEnemyPos);
-                                // Brief stun-flash on the enemy
-                                swapTarget.hitFlashTimer = 0.35f;
-                                todoSwapCooldown = GameConfig.todoCooldown;
-                            }
-                        }
-                        lastJ = jHeld;
-
                         // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────
-                        // Hold V while ready → primed. Any incoming damage while
-                        // primed is negated; player teleports back; paper dummy
-                        // placed at old position explodes after a short delay.
+                        // Must run BEFORE the damage drain so it can intercept.
                         if (substituteCooldown > 0f) substituteCooldown -= deltaTime;
                         boolean vHeld = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS;
                         substitutePrimed = vHeld && !player.debugMode && substituteCooldown <= 0f;
 
-                        // Intercept damage while primed
                         if (substitutePrimed && enemyManager.pendingPlayerDamage > 0f) {
-                            // Save old position for dummy, move player backward
                             Vector3f oldPos = new Vector3f(player.position);
-                            // Look direction from camera yaw/pitch
-                            float cyaw = camera.yaw, cpitch = camera.pitch;
-                            float backX = -(float)(Math.cos(cpitch) * Math.cos(cyaw));
-                            float backY =  0f;
-                            float backZ = -(float)(Math.cos(cpitch) * Math.sin(cyaw));
-                            float bLen  = (float)Math.sqrt(backX*backX + backZ*backZ);
-                            if (bLen > 0.001f) { backX /= bLen; backZ /= bLen; }
-                            float bd = GameConfig.substituteBackDist;
-                            // Candidate teleport destination
-                            float tx = oldPos.x + backX * bd;
-                            float tz = oldPos.z + backZ * bd;
-                            // Snap Y to terrain surface
-                            int bx = (int) Math.floor(tx), bz2 = (int) Math.floor(tz);
+                            // Step backward along look direction, one block at a time
+                            // to avoid clipping through walls
+                            float cyaw = camera.yaw;
+                            float backX = -(float)Math.cos(cyaw);
+                            float backZ = -(float)Math.sin(cyaw);
+                            float bd    = GameConfig.substituteBackDist;
+                            float tx    = oldPos.x;
+                            float tz    = oldPos.z;
+                            for (float step = 0.5f; step <= bd; step += 0.5f) {
+                                float cx = oldPos.x + backX * step;
+                                float cz = oldPos.z + backZ * step;
+                                int bx2 = (int) Math.floor(cx);
+                                int bz3 = (int) Math.floor(cz);
+                                int fy   = (int) Math.floor(oldPos.y);
+                                boolean solid = world.getBlock(bx2, fy,   bz3).isSolid()
+                                             || world.getBlock(bx2, fy+1, bz3).isSolid();
+                                if (solid) break;
+                                tx = cx; tz = cz;
+                            }
+                            // Snap Y to ground at destination
+                            int bxd = (int)Math.floor(tx), bzd = (int)Math.floor(tz);
                             float ty = oldPos.y;
-                            for (int by2 = (int) oldPos.y + 8; by2 >= 1; by2--) {
-                                if (world.getBlock(bx, by2, bz2).isSolid()
-                                        && !world.getBlock(bx, by2+1, bz2).isSolid()) {
-                                    ty = by2 + 1f;
-                                    break;
+                            for (int by2 = (int)oldPos.y + 4; by2 >= 1; by2--) {
+                                if (world.getBlock(bxd, by2, bzd).isSolid()
+                                        && !world.getBlock(bxd, by2+1, bzd).isSolid()) {
+                                    ty = by2 + 1f; break;
                                 }
                             }
                             player.position.set(tx, ty, tz);
                             player.setVelocityY(0f);
-
-                            // White flash on teleport
                             player.abilities.blinkFlashTimer = GameConfig.blinkFlashDecay;
                             player.abilities.blinkOrigin     = oldPos;
                             player.abilities.blinkDest       = new Vector3f(player.position);
-
-                            // Place a paper dummy at old position
                             float lt = GameConfig.substituteDummyLifetime;
                             substituteDummies.add(new float[]{ oldPos.x, oldPos.y, oldPos.z, lt, lt });
-
-                            // Negate damage and start cooldown
                             enemyManager.pendingPlayerDamage = 0f;
                             substitutePrimed   = false;
                             substituteCooldown = GameConfig.substituteCooldown;
+                        }
+
+                        // ── DRAIN remaining enemy damage into player health ────
+                        // Floor at 1 HP — enemies can wound but never kill the player
+                        if (enemyManager.pendingPlayerDamage > 0f) {
+                            player.health = Math.max(1f,
+                                    player.health - enemyManager.pendingPlayerDamage);
+                            enemyManager.pendingPlayerDamage = 0f;
                         }
 
                         // Tick paper dummies; explode when timer expires
@@ -649,12 +646,10 @@ public class Window {
                             float[] dm = substituteDummies.get(di);
                             dm[3] -= deltaTime;
                             if (dm[3] <= 0f) {
-                                // Detonate — damage all enemies in blast radius
                                 float[] blastEv = { dm[0], dm[1], dm[2],
                                         GameConfig.substituteBlastRadius };
                                 enemyManager.processExplosion(blastEv,
                                         GameConfig.substituteBlastDamage);
-                                // Spawn paper-fragment DroppedItems (snow block shards)
                                 Random fragRng = new Random();
                                 for (int fi = 0; fi < 14; fi++) {
                                     float ang = fragRng.nextFloat() * (float)(2 * Math.PI);
@@ -667,11 +662,301 @@ public class Window {
                                             (int)dm[0], (int)dm[1], (int)dm[2],
                                             Block.SNOW, fv));
                                 }
-                                // Screen shake
                                 activeShakeDuration  = 0.3f;
                                 activeShakeAmplitude = 0.18f;
                                 smashShakeTimer      = Math.max(smashShakeTimer, activeShakeDuration);
                                 substituteDummies.remove(di);
+                            }
+                        }
+
+                        // P key — spawn test enemy at crosshair hit point
+                        boolean pHeld = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
+                        if (pHeld && !lastP) {
+                            RaycastResult hit = player.getTargetBlock(camera, world);
+                            if (hit != null && hit.hit) {
+                                enemyManager.spawnAt(
+                                        hit.placeX + 0.5f,
+                                        hit.placeY,
+                                        hit.placeZ + 0.5f);
+                            }
+                        }
+                        lastP = pHeld;
+
+                        // ── TODO'S TECHNIQUE (J key) ──────────────────────────
+                        if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
+                        boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS;
+                        if (jHeld && !lastJ && !player.debugMode && todoSwapCooldown <= 0f) {
+                            Vector3f eyePos = new Vector3f(player.position.x,
+                                    player.position.y + 1.6f, player.position.z);
+                            Enemy swapTarget = enemyManager.findClosestVisible(
+                                    world, eyePos, GameConfig.todoRange);
+                            if (swapTarget != null) {
+                                Vector3f oldPlayerPos = new Vector3f(player.position);
+                                Vector3f oldEnemyPos  = new Vector3f(swapTarget.position);
+                                player.position.set(oldEnemyPos);
+                                swapTarget.position.set(oldPlayerPos);
+                                player.abilities.blinkFlashTimer = GameConfig.blinkFlashDecay;
+                                player.abilities.blinkOrigin     = oldPlayerPos;
+                                player.abilities.blinkDest       = new Vector3f(oldEnemyPos);
+                                swapTarget.hitFlashTimer = 0.35f;
+                                todoSwapCooldown = GameConfig.todoCooldown;
+                            }
+                        }
+                        lastJ = jHeld;
+
+                        // ── QUAGMIRE (M key) ──────────────────────────────────
+                        if (quagmireCooldown > 0f) quagmireCooldown -= deltaTime;
+                        boolean mHeld = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
+                        if (mHeld && !lastM && !player.debugMode && quagmireCooldown <= 0f) {
+                            Vector3f eyePos = new Vector3f(player.position.x,
+                                    player.position.y + 1.6f, player.position.z);
+                            Enemy target = enemyManager.findMostAligned(
+                                    world, eyePos, camera.getLookDirection(), GameConfig.quagmireRange);
+                            if (target != null) {
+                                // Wave starts 2 blocks in front of player
+                                float wdx = target.position.x - player.position.x;
+                                float wdz = target.position.z - player.position.z;
+                                float wdist = (float)Math.sqrt(wdx*wdx + wdz*wdz);
+                                if (wdist > 0.1f) {
+                                    float ndx2 = wdx / wdist, ndz2 = wdz / wdist;
+                                    float startX = player.position.x + ndx2 * 2f;
+                                    float startZ = player.position.z + ndz2 * 2f;
+                                    float startY = player.position.y;
+                                    float totalDist = Math.max(0.1f, wdist - 2f);
+                                    mudWaves.add(new float[]{
+                                        startX, startY, startZ,         // [0-2] pos
+                                        ndx2, ndz2,                      // [3-4] dir
+                                        GameConfig.quagmireSpreadSpeed,  // [5] speed
+                                        0f,                              // [6] dist travelled
+                                        totalDist,                       // [7] total dist
+                                        (float) target.id,               // [8] enemy id
+                                        0f,                              // [9] reserved
+                                        -99999f, -99999f                 // [10-11] last placed block col
+                                    });
+                                    quagmireCooldown = GameConfig.quagmireCooldown;
+                                }
+                            }
+                        }
+                        lastM = mHeld;
+
+                        // Advance mud waves — permanently paint MUD blocks on the ground
+                        for (int wi = mudWaves.size() - 1; wi >= 0; wi--) {
+                            float[] w = mudWaves.get(wi);
+                            float stepDist = w[5] * deltaTime;
+                            w[6] += stepDist;
+                            w[0] += w[3] * stepDist;
+                            w[2] += w[4] * stepDist;
+
+                            // Place a MUD block each time the wave enters a new block column
+                            int curBx = (int) Math.floor(w[0]);
+                            int curBz = (int) Math.floor(w[2]);
+                            if (curBx != (int) w[10] || curBz != (int) w[11]) {
+                                w[10] = curBx;
+                                w[11] = curBz;
+                                // Scan downward from wave Y to find the ground surface
+                                int baseY = (int) Math.floor(w[1]) + 2;
+                                for (int scanY = baseY; scanY >= 0; scanY--) {
+                                    if (world.getBlock(curBx, scanY, curBz).isSolid()) {
+                                        // Replace the surface block with MUD
+                                        world.setBlock(curBx, scanY, curBz, Block.MUD);
+                                        world.rebuildChunkAt(curBx, scanY, curBz);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Reached target — burst MUD chunks around enemy feet, remove wave
+                            if (w[6] >= w[7]) {
+                                int eid = (int) w[8];
+                                for (Enemy e : enemyManager.getEnemies()) {
+                                    if (e.id == eid && e.alive) {
+                                        e.hitFlashTimer = 0.25f;
+                                        // Burst of flying MUD chunks at enemy position
+                                        for (int mi = 0; mi < 10; mi++) {
+                                            Vector3f mv = new Vector3f(
+                                                    (shakeRng.nextFloat()-0.5f)*5f,
+                                                    2.5f + shakeRng.nextFloat()*3.5f,
+                                                    (shakeRng.nextFloat()-0.5f)*5f);
+                                            droppedItems.add(new DroppedItem(
+                                                    (int) e.position.x,
+                                                    (int) e.position.y,
+                                                    (int) e.position.z,
+                                                    Block.MUD, mv));
+                                        }
+                                        // Also stamp MUD under the enemy
+                                        int ex = (int) Math.floor(e.position.x);
+                                        int ez = (int) Math.floor(e.position.z);
+                                        for (int scanY = (int) Math.floor(e.position.y) + 1; scanY >= 0; scanY--) {
+                                            if (world.getBlock(ex, scanY, ez).isSolid()) {
+                                                world.setBlock(ex, scanY, ez, Block.MUD);
+                                                world.rebuildChunkAt(ex, scanY, ez);
+                                                break;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                                mudWaves.remove(wi);
+                            }
+                        }
+
+                        // ── STONE CANON (I key) ───────────────────────────────
+                        if (stoneCanonCooldownTimer > 0f) stoneCanonCooldownTimer -= deltaTime;
+                        boolean iHeld = glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS;
+
+                        if (!isChargingStoneCanon && iHeld && !lastI
+                                && !player.debugMode && stoneCanonCooldownTimer <= 0f) {
+                            // Start charging — lock position
+                            isChargingStoneCanon     = true;
+                            stoneCanonCharge         = 0f;
+                            stoneCanonBlocksConsumed = 0;
+                            stoneCanonNextConsume    = GameConfig.stoneCanonConsumeRate;
+                            stoneCanonLockedPos      = new Vector3f(player.position);
+
+                            // Compute boulder ground-spawn point (same logic as fire)
+                            Vector3f ld0 = camera.getLookDirection();
+                            float hLen0 = (float) Math.sqrt(ld0.x*ld0.x + ld0.z*ld0.z);
+                            float hn0x = hLen0 > 0.001f ? ld0.x / hLen0 : 0f;
+                            float hn0z = hLen0 > 0.001f ? ld0.z / hLen0 : 1f;
+                            float gfpx = player.position.x + hn0x * 2.5f;
+                            float gfpz = player.position.z + hn0z * 2.5f;
+                            int gfpBx = (int) Math.floor(gfpx);
+                            int gfpBz = (int) Math.floor(gfpz);
+                            int gSpawnY = (int) Math.floor(player.position.y);
+                            for (int sy2 = (int) Math.floor(player.position.y) + 3; sy2 >= 0; sy2--) {
+                                if (world.getBlock(gfpBx, sy2, gfpBz).isSolid()) {
+                                    gSpawnY = sy2 + 1;
+                                    break;
+                                }
+                            }
+                            stoneCanonGroundPos = new Vector3f(gfpx, (float) gSpawnY, gfpz);
+                        }
+
+                        if (isChargingStoneCanon) {
+                            // Lock position
+                            player.position.set(stoneCanonLockedPos);
+                            player.setVelocityY(0f);
+
+                            stoneCanonCharge += deltaTime;
+                            stoneCanonNextConsume -= deltaTime;
+
+                            // Consume one stone block per interval
+                            if (stoneCanonNextConsume <= 0f) {
+                                stoneCanonNextConsume = GameConfig.stoneCanonConsumeRate;
+                                int sr = (int)GameConfig.stoneCanonScanRadius;
+                                int px = (int)Math.floor(player.position.x);
+                                int py = (int)Math.floor(player.position.y);
+                                int pz = (int)Math.floor(player.position.z);
+                                outer:
+                                for (int r = 1; r <= sr; r++) {
+                                    for (int bx2 = px-r; bx2 <= px+r; bx2++) {
+                                        for (int bz2 = pz-r; bz2 <= pz+r; bz2++) {
+                                            for (int by2 = py-r; by2 <= py+r; by2++) {
+                                                if (world.getBlock(bx2, by2, bz2) == Block.STONE) {
+                                                    world.setBlock(bx2, by2, bz2, Block.AIR);
+                                                    world.rebuildChunkAt(bx2, by2, bz2);
+                                                    // Stone flies toward player
+                                                    Vector3f sv = new Vector3f(
+                                                            player.position.x - bx2,
+                                                            player.position.y - by2 + 1f,
+                                                            player.position.z - bz2)
+                                                            .normalize().mul(8f);
+                                                    droppedItems.add(new DroppedItem(
+                                                            bx2, by2, bz2, Block.STONE, sv));
+                                                    stoneCanonBlocksConsumed++;
+                                                    break outer;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Release I or exceed max charge → fire
+                            if (!iHeld || stoneCanonCharge >= GameConfig.stoneCanonMaxCharge) {
+                                isChargingStoneCanon = false;
+                                if (stoneCanonBlocksConsumed > 0) {
+                                    float chargeF = Math.min(1f,
+                                            stoneCanonCharge / GameConfig.stoneCanonMaxCharge);
+                                    float speed = GameConfig.stoneCanonMinSpeed
+                                            + chargeF * (GameConfig.stoneCanonMaxSpeed - GameConfig.stoneCanonMinSpeed);
+                                    float scale = GameConfig.stoneCanonMinScale
+                                            + chargeF * (GameConfig.stoneCanonMaxScale - GameConfig.stoneCanonMinScale);
+                                    // Scale also by number of blocks consumed
+                                    float blockBonus = Math.min(1f, stoneCanonBlocksConsumed / 6f);
+                                    scale *= (0.7f + 0.3f * blockBonus);
+                                    Vector3f lookDir = camera.getLookDirection();
+
+                                    // ── Spawn from ground 2.5 blocks in front ────
+                                    float hdLen = (float) Math.sqrt(
+                                            lookDir.x * lookDir.x + lookDir.z * lookDir.z);
+                                    float nhx = hdLen > 0.001f ? lookDir.x / hdLen : 0f;
+                                    float nhz = hdLen > 0.001f ? lookDir.z / hdLen : 1f;
+                                    float fpx = player.position.x + nhx * 2.5f;
+                                    float fpz = player.position.z + nhz * 2.5f;
+
+                                    // Scan downward to find solid ground at that column
+                                    int groundSpawnY = (int) Math.floor(player.position.y);
+                                    int fpBx = (int) Math.floor(fpx);
+                                    int fpBz = (int) Math.floor(fpz);
+                                    for (int sy = (int) Math.floor(player.position.y) + 3; sy >= 0; sy--) {
+                                        if (world.getBlock(fpBx, sy, fpBz).isSolid()) {
+                                            groundSpawnY = sy + 1;
+                                            break;
+                                        }
+                                    }
+                                    Vector3f firePos = new Vector3f(fpx, (float) groundSpawnY, fpz);
+
+                                    // ── Aim from ground point toward player's look target ──
+                                    Vector3f eyePos2 = new Vector3f(player.position.x,
+                                            player.position.y + 1.6f, player.position.z);
+                                    Vector3f aimTarget = new Vector3f(eyePos2)
+                                            .add(new Vector3f(lookDir).mul(60f));
+                                    Vector3f fireDir = new Vector3f(aimTarget).sub(firePos);
+                                    float fireDirLen = fireDir.length();
+                                    if (fireDirLen > 0.001f) fireDir.div(fireDirLen);
+                                    Vector3f fireVel = new Vector3f(fireDir).mul(speed);
+                                    stoneShotList.add(new ActiveStoneShot(firePos, fireVel, scale, chargeF));
+                                    stoneCanonCooldownTimer = GameConfig.stoneCanonCooldown;
+                                }
+                                stoneCanonLockedPos  = null;
+                                stoneCanonGroundPos  = null;
+                            }
+                        }
+                        lastI = iHeld;
+
+                        // Advance stone shots
+                        for (int si = stoneShotList.size() - 1; si >= 0; si--) {
+                            ActiveStoneShot shot = stoneShotList.get(si);
+                            shot.lifetime -= deltaTime;
+                            shot.pos.add(new Vector3f(shot.vel).mul(deltaTime));
+                            // Slow down slightly for visual feel
+                            shot.vel.mul(0.998f);
+
+                            boolean hitSomething = false;
+                            int sx = (int)Math.floor(shot.pos.x);
+                            int sy = (int)Math.floor(shot.pos.y);
+                            int sz = (int)Math.floor(shot.pos.z);
+
+                            if (world.getBlock(sx, sy, sz).isSolid() || shot.lifetime <= 0f) {
+                                hitSomething = true;
+                            }
+                            if (hitSomething) {
+                                float blastR = GameConfig.stoneCanonMinRadius
+                                        + shot.chargeF * (GameConfig.stoneCanonMaxRadius - GameConfig.stoneCanonMinRadius);
+                                float blastD = GameConfig.stoneCanonMinDamage
+                                        + shot.chargeF * (GameConfig.stoneCanonMaxDamage - GameConfig.stoneCanonMinDamage);
+                                enemyManager.processExplosion(
+                                        new float[]{ shot.pos.x, shot.pos.y, shot.pos.z, blastR }, blastD);
+                                // Crater
+                                int cr = Math.max(1, Math.round(blastR * 0.6f));
+                                world.createImpactCrater(sx, sy, sz, cr);
+                                spawnCraterEjecta(sx, sy, sz, cr);
+                                float shakeStr = 0.2f + shot.chargeF * 0.4f;
+                                activeShakeDuration  = shakeStr;
+                                activeShakeAmplitude = 0.15f + shot.chargeF * 0.2f;
+                                smashShakeTimer      = Math.max(smashShakeTimer, activeShakeDuration);
+                                stoneShotList.remove(si);
                             }
                         }
 
@@ -1305,15 +1590,18 @@ public class Window {
                         float alpha  = enemy.alive ? 1.0f : flashF;
                         if (alpha < 0.02f) continue;
 
-                        // Per-type base tint: applied at low strength as a permanent
-                        // colour overlay so each type reads distinctly at a glance.
-                        // Hit-flash overrides this when the enemy takes damage.
                         Vector3f typeColor;
                         float    typeOverlayStr;
-                        switch (enemy.type) {
-                            case BRUTE   -> { typeColor = new Vector3f(0.55f, 0.10f, 0.80f); typeOverlayStr = 0.18f; } // deep purple
-                            case STALKER -> { typeColor = new Vector3f(0.55f, 0.90f, 0.10f); typeOverlayStr = 0.18f; } // yellow-green
-                            default      -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; } // GRUNT: red-orange
+                        // Mud-trapped overrides type colour with a brown tint
+                        if (enemy.mudTrapTimer > 0f) {
+                            typeColor      = new Vector3f(0.45f, 0.28f, 0.05f); // brown
+                            typeOverlayStr = 0.45f;
+                        } else {
+                            switch (enemy.type) {
+                                case BRUTE   -> { typeColor = new Vector3f(0.55f, 0.10f, 0.80f); typeOverlayStr = 0.18f; }
+                                case STALKER -> { typeColor = new Vector3f(0.55f, 0.90f, 0.10f); typeOverlayStr = 0.18f; }
+                                default      -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; }
+                            }
                         }
 
                         shader.setUniform("alphaMultiplier", alpha);
@@ -1340,6 +1628,64 @@ public class Window {
                     shader.setUniform("alphaMultiplier", 1.0f);
                 }
 
+                // 6b. Render charging boulder rising from ground while I is held
+                if (isChargingStoneCanon && stoneCanonGroundPos != null) {
+                    float chargeProgress = Math.min(1f,
+                            stoneCanonCharge / GameConfig.stoneCanonMaxCharge);
+                    // Boulder rises from ground level up by ~1.5 blocks at full charge
+                    float riseY = stoneCanonGroundPos.y + chargeProgress * 1.5f;
+                    // Scale grows from 0.08 → max scale as charge builds
+                    float minSc = GameConfig.stoneCanonMinScale * 0.22f;
+                    float maxSc = GameConfig.stoneCanonMinScale
+                            + chargeProgress * (GameConfig.stoneCanonMaxScale - GameConfig.stoneCanonMinScale);
+                    float blockBonus = Math.min(1f, stoneCanonBlocksConsumed / 6f);
+                    maxSc *= (0.7f + 0.3f * blockBonus);
+                    float chargeScale = minSc + chargeProgress * (maxSc - minSc);
+                    // Slow spin that speeds up as charge increases
+                    float timeSecs2 = (float) glfwGetTime();
+                    float spin2 = timeSecs2 * (1.5f + chargeProgress * 5f);
+                    // Stone-grey with growing orange glow
+                    float glow2 = chargeProgress * 0.45f;
+                    shader.setUniform("alphaMultiplier", 0.7f + chargeProgress * 0.3f);
+                    shader.setUniform("overlayVignetteStrength", 0.10f + glow2);
+                    shader.setUniform("overlayVignetteColor",
+                            new Vector3f(0.65f + glow2, 0.55f + glow2 * 0.3f, 0.4f));
+                    Matrix4f chargeMat = new Matrix4f()
+                            .translate(stoneCanonGroundPos.x, riseY, stoneCanonGroundPos.z)
+                            .rotateY(spin2)
+                            .rotateX(spin2 * 0.6f)
+                            .scale(chargeScale);
+                    shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(chargeMat));
+                    getItemMesh(Block.STONE).render();
+                    shader.setUniform("overlayVignetteStrength", 0f);
+                    shader.setUniform("overlayVignetteColor", new Vector3f(0f));
+                    shader.setUniform("alphaMultiplier", 1.0f);
+                }
+
+                // 6c. Render Stone Canon shots
+                if (!stoneShotList.isEmpty()) {
+                    float timeSecs = (float) glfwGetTime();
+                    for (ActiveStoneShot shot : stoneShotList) {
+                        float spin = timeSecs * (3f + shot.chargeF * 4f);
+                        shader.setUniform("alphaMultiplier", 1.0f);
+                        // Stone-grey base, slight orange glow at high charge
+                        float glow = shot.chargeF * 0.35f;
+                        shader.setUniform("overlayVignetteStrength", 0.15f + glow);
+                        shader.setUniform("overlayVignetteColor",
+                                new Vector3f(0.65f + glow, 0.55f + glow * 0.3f, 0.4f));
+                        Matrix4f shotMat = new Matrix4f()
+                                .translate(shot.pos.x, shot.pos.y, shot.pos.z)
+                                .rotateY(spin)
+                                .rotateX(spin * 0.7f)
+                                .scale(shot.scale);
+                        shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(shotMat));
+                        getItemMesh(Block.STONE).render();
+                    }
+                    shader.setUniform("overlayVignetteStrength", 0f);
+                    shader.setUniform("overlayVignetteColor", new Vector3f(0f));
+                    shader.setUniform("alphaMultiplier", 1.0f);
+                }
+
                 // 7a. Render Paper Figurine Substitute dummies
                 if (!substituteDummies.isEmpty()) {
                     com.leaf.game.render.ModelMesh dummyModel =
@@ -1351,9 +1697,9 @@ public class Window {
                             float dscale = 0.9f + (1f - lifeFrac) * 0.3f;
                             float alpha  = Math.max(0.15f, lifeFrac * 0.90f);
                             shader.setUniform("alphaMultiplier", alpha);
-                            // White-paper tint
-                            shader.setUniform("overlayVignetteStrength", 0.55f + (1f - lifeFrac) * 0.30f);
-                            shader.setUniform("overlayVignetteColor", new Vector3f(0.95f, 0.97f, 1.0f));
+                            // Dark silhouette — near-black with faint blue tinge
+                            shader.setUniform("overlayVignetteStrength", 0.80f + (1f - lifeFrac) * 0.15f);
+                            shader.setUniform("overlayVignetteColor", new Vector3f(0.02f, 0.02f, 0.06f));
                             Matrix4f dummyMat = new Matrix4f()
                                     .translate(dm[0], dm[1], dm[2])
                                     .scale(dscale);
@@ -2281,30 +2627,49 @@ public class Window {
 
         // ── ENEMY HP BARS ─────────────────────────────────────────────────────
         // World-space health bar projected above each enemy's head.
-        if (!enemyManager.getEnemies().isEmpty()) {
-            Matrix4f enemyVP = new Matrix4f(camera.getProjectionMatrix())
-                    .mul(camera.getViewMatrix());
+        // Use the active camera: stand camera in drone mode, player camera otherwise.
+        if (!enemyManager.getEnemies().isEmpty() && !player.stand.isInStandPerspective()) {
+            // Build VP from the actual player eye position/orientation
+            float aspect = screenW / screenH;
+            float fovRad = (float) Math.toRadians(
+                    (camera.dynamicFov >= 0f) ? camera.dynamicFov : GameConfig.fov);
+            Matrix4f hpProj = new Matrix4f().perspective(fovRad, aspect, 0.1f, 1000f);
+            Matrix4f hpView = camera.getViewMatrix();
+            Matrix4f enemyVP = new Matrix4f(hpProj).mul(hpView);
+
+            // Camera eye position and look direction for in-front culling
+            Vector3f eyePos  = new Vector3f(camera.position);
+            Vector3f lookDir = camera.getLookDirection();
 
             for (Enemy enemy : enemyManager.getEnemies()) {
                 if (!enemy.alive) continue;
 
-                // Project chest-level position
+                // Cull enemies more than 60 blocks away
                 Vector3f headPos = new Vector3f(
                         enemy.position.x,
                         enemy.position.y + 2.3f,    // just above model top
                         enemy.position.z);
+                Vector3f toEnemy = new Vector3f(headPos).sub(eyePos);
+                float dist = toEnemy.length();
+                if (dist > 60f) continue;
+
+                // Cull enemies behind the camera (dot product < 0)
+                if (dist > 0.001f && toEnemy.dot(lookDir) / dist < 0.0f) continue;
+
+                // Project to clip space
                 org.joml.Vector4f clip = new org.joml.Vector4f(
                         headPos.x, headPos.y, headPos.z, 1f).mul(enemyVP);
-                if (clip.w <= 0f) continue; // behind camera
+                if (clip.w <= 0.001f) continue; // behind near plane
 
                 float ndcX = clip.x / clip.w;
                 float ndcY = clip.y / clip.w;
-                if (Math.abs(ndcX) > 1.0f || Math.abs(ndcY) > 1.0f) continue;
+                // Tight cull — only show when enemy is well within screen bounds
+                if (ndcX < -1.05f || ndcX > 1.05f || ndcY < -1.05f || ndcY > 1.05f) continue;
 
                 float sx = (ndcX  * 0.5f + 0.5f) * screenW;
                 float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
 
-                float hpFrac = enemy.health / enemy.maxHealth;
+                float hpFrac = Math.max(0f, enemy.health / enemy.maxHealth);
                 float barW   = 44f, barH = 6f;
                 float barX   = sx - barW / 2f, barY = sy - barH;
 
@@ -2505,18 +2870,25 @@ public class Window {
         int   black    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
         int   grey     = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
 
-        // Row 1 — Q / E / F / G / Z / K / J
+        // Row 1 — Q / E / F / G / Z / K / J / M / I
         {
-            float totalW = 7 * iconSize + 6 * spacing;
+            float totalW = 9 * iconSize + 8 * spacing;
             float startX = screenW - totalW - 14f;
             float startY = screenH - iconSize * 2f - spacing - 14f;
 
-            String[] labels   = { "Q",   "E",    "F",     "G",      "Z",      "K",      "J"   };
-            String[] tooltips = { "Dash","Blink","Slash","Cannon","Rewind","Pillar","Swap" };
-            // todoSwapCooldown: 1 = full cooldown, 0 = ready  → frac = cooldown / max
+            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I"    };
+            String[] tooltips = { "Dash","Blink","Slash","Cannon","Rewind","Pillar","Swap","Quagmire","Stone" };
             float todoFrac = (GameConfig.todoCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, todoSwapCooldown / GameConfig.todoCooldown))
                     : 0f;
+            float quagFrac = (GameConfig.quagmireCooldown > 0f)
+                    ? Math.max(0f, Math.min(1f, quagmireCooldown / GameConfig.quagmireCooldown))
+                    : 0f;
+            float stoneFrac = isChargingStoneCanon
+                    ? Math.min(1f, stoneCanonCharge / GameConfig.stoneCanonMaxCharge)
+                    : ((GameConfig.stoneCanonCooldown > 0f)
+                        ? Math.max(0f, Math.min(1f, 1f - stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
+                        : 1f);
             float[]  fracs = {
                     player.abilities.getDashCooldownFrac(),
                     player.abilities.getBlinkCooldownFrac(),
@@ -2524,16 +2896,23 @@ public class Window {
                     player.abilities.getCannonCooldownFrac(),
                     player.abilities.getRewindCooldownFrac(),
                     player.abilities.getPillarCooldownFrac(),
-                    todoFrac
+                    todoFrac,
+                    quagFrac,
+                    stoneFrac
             };
+            // Stone canon color pulses orange while charging
+            float stoneR = isChargingStoneCanon
+                    ? 0.85f + (float)Math.sin(glfwGetTime() * 6) * 0.15f : 0.65f;
             int[] colors = {
                     ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),  // Q dash: cyan
                     ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),  // E blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f), // F cleave: amber
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f), // F slash: amber
                     ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.1f, 1.0f),  // G cannon: gold
                     ImGui.colorConvertFloat4ToU32(0.3f,  0.6f,  1.0f, 1.0f),  // Z rewind: blue
                     ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f), // K pillar: grey
-                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f, 1.0f)   // J swap: pink-magenta
+                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f, 1.0f),  // J swap: pink-magenta
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f), // M quagmire: muddy green
+                    ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f) // I stone: orange-grey
             };
 
             for (int i = 0; i < labels.length; i++) {
@@ -2553,9 +2932,9 @@ public class Window {
             }
         }
 
-        // Row 2 — X (Stand)  H (Seal place)  B (Seal teleport)  V (Substitute)
+        // Row 2 — X (Stand)  H (Seal place)  B (Seal teleport)  V (Substitute)  L (Heal)
         {
-            float totalW = 4 * iconSize + 3 * spacing;
+            float totalW = 5 * iconSize + 4 * spacing;
             float startX = screenW - totalW - 14f;
             float startY = screenH - iconSize - 14f;
 
@@ -2584,11 +2963,17 @@ public class Window {
                     ? ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1.0f) // bright white when primed
                     : ImGui.colorConvertFloat4ToU32(0.85f, 0.87f, 0.95f, 1.0f);
 
-            String[] labels2   = { "X",     "H",    "B",    "V"    };
-            String[] tooltips2 = { "Stand", "Seal", "Warp", "Sub"  };
+            // L: heal — green, pulses brighter when actively healing
+            float healFrac  = player.abilities.getHealCooldownFrac();
+            int   healColor = player.abilities.isHealing
+                    ? ImGui.colorConvertFloat4ToU32(0.1f, 1.0f, 0.35f, 1.0f) // bright green when healing
+                    : ImGui.colorConvertFloat4ToU32(0.15f, 0.75f, 0.30f, 1.0f);
+
+            String[] labels2   = { "X",     "H",    "B",    "V",   "L"    };
+            String[] tooltips2 = { "Stand", "Seal", "Warp", "Sub", "Heal" };
             float[]  fracs2    = { standDeployed ? 1f : standFrac,
-                                   sealPlaceFrac, sealTpFrac, subFracDisplay };
-            int[]    colors2   = { standColor, sealPlaceColor, sealTpColor, subColor };
+                                   sealPlaceFrac, sealTpFrac, subFracDisplay, healFrac };
+            int[]    colors2   = { standColor, sealPlaceColor, sealTpColor, subColor, healColor };
 
             for (int i = 0; i < labels2.length; i++) {
                 float x = startX + i * (iconSize + spacing);
@@ -2655,8 +3040,10 @@ public class Window {
         // ── SPECIAL ABILITIES ─────────────────────────────────────────────────
         ImGui.textColored(0.95f, 0.4f, 1.0f, 1.0f, "SPECIAL ABILITIES");
         ImGui.separator();
-        helpRow("[J]   Position Swap",   "Instantly swap places with the nearest enemy in range. Good for getting out of a bad spot or dropping them off a cliff.");
-        helpRow("[V]   Substitute",      "Hold [V] to prime a paper decoy. The next hit you take is completely negated — you teleport backward and a paper dummy explodes in your place, damaging nearby enemies.");
+        helpRow("[J]   Position Swap",  "Instantly swap places with the nearest enemy in range. Good for getting out of a bad spot — or dropping them off a cliff.");
+        helpRow("[V]   Substitute",     "Hold [V] to get ready. The next hit you take is completely negated — you teleport backward and a paper dummy is left at your old spot. A second later it explodes, damaging nearby enemies.");
+        helpRow("[M]   Quagmire",       "Shoot a mud wave toward the enemy you're looking at. It travels along the ground and traps them on contact — they can't move for several seconds.");
+        helpRow("[I]   Stone Canon",    "Hold [I] while near stone blocks to charge up. Nearby stone is absorbed into a growing projectile. Release to fire. Bigger charge = more stone consumed = bigger explosion. You can't move while charging.");
         ImGui.spacing();
 
         // ── MANHATTAN TRANSFER ────────────────────────────────────────────────

@@ -219,25 +219,29 @@ public class GameConfig {
 
     // ── ENEMIES ───────────────────────────────────────────────────────────────
     // GRUNT — standard pursuer.  Medium speed, medium health.
-    public static float gruntSpeed        = 3.5f;
-    public static float gruntHealth       = 50f;
-    public static float gruntDamagePerSec = 8f;
-    public static float gruntAggroRange   = 24f;
-    public static float gruntAttackRange  = 1.5f;
+    public static float gruntSpeed          = 3.5f;
+    public static float gruntHealth         = 50f;
+    public static float gruntDamagePerSec   = 8f;
+    public static float gruntAggroRange     = 24f;
+    public static float gruntAttackRange    = 1.5f;
+    /** Seconds between discrete attacks. Damage per hit = damagePerSec * interval. */
+    public static float gruntAttackInterval = 1.5f;
 
     // BRUTE — slow tank.  High health, heavy damage.
-    public static float bruteSpeed        = 1.8f;
-    public static float bruteHealth       = 200f;
-    public static float bruteDamagePerSec = 20f;
-    public static float bruteAggroRange   = 16f;
-    public static float bruteAttackRange  = 2.0f;
+    public static float bruteSpeed          = 1.8f;
+    public static float bruteHealth         = 200f;
+    public static float bruteDamagePerSec   = 20f;
+    public static float bruteAggroRange     = 16f;
+    public static float bruteAttackRange    = 2.0f;
+    public static float bruteAttackInterval = 2.2f;
 
     // STALKER — fast glass cannon.  Long aggro, fragile.
-    public static float stalkerSpeed        = 6.5f;
-    public static float stalkerHealth       = 25f;
-    public static float stalkerDamagePerSec = 6f;
-    public static float stalkerAggroRange   = 36f;
-    public static float stalkerAttackRange  = 1.5f;
+    public static float stalkerSpeed          = 6.5f;
+    public static float stalkerHealth         = 25f;
+    public static float stalkerDamagePerSec   = 6f;
+    public static float stalkerAggroRange     = 36f;
+    public static float stalkerAttackRange    = 1.5f;
+    public static float stalkerAttackInterval = 0.9f;
 
     // ── ENEMY WAVE SPAWNING ───────────────────────────────────────────────────
     /** Seconds between automatic wave spawns. */
@@ -255,6 +259,31 @@ public class GameConfig {
     public static float pillarMaxHeight = 40.0f;   // Max altitude gained per cast
     public static float pillarTaper     = 0.15f;   // REDUCED: How much it widens per block downwards (more subtle)
     public static float pillarCooldown  = 2.5f;    // Seconds before it can be cast again
+
+    // ── QUAGMIRE (M key) ─────────────────────────────────────────────────────
+    // A wave of mud erupts from slightly in front of the player and races
+    // toward the targeted enemy, trapping it on contact.
+    public static float quagmireRange        = 22f;  // max target range (blocks)
+    public static float quagmireTrapDuration = 4.0f; // seconds the enemy is frozen
+    public static float quagmireSpreadSpeed  = 14f;  // blocks/sec the mud wave travels
+    public static float quagmireCooldown     = 8.0f;
+
+    // ── STONE CANON (I key) ───────────────────────────────────────────────────
+    // Hold I to charge — nearby stone blocks are consumed and shaped into a
+    // projectile.  Release to fire.  Player position is locked while charging.
+    public static float stoneCanonScanRadius  = 7f;    // radius to search for stone
+    public static float stoneCanonMaxCharge   = 3.0f;  // seconds to full charge
+    public static float stoneCanonConsumeRate = 0.55f; // seconds between block consumes
+    public static float stoneCanonMinSpeed    = 35f;   // projectile speed at 0 charge
+    public static float stoneCanonMaxSpeed    = 55f;   // projectile speed at full charge
+    public static float stoneCanonMinRadius   = 3.0f;  // blast radius at 0 charge
+    public static float stoneCanonMaxRadius   = 8.0f;  // blast radius at full charge
+    public static float stoneCanonMinDamage   = 80f;
+    public static float stoneCanonMaxDamage   = 300f;
+    public static float stoneCanonMinScale    = 0.35f; // projectile visual scale
+    public static float stoneCanonMaxScale    = 1.4f;
+    public static float stoneCanonCooldown    = 4.0f;
+    public static float stoneCanonLifetime    = 6.0f;  // projectile max travel time
 
     // ── TODO'S TECHNIQUE (J key) ──────────────────────────────────────────────
     // Tap J to instantly swap positions with the nearest visible enemy.

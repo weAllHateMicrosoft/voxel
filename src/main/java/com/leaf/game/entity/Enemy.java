@@ -3,6 +3,7 @@ package com.leaf.game.entity;
 import com.leaf.game.core.GameConfig;
 import com.leaf.game.world.World;
 import com.leaf.game.world.Chunk;
+import com.leaf.game.world.Block;
 import org.joml.Vector3f;
 
 import java.util.List;
@@ -104,6 +105,12 @@ public class Enemy {
     public float hitFlashTimer = 0f;
     /** Damage dealt to the player this frame — accumulated by EnemyManager. */
     public float framePlayerDamage = 0f;
+    /** Counts down between discrete attack hits — prevents continuous damage. */
+    private float attackCooldown = 0f;
+    /** Seconds between attack hits (set per-type in constructor). */
+    private float attackInterval;
+    /** When > 0 the enemy is mud-trapped and cannot move or attack. */
+    public float mudTrapTimer = 0f;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Construction
@@ -116,32 +123,36 @@ public class Enemy {
 
         switch (type) {
             case GRUNT -> {
-                maxHealth    = GameConfig.gruntHealth;
-                speed        = GameConfig.gruntSpeed;
-                damagePerSec = GameConfig.gruntDamagePerSec;
-                aggroRange   = GameConfig.gruntAggroRange;
-                attackRange  = GameConfig.gruntAttackRange;
+                maxHealth      = GameConfig.gruntHealth;
+                speed          = GameConfig.gruntSpeed;
+                damagePerSec   = GameConfig.gruntDamagePerSec;
+                aggroRange     = GameConfig.gruntAggroRange;
+                attackRange    = GameConfig.gruntAttackRange;
+                attackInterval = GameConfig.gruntAttackInterval;
             }
             case BRUTE -> {
-                maxHealth    = GameConfig.bruteHealth;
-                speed        = GameConfig.bruteSpeed;
-                damagePerSec = GameConfig.bruteDamagePerSec;
-                aggroRange   = GameConfig.bruteAggroRange;
-                attackRange  = GameConfig.bruteAttackRange;
+                maxHealth      = GameConfig.bruteHealth;
+                speed          = GameConfig.bruteSpeed;
+                damagePerSec   = GameConfig.bruteDamagePerSec;
+                aggroRange     = GameConfig.bruteAggroRange;
+                attackRange    = GameConfig.bruteAttackRange;
+                attackInterval = GameConfig.bruteAttackInterval;
             }
             case STALKER -> {
-                maxHealth    = GameConfig.stalkerHealth;
-                speed        = GameConfig.stalkerSpeed;
-                damagePerSec = GameConfig.stalkerDamagePerSec;
-                aggroRange   = GameConfig.stalkerAggroRange;
-                attackRange  = GameConfig.stalkerAttackRange;
+                maxHealth      = GameConfig.stalkerHealth;
+                speed          = GameConfig.stalkerSpeed;
+                damagePerSec   = GameConfig.stalkerDamagePerSec;
+                aggroRange     = GameConfig.stalkerAggroRange;
+                attackRange    = GameConfig.stalkerAttackRange;
+                attackInterval = GameConfig.stalkerAttackInterval;
             }
             default -> {
-                maxHealth    = 50f;
-                speed        = 3f;
-                damagePerSec = 8f;
-                aggroRange   = 20f;
-                attackRange  = 1.5f;
+                maxHealth      = 50f;
+                speed          = 3f;
+                damagePerSec   = 8f;
+                aggroRange     = 20f;
+                attackRange    = 1.5f;
+                attackInterval = 1.5f;
             }
         }
         this.health = maxHealth;
@@ -201,13 +212,19 @@ public class Enemy {
     // ═════════════════════════════════════════════════════════════════════════
 
     private void tickAI(float dt, float distToPlayer) {
+        // Mud-trapped: frozen in place, cannot act
+        if (mudTrapTimer > 0f) {
+            mudTrapTimer = Math.max(0f, mudTrapTimer - dt);
+            return;
+        }
+
         float leash = aggroRange * 1.6f; // give up chasing past this distance
 
         switch (state) {
             case IDLE -> {
                 if (distToPlayer <= aggroRange) {
                     state      = State.ALERTED;
-                    alertTimer = (type == Type.BRUTE) ? 1.1f : 0.55f; // brutes react slowly
+                    alertTimer = (type == Type.BRUTE) ? 1.1f : 0.55f;
                 }
             }
             case ALERTED -> {
@@ -219,7 +236,13 @@ public class Enemy {
                 else if (distToPlayer > leash)    state = State.IDLE;
             }
             case ATTACK -> {
-                framePlayerDamage = damagePerSec * dt;
+                // Discrete hits rather than continuous damage
+                if (attackCooldown > 0f) {
+                    attackCooldown -= dt;
+                } else {
+                    framePlayerDamage = damagePerSec * attackInterval;
+                    attackCooldown    = attackInterval;
+                }
                 if (distToPlayer > attackRange * 1.25f) state = State.CHASE;
             }
         }
@@ -231,6 +254,9 @@ public class Enemy {
 
     private void tickMovement(float dt, World world, Vector3f target,
                               float distToTarget, List<Enemy> allEnemies) {
+
+        // Mud-trapped: can't move (mudTrapTimer already ticked in tickAI)
+        if (mudTrapTimer > 0f) return;
 
         // Only move when actively chasing
         if (state != State.CHASE && state != State.ATTACK) return;
@@ -244,7 +270,13 @@ public class Enemy {
         float ndx = dx / hd;
         float ndz = dz / hd;
 
-        float step = speed * dt;
+        // ── MUD underfoot check — slow to 30% speed ───────────────────────────
+        int underX = (int) Math.floor(position.x);
+        int underY = (int) Math.floor(position.y - 0.1f);
+        int underZ = (int) Math.floor(position.z);
+        boolean onMud = world.getBlock(underX, underY, underZ) == Block.MUD;
+
+        float step = speed * dt * (onMud ? 0.30f : 1.0f);
 
         // ── Try X then Z independently ────────────────────────────────────────
         float nx = position.x + ndx * step;

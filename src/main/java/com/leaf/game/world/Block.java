@@ -4,6 +4,7 @@ public enum Block {
     AIR       (0.00f, 0.00f, 0.00f, 0.0f,  0.0f),
     GRASS     (0.30f, 0.70f, 0.20f, 1.0f,  0.8f),
     DIRT      (0.50f, 0.30f, 0.10f, 1.0f,  1.0f),
+    MUD       (0.32f, 0.18f, 0.04f, 1.0f,  0.5f), // Quagmire — dark bog mud, slows enemies forever
     STONE     (0.50f, 0.50f, 0.50f, 1.0f,  4.0f),
     WATER     (0.10f, 0.42f, 0.80f, 0.65f, 0.0f), // 65% Opacity!
     SAND      (0.80f, 0.72f, 0.45f, 1.0f,  0.9f),
