@@ -1620,6 +1620,8 @@ public class Window {
         if (aimingAtDrone) {
             // Both states are now high-contrast Yellow/Gold
             int yellow  = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
+            int grey = ImGui.colorConvertFloat4ToU32(0.5f, 0.5f, 0.5f, 1.0f);
+
             int blackBg = ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.85f);
 
             float circleRadius = 12.0f; // Shorter, tighter radius (down from 18)
@@ -1630,8 +1632,8 @@ public class Window {
                 draw.addCircle(cx, cy, circleRadius, yellow, 32, 2.5f);
             } else {
                 draw.addRectFilled(cx + 12f, cy - 20f, cx + 110f, cy + 4f, blackBg, 4f);
-                draw.addText(cx + 18f, cy - 12f, yellow, "REFLECT [C]"); // Yellow indicator
-                draw.addCircle(cx, cy, circleRadius, yellow, 32, 2.0f); // Yellow circle
+                draw.addText(cx + 18f, cy - 12f, grey, "REFLECT [C]"); // Yellow indicator
+                draw.addCircle(cx, cy, circleRadius, grey, 32, 2.0f); // Yellow circle
             }
         }
         // Health bar and hotbar — hidden while piloting the drone
@@ -2071,35 +2073,39 @@ public class Window {
      */
     private void renderAbilityHUD(imgui.ImDrawList draw, float screenW, float screenH) {
         // ── Ability icon layout: two rows, bottom-right ───────────────────────
-        // Row 1 (top, further from edge): Q  E  G  Z   — original four abilities
+        // Row 1 (top, further from edge): Q  E F G  Z   — original four abilities
         // Row 2 (bottom, near edge):      X  H  B       — Stand + Seal abilities
         float iconSize = 28f;
         float spacing  = 6f;
         int   black    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
         int   grey     = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
 
-        // Row 1 — Q / E / G / Z
+        // Row 1 — Q / E / F / G / Z / K
         {
-            float totalW = 4 * iconSize + 3 * spacing;
+            float totalW = 6 * iconSize + 5 * spacing;
             float startX = screenW - totalW - 14f;
             float startY = screenH - iconSize * 2f - spacing - 14f;
 
-            String[] labels   = { "Q",  "E",  "G",  "Z"  };
-            String[] tooltips = { "Dash", "Blink", "Canon", "Rewind" };
+            String[] labels   = { "Q",  "E",  "F",  "G",  "Z",  "K"  };
+            String[] tooltips = { "Dash", "Blink", "Cleave", "Canon", "Rewind", "Pillar" };
             float[]  fracs    = {
                     player.abilities.getDashCooldownFrac(),
                     player.abilities.getBlinkCooldownFrac(),
+                    player.attacks.getMeleeCooldownFrac(),
                     player.abilities.getCannonCooldownFrac(),
-                    player.abilities.getRewindCooldownFrac()
+                    player.abilities.getRewindCooldownFrac(),
+                    player.abilities.getPillarCooldownFrac()
             };
             int[] colors = {
                     ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),  // dash: cyan
                     ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),  // blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.65f, 0.1f, 1.0f),  // cannonball: gold
-                    ImGui.colorConvertFloat4ToU32(0.3f,  0.6f,  1.0f, 1.0f)   // rewind: blue
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f), // cleave: amber-gold
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.1f, 1.0f),  // cannonball: gold
+                    ImGui.colorConvertFloat4ToU32(0.3f,  0.6f,  1.0f, 1.0f),  // rewind: blue
+                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f)
             };
 
-            for (int i = 0; i < 4; i++) {
+            for (int i = 0; i < 5; i++) {
                 float x = startX + i * (iconSize + spacing);
                 draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
                 float fillH = iconSize * fracs[i];

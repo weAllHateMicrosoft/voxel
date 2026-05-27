@@ -5,6 +5,7 @@ import com.leaf.game.util.Camera;
 import com.leaf.game.world.Chunk;
 import com.leaf.game.world.World;
 import org.joml.Vector3f;
+import com.leaf.game.world.Block;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -63,6 +64,16 @@ public class AbilityController {
     private float    cannonPitchSpin = 0f;   // accumulated pitch offset
     private float    cannonPitchRate = 0f;   // radians/sec set at fire time
     private boolean  lastG           = false;
+
+    // ── STONE PILLAR (hold K) ─────────────────────────────────────────────────
+    public  boolean isPillaring         = false;
+    private float   pillarStartY        = 0f; // Where the earth connects to the ground
+    private float   pillarStartPlayerY  = 0f; // Altitude the player was at when cast
+    private float   pillarCenterX       = 0f;
+    private float   pillarCenterZ       = 0f;
+    private float   pillarCooldownTimer = 0f;
+    private boolean lastK               = false;
+
     /**
      * Launch direction locked at the moment charging begins (yaw only).
      * Arc preview and chunk preloading use this so they don't change if
@@ -120,7 +131,7 @@ public class AbilityController {
     public float getCannonCooldownFrac() { return cannonCooldown <= 0 ? 1f : 1f - cannonCooldown / GameConfig.cannonCooldown; }
     public float getRewindCooldownFrac() { return rewindCooldown <= 0 ? 1f : 1f - rewindCooldown / GameConfig.rewindCooldown; }
     public float getBlinkCooldownFrac()  { return blinkCooldown  <= 0 ? 1f : 1f - blinkCooldown  / GameConfig.blinkCooldown; }
-
+    public float getPillarCooldownFrac() { return pillarCooldownTimer <= 0 ? 1f : 1f - pillarCooldownTimer / GameConfig.pillarCooldown; }
     // ─────────────────────────────────────────────────────────────────────────
     //  Main tick — call from Player.update() every frame, before physics block
     // ─────────────────────────────────────────────────────────────────────────
@@ -142,39 +153,94 @@ public class AbilityController {
         recordSnapshot(camera, dt);
         updateRewindTrail();
 
-        // ── REWIND (Z) — full takeover ────────────────────────────────────────
-        // FIX: lastZ updated unconditionally at end of block so edge-detect works.
-        boolean zHeld = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
+        // ── STONE PILLAR (hold K) ─────────────────────────────────────────────
+        boolean kHeld = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS;
 
-        if (isRewinding) {
-            if (!zHeld || snapshots.isEmpty()) {
-                // Z released or ran out of history — end rewind
-                isRewinding    = false;
-                rewindCooldown = GameConfig.rewindCooldown;
-                lastZ = zHeld;
-                // Fall through to normal physics this frame
-            } else {
-                applyRewind(camera, dt);
-                blendOverlay(new Vector3f(0.25f, 0.55f, 1.0f), 0.26f, dt);
-                decayCameraEffects(0f, 0f, dt);
-                lastZ = zHeld;
-                return true; // caller skips physics
+        if (kHeld && !lastK && !isAnyAbilityActive() && pillarCooldownTimer <= 0f) {
+            int cx = (int) Math.floor(player.position.x);
+            int cz = (int) Math.floor(player.position.z);
+            int sy = (int) Math.floor(player.position.y);
+            if (sy >= Chunk.HEIGHT) sy = Chunk.HEIGHT - 1;
+
+            // Find the solid ground below the player
+            while (sy > 0 && !world.getBlock(cx, sy, cz).isSolid()) {
+                sy--;
             }
-        } else {
-            // Start rewind on leading edge of Z (need history + not on cooldown)
-            if (zHeld && !lastZ && rewindCooldown <= 0f
-                    && !isAnyAbilityActive() && snapshots.size() >= 4) {
-                isRewinding = true;
-                rewindAccum = 0f;
-                // Start consuming immediately this frame
-                applyRewind(camera, dt);
-                blendOverlay(new Vector3f(0.25f, 0.55f, 1.0f), 0.26f, dt);
-                decayCameraEffects(0f, 0f, dt);
-                lastZ = zHeld;
-                return true;
+
+            // 1. MUST BE GROUNDED: Player cannot be more than 1.5 blocks above the surface
+            boolean isGrounded = (player.position.y - sy) <= 1.5f;
+
+            // 2. MASS CHECK: Require a substantial foundation (check a 5x5 area, 5 blocks deep)
+            // Volume = 5 * 5 * 5 = 125 blocks.
+            int solidMass = 0;
+            if (isGrounded && sy > 0) {
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        for (int dy = 0; dy >= -4; dy--) {
+                            // Ensure we don't check below the bottom of the world
+                            if (sy + dy >= 0 && world.getBlock(cx + dx, sy + dy, cz + dz).isSolid()) {
+                                solidMass++;
+                            }
+                        }
+                    }
+                }
             }
-            lastZ = zHeld;
+
+            // Require at least 40 out of 125 possible blocks to be solid.
+            // Extremely lenient for jagged terrain/slopes, but mathematically rejects
+            // thin floating platforms or narrow pillars!
+            if (isGrounded && solidMass >= 90) {
+                isPillaring = true;
+                pillarCenterX = player.position.x;
+                pillarCenterZ = player.position.z;
+                pillarStartPlayerY = player.position.y;
+                pillarStartY = sy + 1;
+            }
         }
+
+        if (isPillaring) {
+            if (!kHeld || (player.position.y - pillarStartPlayerY) > GameConfig.pillarMaxHeight) {
+                // End ability
+                isPillaring = false;
+                pillarCooldownTimer = GameConfig.pillarCooldown;
+            } else {
+                // Ascend
+                player.setVelocityY(GameConfig.pillarRiseSpeed);
+
+                // Build the expanding pillar frame
+                buildPillarFrame(world);
+
+                // ── SENSORY OVERLOAD FOR THE CASTER ──
+
+                // 1. Heavy screen shake
+                player.attacks.shakeRequest = Math.max(player.attacks.shakeRequest, 0.18f);
+
+                // 2. FOV Boost (Pulls the camera back to simulate intense upward velocity)
+                smoothFovBoost += (25f - smoothFovBoost) * Math.min(1f, 15f * dt);
+
+                // 3. Dusty stone overlay to make the screen feel like it's inside an eruption
+                blendOverlay(new Vector3f(0.50f, 0.50f, 0.52f), 0.35f, dt);
+
+                // 4. Particle Debris: Eject stone blocks outwards from the edges of the platform
+                int debrisCount = 2 + (int)(Math.random() * 3);
+                for (int i = 0; i < debrisCount; i++) {
+                    float angle = (float) (Math.random() * Math.PI * 2);
+                    float edgeRadius = 1.6f; // Spawn just outside the 3x3 center
+
+                    int bx = (int) Math.floor(pillarCenterX + Math.cos(angle) * edgeRadius);
+                    int bz = (int) Math.floor(pillarCenterZ + Math.sin(angle) * edgeRadius);
+                    int by = (int) Math.floor(player.position.y) - 1;
+
+                    // Launch outwards and slightly up
+                    float speed = 12f + (float) Math.random() * 8f;
+                    Vector3f ejectVel = new Vector3f((float) Math.cos(angle), 0.2f, (float) Math.sin(angle)).normalize().mul(speed);
+
+                    // We can reuse the attack controller's debris system!
+                    player.attacks.pendingDebris.add(new AttackController.DebrisSpawn(bx, by, bz, Block.STONE, ejectVel));
+                }
+            }
+        }
+        lastK = kHeld;
 
         // ── BLINK (E) — instant ───────────────────────────────────────────────
         boolean eHeld = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
@@ -259,6 +325,11 @@ public class AbilityController {
 
         // Decay effects when nothing is happening
         if (!isDashing && !isCannonballing && !isCharging_ && blinkFlashTimer <= 0f) {
+            decayCameraEffects(0f, 0f, dt);
+            blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
+        }
+
+        if (!isDashing && !isCannonballing && !isCharging_ && blinkFlashTimer <= 0f && !isPillaring) {
             decayCameraEffects(0f, 0f, dt);
             blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
         }
@@ -433,7 +504,7 @@ public class AbilityController {
 
     /** True when any ability is running (dash, cannonball charging/firing, rewind). */
     public boolean isAnyAbilityActive() {
-        return isDashing || isCannonballing || isCharging_ || isRewinding;
+        return isDashing || isCannonballing || isCharging_ || isRewinding|| isPillaring;
     }
 
     /**
@@ -456,6 +527,7 @@ public class AbilityController {
         if (cannonCooldown > 0f) cannonCooldown -= dt;
         if (rewindCooldown > 0f) rewindCooldown -= dt;
         if (blinkCooldown  > 0f) blinkCooldown  -= dt;
+        if (pillarCooldownTimer > 0f) pillarCooldownTimer -= dt;
     }
 
     /**
@@ -476,5 +548,62 @@ public class AbilityController {
     private void decayAll(float dt) {
         decayCameraEffects(0f, 0f, dt);
         blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
+    }
+
+    /**
+     * Builds and actively expands a solid stone column from the ground anchor
+     * up to the player's current altitude, automatically filling gaps underneath.
+     */
+    private void buildPillarFrame(World world) {
+        java.util.Set<Chunk> dirtyChunks = new java.util.HashSet<>();
+
+        int pY = (int) Math.floor(player.position.y);
+        pY = Math.min(Chunk.HEIGHT - 1, pY);
+
+        // Max radius is determined by the distance from the player to the original anchor
+        float maxDepth = Math.max(0f, (float) player.position.y - pillarStartY);
+        float maxR = 1.5f + maxDepth * GameConfig.pillarTaper;
+        int R = (int) Math.ceil(maxR);
+
+        for (int dx = -R; dx <= R; dx++) {
+            for (int dz = -R; dz <= R; dz++) {
+                float dist = (float) Math.sqrt(dx * dx + dz * dz);
+
+                // Outside the maximum cone bound
+                if (dist > maxR) continue;
+
+                int bx = (int) Math.floor(pillarCenterX) + dx;
+                int bz = (int) Math.floor(pillarCenterZ) + dz;
+
+                // Calculate where the surface of the pillar should be at this horizontal distance
+                float depthAtDist = 0f;
+                if (dist > 1.5f) {
+                    depthAtDist = (dist - 1.5f) / GameConfig.pillarTaper;
+                }
+
+                int pillarSurfaceY = (int) Math.floor(player.position.y - depthAtDist);
+                pillarSurfaceY = Math.min(pillarSurfaceY, pY); // Cap at player's current level
+
+                // Fill downwards from the pillar's surface until we hit solid ground
+                // This ensures uneven terrain and gaps are perfectly filled
+                int localY = pillarSurfaceY;
+
+                // Stop dropping blocks infinitely if we launch over an empty ravine void
+                int lowestAllowedY = Math.max(0, (int) pillarStartY - (int) GameConfig.pillarMaxHeight);
+
+                while (localY >= lowestAllowedY && !world.getBlock(bx, localY, bz).isSolid()) {
+                    world.setBlock(bx, localY, bz, Block.STONE); // SOLID STONE
+
+                    Chunk c = world.getChunk(Math.floorDiv(bx, Chunk.SIZE), Math.floorDiv(localY, Chunk.HEIGHT), Math.floorDiv(bz, Chunk.SIZE));
+                    if (c != null) dirtyChunks.add(c);
+                    localY--;
+                }
+            }
+        }
+
+        // Rebuild meshes on the same frame for immediate collision and visuals
+        for (Chunk c : dirtyChunks) {
+            world.buildChunkMeshes(c);
+        }
     }
 }

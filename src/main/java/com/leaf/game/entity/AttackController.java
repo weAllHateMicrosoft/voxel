@@ -598,6 +598,10 @@ public class AttackController {
         if (rangedCooldown > 0f) rangedCooldown -= dt;
     }
 
+    public float getMeleeCooldownFrac() {
+        return meleeCooldown <= 0f ? 1f : 1f - meleeCooldown / GameConfig.meleeCooldown;
+    }
+
     private void blendOverlay(Vector3f targetColor, float targetStrength, float dt) {
         float t = Math.min(1f, 13f * dt);
         overlayColor.lerp(targetColor, t);

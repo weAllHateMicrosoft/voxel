@@ -67,6 +67,7 @@ public class GameConfig {
     public static int caveSurfaceBuffer = 6;
     public static int caveBedrockFloor  = 4;
 
+
     public static float sunDirX         = 0.6f;
     public static float sunDirY         = 1.0f;
     public static float sunDirZ         = 0.4f;
@@ -215,5 +216,10 @@ public class GameConfig {
      *   2 — look toward the nearest remaining seal after landing
      */
     public static int sealLookMode = 1;
+
+    public static float pillarRiseSpeed = 16.0f;   // Blocks/sec upward velocity
+    public static float pillarMaxHeight = 40.0f;   // Max altitude gained per cast
+    public static float pillarTaper     = 0.15f;   // REDUCED: How much it widens per block downwards (more subtle)
+    public static float pillarCooldown  = 2.5f;    // Seconds before it can be cast again
 
 }
