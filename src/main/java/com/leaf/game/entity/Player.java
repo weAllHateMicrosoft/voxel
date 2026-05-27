@@ -60,6 +60,9 @@ public class Player {
     // Ticked after attacks; never takes full positional control.
     public final SealController seals = new SealController(this);
 
+    // ── LIGHTNING (U key) ─────────────────────────────────────────────────────
+    public final LightningController lightning = new LightningController(this);
+
     // ── GROUND SMASH ─────────────────────────────────────────────────────────
     private boolean isSmashing = false;
     private boolean lastShift  = false;   // edge detector for smash trigger
@@ -98,7 +101,7 @@ public class Player {
         // ── DOUBLE-TAP SPACE → TOGGLE FLIGHT ─────────────────────────────────
         boolean currentSpace = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (currentSpace && !lastSpace) {
-            if (now - lastSpaceTime < 0.3) {
+            if (now - lastSpaceTime < 0.3 && !stand.isInStandPerspective()) {
                 debugMode = !debugMode;
                 velocityY = 0f;
                 isSmashing = false;
@@ -163,6 +166,7 @@ public class Player {
             }
             if (onGround) highestY = position.y;
             else if (position.y > highestY) highestY = position.y;
+            if (position.y < 1f) { position.y = 1f; velocityY = 0f; }
             return;
         }
 
@@ -175,20 +179,24 @@ public class Player {
         }
 
         // ── ATTACK TICK ────────────────────────────────────────────────────────
-        // Runs after abilities (so rewind takeover is already handled above).
-        // Never takes full positional control — attacks are cosmetic + destructive only.
-        attacks.tick(window, camera, world, deltaTime);
+        // Blocked during Kamui — the player cannot deal damage while phased.
+        if (!abilities.isKamui) {
+            attacks.tick(window, camera, world, deltaTime);
+        }
 
         // ── SEAL TICK (Minato's Seal) ──────────────────────────────────────────
-        // Runs after attacks; projectiles and teleport are handled here.
-        // Never takes full positional control.
         seals.tick(window, camera, world, deltaTime);
+
+        // ── LIGHTNING TICK ─────────────────────────────────────────────────────
+        lightning.tick(window, camera, world, deltaTime, (float) glfwGetTime());
 
         float dx = 0f, dy = 0f, dz = 0f;
 
         // ── GROUND SMASH — pre-empt normal input while smashing ───────────────
         if (isSmashing) {
-            velocityY = -GameConfig.smashDescentSpeed;
+            // Accelerate downward like real free-fall, capped at terminal smash speed
+            velocityY = Math.max(-GameConfig.smashDescentMaxSpeed,
+                                  velocityY - GameConfig.smashDescentAccel * deltaTime);
             float targetPitch = -(float)(Math.PI * 0.305);
             camera.pitch += (targetPitch - camera.pitch) * Math.min(1f, 4f * deltaTime);
 
@@ -327,6 +335,8 @@ public class Player {
             highestY = position.y;
         }
 
+        // Hard floor — never fall below the bedrock layer
+        if (position.y < 1f) { position.y = 1f; velocityY = 0f; }
         camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
     }
 

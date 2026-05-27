@@ -38,9 +38,10 @@ public class AbilityController {
 
     private final Player player;
 
-    // ── HEALING (hold J) ──────────────────────────────────────────────────────
+    // ── HEALING (hold L) ──────────────────────────────────────────────────────
     public  boolean isHealing         = false;
     private float   healCooldownTimer = 0f;
+    private float   healChannelTimer  = 0f;  // how long L has been held this session
     // ── DASH (Q) ───────────────────────────────────────────────────────────────
     public  boolean  isDashing    = false;
     public  float    dashDirX     = 0f;   // unit vector, read by Player.update()
@@ -87,16 +88,22 @@ public class AbilityController {
     /** Trajectory preview dots for the charging arc. Window renders these. */
     public  final List<Vector3f> trajectoryArc = new ArrayList<>();
 
-    // ── STATE REWIND (hold Z) ─────────────────────────────────────────────────
-    public  boolean  isRewinding   = false;
+    // ── KAMUI (Z toggle) — phase into a separate dimension ───────────────────
+    /** True while the player is phased (invincible, cannot deal damage). */
+    public  boolean isKamui        = false;
+    /** Seconds remaining in the current kamui phase. */
+    public  float   kamuiTimer     = 0f;
+    /** Cooldown after exiting kamui. */
+    private float   kamuiCooldown  = 0f;
+    private boolean lastZ          = false;
+
+    // ── STATE REWIND (internal — no longer key-bound, kept for possible future use) ─
+    public  boolean  isRewinding    = false;   // always false; legacy field kept for Window compat
     private float    rewindCooldown = 0f;
     private float    snapshotTimer  = 0f;
     private float    rewindAccum    = 0f;
-    // Snapshot layout: [x, y, z, velocityY, cameraYaw, cameraPitch]
-    private final ArrayDeque<float[]> snapshots = new ArrayDeque<>();
-    /** Recent history positions for the ghost trail visualisation. */
-    public  final List<Vector3f> rewindTrail = new ArrayList<>();
-    private boolean  lastZ         = false;
+    private final ArrayDeque<float[]> snapshots  = new ArrayDeque<>();
+    public  final List<Vector3f>      rewindTrail = new ArrayList<>();
 
     // ── BLINK (E) ─────────────────────────────────────────────────────────────
     /** True for exactly one frame after a blink fires — used by Window for trail. */
@@ -132,7 +139,8 @@ public class AbilityController {
     // Cooldown 0 = on cooldown, 1 = fully ready
     public float getDashCooldownFrac()   { return dashCooldown   <= 0 ? 1f : 1f - dashCooldown   / GameConfig.dashCooldown; }
     public float getCannonCooldownFrac() { return cannonCooldown <= 0 ? 1f : 1f - cannonCooldown / GameConfig.cannonCooldown; }
-    public float getRewindCooldownFrac() { return rewindCooldown <= 0 ? 1f : 1f - rewindCooldown / GameConfig.rewindCooldown; }
+    public float getRewindCooldownFrac() { return 1f; } // rewind key-binding removed; always ready
+    public float getKamuiCooldownFrac()  { return kamuiCooldown <= 0 ? 1f : 1f - kamuiCooldown / GameConfig.kamuiCooldown; }
     public float getBlinkCooldownFrac()  { return blinkCooldown  <= 0 ? 1f : 1f - blinkCooldown  / GameConfig.blinkCooldown; }
     public float getPillarCooldownFrac() { return pillarCooldownTimer <= 0 ? 1f : 1f - pillarCooldownTimer / GameConfig.pillarCooldown; }
     public float getHealCooldownFrac()   { return healCooldownTimer  <= 0 ? 1f : 1f - healCooldownTimer  / GameConfig.healCooldown;  }
@@ -154,7 +162,6 @@ public class AbilityController {
 
         justBlinked = false;
         tickCooldowns(dt);
-        recordSnapshot(camera, dt);
         updateRewindTrail();
 
         // ── STONE PILLAR (hold K) ─────────────────────────────────────────────
@@ -171,29 +178,36 @@ public class AbilityController {
                 sy--;
             }
 
-            // 1. MUST BE GROUNDED: Player cannot be more than 1.5 blocks above the surface
-            boolean isGrounded = (player.position.y - sy) <= 1.5f;
+            // 1. MUST BE ON GROUND: player feet must be at most 0.6 blocks above surface
+            boolean isGrounded = (player.position.y - sy) <= 0.6f;
 
-            // 2. MASS CHECK: Require a substantial foundation (check a 5x5 area, 5 blocks deep)
-            // Volume = 5 * 5 * 5 = 125 blocks.
-            int solidMass = 0;
-            if (isGrounded && sy > 0) {
-                for (int dx = -2; dx <= 2; dx++) {
-                    for (int dz = -2; dz <= 2; dz++) {
-                        for (int dy = 0; dy >= -4; dy--) {
-                            // Ensure we don't check below the bottom of the world
-                            if (sy + dy >= 0 && world.getBlock(cx + dx, sy + dy, cz + dz).isSolid()) {
-                                solidMass++;
-                            }
+            // 2. DENSE 3×3×3 CHECK directly below player — rejects pillar tops (which
+            //    are only 1 block wide) and floating platforms.  All 27 blocks must be solid.
+            int denseCount = 0;
+            if (isGrounded && sy >= 2) {
+                for (int ddx = -1; ddx <= 1; ddx++) {
+                    for (int ddz = -1; ddz <= 1; ddz++) {
+                        for (int ddy = 0; ddy >= -2; ddy--) {
+                            if (world.getBlock(cx + ddx, sy + ddy, cz + ddz).isSolid()) denseCount++;
                         }
                     }
                 }
             }
 
-            // Require at least 40 out of 125 possible blocks to be solid.
-            // Extremely lenient for jagged terrain/slopes, but mathematically rejects
-            // thin floating platforms or narrow pillars!
-            if (isGrounded && solidMass >= 90) {
+            // 3. WIDE MASS CHECK: 5×5 area, 5 blocks deep — rejects narrow spires/pillars.
+            int solidMass = 0;
+            if (isGrounded && sy > 0) {
+                for (int dx = -2; dx <= 2; dx++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        for (int dy = 0; dy >= -4; dy--) {
+                            if (sy + dy >= 0 && world.getBlock(cx + dx, sy + dy, cz + dz).isSolid()) solidMass++;
+                        }
+                    }
+                }
+            }
+
+            // Dense core (24/27) AND broad foundation (100/125) must both pass.
+            if (isGrounded && denseCount >= 24 && solidMass >= 100) {
                 isPillaring = true;
                 pillarCenterX = player.position.x;
                 pillarCenterZ = player.position.z;
@@ -330,44 +344,59 @@ public class AbilityController {
         // ── HEALING (hold L) ──────────────────────────────────────────────────
         boolean lHeld = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
         if (lHeld && healCooldownTimer <= 0f && !player.debugMode
-                && player.health < player.maxHealth) {
+                && player.health < player.maxHealth
+                && healChannelTimer < GameConfig.healMaxDuration) {
             isHealing = true;
+            healChannelTimer += dt;
             float gain = GameConfig.healPerSecond * dt;
             player.health = Math.min(player.maxHealth, player.health + gain);
             blendOverlay(new Vector3f(0.15f, 0.85f, 0.35f), 0.18f, dt);
         } else {
-            if (isHealing && !lHeld) {
+            if (isHealing || (healChannelTimer >= GameConfig.healMaxDuration && lHeld)) {
+                // Start cooldown: either key released after healing, or channel exhausted
                 healCooldownTimer = GameConfig.healCooldown;
             }
-            isHealing = false;
+            isHealing        = false;
+            healChannelTimer = 0f;  // reset channel time whenever healing is inactive
         }
 
-        // ── STATE REWIND (hold Z) ─────────────────────────────────────────────
+        // ── KAMUI (Z toggle) — phase into a separate dimension ───────────────
         boolean zHeld = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
-        if (!isRewinding && zHeld && !lastZ
-                && rewindCooldown <= 0f && !snapshots.isEmpty() && !isAnyAbilityActive()) {
-            isRewinding = true;
-            rewindAccum  = 0f;
+        if (kamuiCooldown > 0f) kamuiCooldown -= dt;
+
+        if (zHeld && !lastZ) {
+            if (!isKamui && kamuiCooldown <= 0f && !isAnyAbilityActive()) {
+                // Enter the dimension pocket
+                isKamui     = true;
+                kamuiTimer  = GameConfig.kamuiMaxDuration;
+            } else if (isKamui) {
+                // Voluntary exit
+                isKamui        = false;
+                kamuiCooldown  = GameConfig.kamuiCooldown;
+                kamuiTimer     = 0f;
+            }
         }
-        if (isRewinding) {
-            if (!zHeld) {
-                // Z released — end rewind
-                isRewinding    = false;
-                rewindCooldown = GameConfig.rewindCooldown;
+        if (isKamui) {
+            kamuiTimer -= dt;
+            if (kamuiTimer <= 0f) {
+                // Timer expired — forced exit
+                isKamui       = false;
+                kamuiCooldown = GameConfig.kamuiCooldown;
+                kamuiTimer    = 0f;
             } else {
-                // Rewind is active — consume snapshots, show blue vignette, take control
-                applyRewind(camera, dt);
-                blendOverlay(new Vector3f(0.3f, 0.6f, 1.0f), 0.28f, dt);
-                decayCameraEffects(0f, 0f, dt);
-                lastZ = zHeld;
-                return true; // Player.update() skips physics this frame
+                // Pulsing purple/silver shimmer — intensity builds as timer runs low
+                float urgency = 1f - kamuiTimer / GameConfig.kamuiMaxDuration;
+                blendOverlay(new Vector3f(0.45f, 0.0f, 0.85f), 0.22f + urgency * 0.18f, dt);
             }
         }
         lastZ = zHeld;
 
-        // Decay effects when nothing is happening
+        // Snapshot recording kept (not triggered by key, but buffer stays warm for future use)
+        recordSnapshot(camera, dt);
+
+        // Decay effects when nothing active (Kamui handles its own overlay above)
         boolean quiet = !isDashing && !isCannonballing && !isCharging_
-                && blinkFlashTimer <= 0f && !isPillaring && !isRewinding;
+                && blinkFlashTimer <= 0f && !isPillaring && !isKamui;
         if (quiet) {
             decayCameraEffects(0f, 0f, dt);
             blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);

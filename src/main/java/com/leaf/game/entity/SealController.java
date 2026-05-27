@@ -11,6 +11,8 @@ import java.util.List;
 
 import static org.lwjgl.glfw.GLFW.*;
 
+// NOTE: EnemyManager is in the same package — no extra import needed.
+
 /**
  * SealController — "Minato's Seal" ability.
  *
@@ -44,7 +46,7 @@ public class SealController {
     // ─────────────────────────────────────────────────────────────────────────
 
     public static class SealEntry {
-        /** World-space position of the embedded seal. */
+        /** World-space position of the embedded seal (may track an enemy). */
         public final Vector3f position;
         /** True when this seal is the crosshair-targeted one this frame. */
         public       boolean  targeted   = false;
@@ -52,6 +54,16 @@ public class SealController {
         public       float    pulsePhase = 0f;
         /** Accumulated radians — drives cube spin animation in Window. */
         public       float    spinPhase  = 0f;
+        /**
+         * Non-null when this seal is attached to a living enemy.
+         * The seal position is updated every tick to track the enemy.
+         */
+        public Enemy    attachedEnemy  = null;
+        /**
+         * Offset from the enemy's centre at the moment of attachment.
+         * Keeps the seal at a stable relative spot on the enemy's body.
+         */
+        public Vector3f attachOffset   = new Vector3f();
 
         SealEntry(Vector3f pos) {
             this.position = new Vector3f(pos);
@@ -79,6 +91,8 @@ public class SealController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private final Player player;
+    /** Set by Window after both managers are constructed, enables enemy attachment. */
+    private EnemyManager enemyManager = null;
 
     /** All currently placed seals — Window reads this list to render them. */
     public final List<SealEntry>      placedSeals   = new ArrayList<>();
@@ -101,6 +115,11 @@ public class SealController {
     // ─────────────────────────────────────────────────────────────────────────
     public SealController(Player p) {
         this.player = p;
+    }
+
+    /** Called once from Window after EnemyManager is created. */
+    public void setEnemyManager(EnemyManager em) {
+        this.enemyManager = em;
     }
 
     // ── Public accessors ──────────────────────────────────────────────────────
@@ -194,6 +213,28 @@ public class SealController {
                 int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
                 if (by < 0 || by >= Chunk.HEIGHT) { proj.alive = false; hit = true; break; }
 
+                // ── Enemy hitbox check (before solid-block check so enemies
+                //    occluded behind walls don't steal the seal) ───────────────
+                if (enemyManager != null) {
+                    for (Enemy e : enemyManager.getEnemies()) {
+                        if (!e.alive) continue;
+                        float eHalfH = Enemy.HALF_HEIGHT;
+                        float eR     = Enemy.RADIUS + 0.25f;  // slightly lenient hit radius
+                        float ddx = rx - e.position.x;
+                        float ddz = rz - e.position.z;
+                        float ddHoriz2 = ddx * ddx + ddz * ddz;
+                        float feetRelY = ry - e.position.y;
+                        if (ddHoriz2 <= eR * eR && feetRelY >= 0f && feetRelY <= 2f * eHalfH) {
+                            // Attach seal to this enemy
+                            embedSealOnEnemy(new Vector3f(rx, ry, rz), e);
+                            proj.alive = false;
+                            hit = true;
+                            break;
+                        }
+                    }
+                    if (hit) break;
+                }
+
                 if (world.getBlock(bx, by, bz).isSolid()) {
                     // Embed at the position just before impact
                     embedSeal(new Vector3f(prevRx, prevRy, prevRz));
@@ -215,6 +256,22 @@ public class SealController {
         placedSeals.add(new SealEntry(pos));
     }
 
+    /**
+     * Embed a seal on a living enemy.  The seal will track the enemy's
+     * position every tick.  The stored offset is computed from the hit point
+     * so the seal appears where the projectile struck (e.g., back or side).
+     */
+    private void embedSealOnEnemy(Vector3f hitPos, Enemy enemy) {
+        if (placedSeals.size() >= GameConfig.sealMaxCount) return;
+        SealEntry entry = new SealEntry(hitPos);
+        entry.attachedEnemy = enemy;
+        // Offset = hit position − enemy centre; preserved so the seal orbits
+        // a fixed spot on the enemy body as the enemy moves.
+        Vector3f centre = enemy.getCentre();
+        entry.attachOffset.set(hitPos.x - centre.x, hitPos.y - centre.y, hitPos.z - centre.z);
+        placedSeals.add(entry);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Animate placed seals (pulse + spin)
     // ─────────────────────────────────────────────────────────────────────────
@@ -223,6 +280,20 @@ public class SealController {
         for (SealEntry seal : placedSeals) {
             seal.pulsePhase += dt * GameConfig.sealPulseSpeed;
             seal.spinPhase  += dt * 1.5f;
+
+            // If attached to a living enemy, follow its centre + recorded offset.
+            if (seal.attachedEnemy != null) {
+                if (seal.attachedEnemy.alive) {
+                    Vector3f c = seal.attachedEnemy.getCentre();
+                    seal.position.set(
+                            c.x + seal.attachOffset.x,
+                            c.y + seal.attachOffset.y,
+                            c.z + seal.attachOffset.z);
+                } else {
+                    // Enemy died — seal stays where it was (remains usable).
+                    seal.attachedEnemy = null;
+                }
+            }
         }
     }
 

@@ -221,6 +221,7 @@ public class WorldGen {
                         chunk.setBlock(lx, ly, lz, b);
                     }
                 }
+
             }
         }
     }
@@ -407,6 +408,12 @@ public class WorldGen {
                         }
                     }
                 }
+
+                // ── BEDROCK FLOOR: force y=0 and y=1 to always be solid so the
+                //    player and entities can never fall through the world bottom.
+                //    Applied last so caves / abyss carving cannot override it.
+                chunk.setBlock(lx, 0, lz, Block.STONE);
+                chunk.setBlock(lx, 1, lz, Block.STONE);
             }
         }
 

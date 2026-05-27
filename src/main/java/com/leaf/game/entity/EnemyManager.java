@@ -64,6 +64,26 @@ public class EnemyManager {
     private int   waveNumber = 0;
     private final Random rng = new Random();
 
+    // ── Enemy projectiles (boulders, thrown rocks) ────────────────────────────
+    public static class EnemyProjectile {
+        public final Vector3f pos;
+        public final Vector3f vel;
+        public float          lifetime;
+        public float          damage;
+        public boolean        alive   = true;
+        public final int      ownerId; // enemy id that launched this
+
+        public EnemyProjectile(Vector3f pos, Vector3f vel, float damage, int ownerId) {
+            this.pos      = new Vector3f(pos);
+            this.vel      = new Vector3f(vel);
+            this.damage   = damage;
+            this.lifetime = GameConfig.projectileLifetime;
+            this.ownerId  = ownerId;
+        }
+    }
+    /** Window renders these as small stone blocks. */
+    public final List<EnemyProjectile> projectiles = new ArrayList<>();
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Public accessors
     // ─────────────────────────────────────────────────────────────────────────
@@ -114,8 +134,59 @@ public class EnemyManager {
         // ── Update every enemy ─────────────────────────────────────────────────
         for (Enemy e : enemies) {
             e.update(dt, world, playerPos, enemies);
+
+            // Golem slam: framePlayerDamage is used as the slam signal; check range
+            if (e.type == Enemy.Type.GOLEM && e.framePlayerDamage >= GameConfig.golemSlamDamage - 1f) {
+                float dx = playerPos.x - e.position.x;
+                float dz = playerPos.z - e.position.z;
+                float distSq = dx * dx + dz * dz;
+                if (distSq <= GameConfig.golemSlamRadius * GameConfig.golemSlamRadius) {
+                    pendingPlayerDamage += e.framePlayerDamage;
+                } // else: slam missed the player — no damage accumulated
+                // zero out so it doesn't also accumulate below
+                e.framePlayerDamage = 0f;
+            }
             pendingPlayerDamage += e.framePlayerDamage;
+
+            // Spawn projectile when thrower/golem signals wantsToThrow
+            if (e.wantsToThrow) {
+                spawnProjectileAt(e, playerPos);
+            }
         }
+
+        // ── Tick enemy projectiles ─────────────────────────────────────────────
+        Vector3f playerCentre = new Vector3f(playerPos.x, playerPos.y + 0.9f, playerPos.z);
+        for (EnemyProjectile proj : projectiles) {
+            if (!proj.alive) continue;
+            proj.lifetime -= dt;
+            if (proj.lifetime <= 0f) { proj.alive = false; continue; }
+
+            // Arc gravity
+            proj.vel.y -= GameConfig.projectileGravity * dt;
+            proj.pos.x += proj.vel.x * dt;
+            proj.pos.y += proj.vel.y * dt;
+            proj.pos.z += proj.vel.z * dt;
+
+            // Hit ground
+            int bx = (int) Math.floor(proj.pos.x);
+            int by = (int) Math.floor(proj.pos.y);
+            int bz = (int) Math.floor(proj.pos.z);
+            if (by < 0 || by >= com.leaf.game.world.Chunk.HEIGHT
+                    || world.getBlock(bx, by, bz).isSolid()) {
+                proj.alive = false;
+                continue;
+            }
+
+            // Hit player (1-block radius check)
+            float dpx = proj.pos.x - playerCentre.x;
+            float dpy = proj.pos.y - playerCentre.y;
+            float dpz = proj.pos.z - playerCentre.z;
+            if (dpx*dpx + dpy*dpy + dpz*dpz <= 1.0f) {
+                pendingPlayerDamage += proj.damage;
+                proj.alive = false;
+            }
+        }
+        projectiles.removeIf(p -> !p.alive);
 
         // ── Remove dead enemies once death flash is done ───────────────────────
         enemies.removeIf(e -> !e.alive && e.hitFlashTimer <= 0f);
@@ -128,6 +199,31 @@ public class EnemyManager {
                 spawnWave(world, playerPos);
             }
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Projectile helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void spawnProjectileAt(Enemy e, Vector3f playerPos) {
+        // Aim at player's centre with some parabolic arc
+        Vector3f from = new Vector3f(e.getCentre());
+        float dx = playerPos.x - from.x;
+        float dz = playerPos.z - from.z;
+        float horizDist = (float) Math.sqrt(dx * dx + dz * dz);
+        if (horizDist < 0.5f) return;
+
+        float speed = (e.type == Enemy.Type.GOLEM)
+                ? GameConfig.golemThrowSpeed : GameConfig.throwerThrowSpeed;
+        float damage = (e.type == Enemy.Type.GOLEM)
+                ? GameConfig.golemThrowDamage : GameConfig.throwerThrowDamage;
+
+        float vx = (dx / horizDist) * speed;
+        float vz = (dz / horizDist) * speed;
+        // Upward arc: enough lift to arc over the horizontal distance
+        float vy = horizDist * 0.5f + 5f;
+
+        projectiles.add(new EnemyProjectile(from, new Vector3f(vx, vy, vz), damage, e.id));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -152,27 +248,39 @@ public class EnemyManager {
     }
 
     /**
-     * Choose an enemy type biased toward tougher enemies in later waves.
+     * Choose an enemy type biased toward tougher / more varied enemies in later waves.
      *
      * Wave 1–2  : GRUNT only
-     * Wave 3–5  : 70% GRUNT, 30% STALKER
-     * Wave 6–9  : 50% GRUNT, 30% STALKER, 20% BRUTE
-     * Wave 10+  : 35% GRUNT, 40% STALKER, 25% BRUTE
+     * Wave 3–5  : GRUNT + STALKER
+     * Wave 6–9  : GRUNT + STALKER + BRUTE + THROWER
+     * Wave 10–14: all types incl. PREDATOR
+     * Wave 15+  : all types incl. GOLEM
      */
     private Enemy.Type pickType() {
         float r = rng.nextFloat();
         if (waveNumber <= 2) {
             return Enemy.Type.GRUNT;
         } else if (waveNumber <= 5) {
-            return r < 0.70f ? Enemy.Type.GRUNT : Enemy.Type.STALKER;
+            return r < 0.65f ? Enemy.Type.GRUNT : Enemy.Type.STALKER;
         } else if (waveNumber <= 9) {
-            if (r < 0.50f) return Enemy.Type.GRUNT;
-            if (r < 0.80f) return Enemy.Type.STALKER;
-            return Enemy.Type.BRUTE;
+            if (r < 0.40f) return Enemy.Type.GRUNT;
+            if (r < 0.65f) return Enemy.Type.STALKER;
+            if (r < 0.85f) return Enemy.Type.BRUTE;
+            return Enemy.Type.THROWER;
+        } else if (waveNumber <= 14) {
+            if (r < 0.30f) return Enemy.Type.GRUNT;
+            if (r < 0.50f) return Enemy.Type.STALKER;
+            if (r < 0.65f) return Enemy.Type.BRUTE;
+            if (r < 0.80f) return Enemy.Type.THROWER;
+            return Enemy.Type.PREDATOR;
         } else {
-            if (r < 0.35f) return Enemy.Type.GRUNT;
-            if (r < 0.75f) return Enemy.Type.STALKER;
-            return Enemy.Type.BRUTE;
+            // Wave 15+ — full roster including Golem
+            if (r < 0.20f) return Enemy.Type.GRUNT;
+            if (r < 0.38f) return Enemy.Type.STALKER;
+            if (r < 0.52f) return Enemy.Type.BRUTE;
+            if (r < 0.66f) return Enemy.Type.THROWER;
+            if (r < 0.84f) return Enemy.Type.PREDATOR;
+            return Enemy.Type.GOLEM;
         }
     }
 
@@ -313,18 +421,81 @@ public class EnemyManager {
         Enemy best    = null;
         float bestDot = -2f;
 
+        // Project the look direction onto the horizontal (XZ) plane so that enemies
+        // standing at a different elevation (below a cliff, on a hillside, etc.) are
+        // reachable as long as the player is aiming roughly toward them horizontally.
+        float lhx = lookDir.x, lhz = lookDir.z;
+        float lhLen = (float) Math.sqrt(lhx * lhx + lhz * lhz);
+        if (lhLen < 1e-6f) { lhx = 1f; lhz = 0f; lhLen = 1f; }   // looking straight up/down edge-case
+        float lookHX = lhx / lhLen;
+        float lookHZ = lhz / lhLen;
+
         for (Enemy e : enemies) {
             if (!e.alive) continue;
             Vector3f centre = e.getCentre();
             float dist = new Vector3f(centre).sub(eyePos).length();
             if (dist > maxRange) continue;
-            Vector3f toEnemy = new Vector3f(centre).sub(eyePos).normalize();
-            float dot = lookDir.dot(toEnemy);
+
+            // Horizontal vector from eye to enemy centre
+            float ex = centre.x - eyePos.x;
+            float ez = centre.z - eyePos.z;
+            float ehLen = (float) Math.sqrt(ex * ex + ez * ez);
+            float dot;
+            if (ehLen < 1e-6f) {
+                // Enemy is almost directly above/below — treat as fully aligned
+                dot = 1f;
+            } else {
+                dot = (lookHX * (ex / ehLen)) + (lookHZ * (ez / ehLen));
+            }
+
             if (dot > bestDot && StandController.hasLOS(world, eyePos, centre)) {
                 bestDot = dot;
                 best    = e;
             }
         }
         return best;
+    }
+
+    /**
+     * Deals splash damage and sends every enemy inside the smash blast radius
+     * flying outward from the impact point.
+     *
+     * @param ix  impact centre X (world block coordinate)
+     * @param iy  impact centre Y
+     * @param iz  impact centre Z
+     * @param craterRadius  the smash crater radius (used to derive blast zone)
+     */
+    public void processSmashKnockback(int ix, int iy, int iz, int craterRadius) {
+        float blastRadius = craterRadius * GameConfig.smashSplashRadiusMult;
+        float cx = ix + 0.5f;
+        float cy = iy + 0.5f;
+        float cz = iz + 0.5f;
+
+        for (Enemy e : enemies) {
+            if (!e.alive) continue;
+            Vector3f centre = e.getCentre();
+            float dx = centre.x - cx;
+            float dy = centre.y - cy;
+            float dz = centre.z - cz;
+            float dist = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist > blastRadius) continue;
+
+            // Damage: linear falloff — full at centre, zero at edge
+            float t   = 1f - dist / blastRadius;
+            e.applyDamage(GameConfig.smashSplashDamage * t);
+
+            // Knockback: radial outward burst + upward component
+            float strength = GameConfig.smashKnockbackStrength * t;
+            float hDist = (float) Math.sqrt(dx * dx + dz * dz);
+            float kx, kz;
+            if (hDist < 0.1f) {
+                kx = 0f; kz = 0f;
+            } else {
+                kx = (dx / hDist) * strength;
+                kz = (dz / hDist) * strength;
+            }
+            float ky = strength * 0.55f;   // upward toss
+            e.applyKnockback(kx, ky, kz);
+        }
     }
 }

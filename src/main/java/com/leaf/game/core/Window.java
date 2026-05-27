@@ -240,19 +240,23 @@ public class Window {
                 if (showChat) {
                     showChat = false;
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    firstMouse[0] = true;
                 } else if (showHelp) {
                     // Help screen takes priority over pause so ESC cleanly dismisses it
                     showHelp = false;
+                    boolean stillOverlay = showDebug || showNoiseViewer || isPaused;
                     glfwSetInputMode(window, GLFW_CURSOR,
-                            (showDebug || showNoiseViewer || isPaused)
-                                    ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                            stillOverlay ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                    if (!stillOverlay) firstMouse[0] = true;
                 } else if (showNoiseViewer) {
                     showNoiseViewer = false;
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    firstMouse[0] = true;
                 } else {
                     isPaused = !isPaused;
                     glfwSetInputMode(window, GLFW_CURSOR,
                             isPaused ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                    if (!isPaused) firstMouse[0] = true;
                 }
             }
 
@@ -260,21 +264,26 @@ public class Window {
 
             if (key == GLFW_KEY_F1 && action == GLFW_RELEASE && !showChat) {
                 showHelp = !showHelp;
+                boolean overlay1 = showHelp || showDebug || showNoiseViewer;
                 glfwSetInputMode(window, GLFW_CURSOR,
-                        (showHelp || showDebug || showNoiseViewer)
-                                ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                        overlay1 ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                if (!overlay1) firstMouse[0] = true;
             }
 
             if (key == GLFW_KEY_F3 && action == GLFW_RELEASE && !showChat) {
                 showDebug = !showDebug;
-                glfwSetInputMode(window, GLFW_CURSOR,
-                        (showHelp || showDebug || showNoiseViewer) ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                // F3 does NOT capture/release the cursor — debug HUD is transparent overlay,
+                // mouse stays locked so the player can still look around.
+                // No cursor mode change needed here.
+                // (firstMouse reset is not needed either since cursor stays DISABLED)
             }
 
             if (key == GLFW_KEY_F4 && action == GLFW_RELEASE && !showChat) {
                 showNoiseViewer = !showNoiseViewer;
+                boolean overlay4 = showHelp || showDebug || showNoiseViewer;
                 glfwSetInputMode(window, GLFW_CURSOR,
-                        (showHelp || showDebug || showNoiseViewer) ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                        overlay4 ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                if (!overlay4) firstMouse[0] = true;
             }
 
             // T opens chat (release event only, so holding T for time-dilation is safe
@@ -284,7 +293,7 @@ public class Window {
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             }
 
-            if (action == GLFW_PRESS && !showChat && !showDebug) {
+            if (action == GLFW_PRESS && !showChat) {
                 if (key >= GLFW_KEY_1 && key <= GLFW_KEY_9) {
                     selectedSlot = key - GLFW_KEY_1;
                 }
@@ -292,7 +301,7 @@ public class Window {
         });
 
         glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
-            if (!networkInitialized || isPreloading || showDebug || showChat || showNoiseViewer || isPaused || showHelp)
+            if (!networkInitialized || isPreloading || showChat || showNoiseViewer || isPaused || showHelp)
                 return;
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -352,8 +361,7 @@ public class Window {
             // Charging: camera locked to aim direction — the system needs this
             //   window to preload exactly the chunks the player will see.
             // Flying (isCannonballing): full 360° free look, no pitch clamp.
-            if (!player.isSmashing() && !player.abilities.isRewinding
-                    && !player.abilities.isCharging()
+            if (!player.isSmashing() && !player.abilities.isCharging()
                     && !isChargingStoneCanon) {
                 camera.yaw   += dx * GameConfig.mouseSensitivity;
                 camera.pitch -= dy * GameConfig.mouseSensitivity;
@@ -398,6 +406,8 @@ public class Window {
         this.enemyManager = new EnemyManager();
         player.stand.setEnemyManager(enemyManager);
         player.attacks.setEnemyManager(enemyManager);
+        player.seals.setEnemyManager(enemyManager);      // enables seal-on-enemy attachment
+        player.lightning.setEnemyManager(enemyManager); // enables lightning targeting
 
         TimeController tc = TimeController.getInstance();
 
@@ -490,10 +500,17 @@ public class Window {
                         isPreloading = false;
                         int spawnX = (int)Math.floor(player.position.x);
                         int spawnZ = (int)Math.floor(player.position.z);
-                        for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
+                        for (int ly = Chunk.HEIGHT - 1; ly >= 1; ly--) {
                             if (world.getBlock(spawnX, ly, spawnZ).isSolid()) {
-                                player.position.y = ly + 2.0f;
-                                break;
+                                // Ensure the two blocks above this surface are clear
+                                // so the player doesn't materialise inside stone.
+                                boolean clear = !world.getBlock(spawnX, ly + 1, spawnZ).isSolid()
+                                             && !world.getBlock(spawnX, ly + 2, spawnZ).isSolid();
+                                if (clear) {
+                                    player.position.y = ly + 1.5f;
+                                    break;
+                                }
+                                // Surface blocked above — keep scanning down for next solid
                             }
                         }
                         // Zero out any velocity accumulated during loading so the player
@@ -507,7 +524,7 @@ public class Window {
                         }
                     }
 
-                    if (!showChat && !showDebug && !showNoiseViewer && !isPaused && !showHelp) {
+                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp) {
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
                         player.update(window, camera, world, deltaTime);
                         updateBreaking(deltaTime);
@@ -593,35 +610,65 @@ public class Window {
 
                         if (substitutePrimed && enemyManager.pendingPlayerDamage > 0f) {
                             Vector3f oldPos = new Vector3f(player.position);
-                            // Step backward along look direction, one block at a time
-                            // to avoid clipping through walls
-                            float cyaw = camera.yaw;
-                            float backX = -(float)Math.cos(cyaw);
-                            float backZ = -(float)Math.sin(cyaw);
-                            float bd    = GameConfig.substituteBackDist;
-                            float tx    = oldPos.x;
-                            float tz    = oldPos.z;
-                            for (float step = 0.5f; step <= bd; step += 0.5f) {
-                                float cx = oldPos.x + backX * step;
-                                float cz = oldPos.z + backZ * step;
-                                int bx2 = (int) Math.floor(cx);
-                                int bz3 = (int) Math.floor(cz);
-                                int fy   = (int) Math.floor(oldPos.y);
-                                boolean solid = world.getBlock(bx2, fy,   bz3).isSolid()
-                                             || world.getBlock(bx2, fy+1, bz3).isSolid();
-                                if (solid) break;
-                                tx = cx; tz = cz;
-                            }
-                            // Snap Y to ground at destination
-                            int bxd = (int)Math.floor(tx), bzd = (int)Math.floor(tz);
-                            float ty = oldPos.y;
-                            for (int by2 = (int)oldPos.y + 4; by2 >= 1; by2--) {
-                                if (world.getBlock(bxd, by2, bzd).isSolid()
-                                        && !world.getBlock(bxd, by2+1, bzd).isSolid()) {
-                                    ty = by2 + 1f; break;
+                            float cyaw  = camera.yaw;
+                            float backX = -(float) Math.cos(cyaw);
+                            float backZ = -(float) Math.sin(cyaw);
+                            // Perpendicular axes for diagonal escape attempts
+                            float leftX  = -backZ,  leftZ  =  backX;
+                            float rightX =  backZ,  rightZ = -backX;
+                            float bd = GameConfig.substituteBackDist;
+
+                            // Candidate directions: [dx, yShift-for-collision, dz]
+                            // Try straight back first, then back-left/right diagonals,
+                            // then back with a 1-block vertical offset (handles ledges).
+                            float[][] dirs = {
+                                { backX,                                  0f, backZ                                 },
+                                { backX * 0.707f + leftX  * 0.707f,     0f, backZ * 0.707f + leftZ  * 0.707f  },
+                                { backX * 0.707f + rightX * 0.707f,     0f, backZ * 0.707f + rightZ * 0.707f  },
+                                { backX,                                  1f, backZ                                 },
+                                { backX,                                 -1f, backZ                                 },
+                            };
+
+                            float bestTx = oldPos.x, bestTy = oldPos.y, bestTz = oldPos.z;
+                            float bestDist = -1f;
+
+                            for (float[] dir : dirs) {
+                                float ddx    = dir[0], yShift = dir[1], ddz = dir[2];
+                                float hlen   = (float) Math.sqrt(ddx * ddx + ddz * ddz);
+                                if (hlen > 0f) { ddx /= hlen; ddz /= hlen; }
+
+                                float candX = oldPos.x, candZ = oldPos.z;
+                                int   checkFy = (int) Math.floor(oldPos.y + yShift);
+                                for (float step = 0.5f; step <= bd; step += 0.5f) {
+                                    float cx = oldPos.x + ddx * step;
+                                    float cz = oldPos.z + ddz * step;
+                                    int bx2 = (int) Math.floor(cx);
+                                    int bz2 = (int) Math.floor(cz);
+                                    boolean blocked = world.getBlock(bx2, checkFy,     bz2).isSolid()
+                                                   || world.getBlock(bx2, checkFy + 1, bz2).isSolid();
+                                    if (blocked) break;
+                                    candX = cx; candZ = cz;
+                                }
+
+                                float dist2 = (candX - oldPos.x) * (candX - oldPos.x)
+                                            + (candZ - oldPos.z) * (candZ - oldPos.z);
+                                if (dist2 > bestDist) {
+                                    bestDist = dist2;
+                                    // Snap Y to ground at this candidate XZ
+                                    int bxd = (int) Math.floor(candX);
+                                    int bzd = (int) Math.floor(candZ);
+                                    float snapY = oldPos.y;
+                                    for (int by2 = (int) oldPos.y + 4; by2 >= 1; by2--) {
+                                        if (world.getBlock(bxd, by2, bzd).isSolid()
+                                                && !world.getBlock(bxd, by2 + 1, bzd).isSolid()) {
+                                            snapY = by2 + 1f; break;
+                                        }
+                                    }
+                                    bestTx = candX; bestTy = snapY; bestTz = candZ;
                                 }
                             }
-                            player.position.set(tx, ty, tz);
+
+                            player.position.set(bestTx, bestTy, bestTz);
                             player.setVelocityY(0f);
                             player.abilities.blinkFlashTimer = GameConfig.blinkFlashDecay;
                             player.abilities.blinkOrigin     = oldPos;
@@ -635,13 +682,18 @@ public class Window {
 
                         // ── DRAIN remaining enemy damage into player health ────
                         if (enemyManager.pendingPlayerDamage > 0f) {
-                            player.health -= enemyManager.pendingPlayerDamage;
-                            enemyManager.pendingPlayerDamage = 0f;
-                            if (player.health <= 0f) {
-                                System.out.println("You died!");
-                                player.position.set(1000, 255, 1000);
-                                player.setVelocityY(0f);
-                                player.health = player.maxHealth;
+                            if (player.abilities.isKamui) {
+                                // Kamui = invincible — absorb damage with no effect
+                                enemyManager.pendingPlayerDamage = 0f;
+                            } else {
+                                player.health -= enemyManager.pendingPlayerDamage;
+                                enemyManager.pendingPlayerDamage = 0f;
+                                if (player.health <= 0f) {
+                                    System.out.println("You died!");
+                                    player.position.set(1000, 255, 1000);
+                                    player.setVelocityY(0f);
+                                    player.health = player.maxHealth;
+                                }
                             }
                         }
 
@@ -1233,13 +1285,22 @@ public class Window {
                     }
                 }
                 // ── SUBSTITUTE PRIMED OVERLAY ─────────────────────────────
-                // Subtle white pulsing vignette while the substitute is ready.
                 if (substitutePrimed) {
                     float timeSecs = (float) glfwGetTime();
                     float pulseStr = 0.10f + 0.05f * (float) Math.sin(timeSecs * 8.0f);
                     if (pulseStr > compositeOverlayStr) {
                         compositeOverlayStr   = pulseStr;
                         compositeOverlayColor = new Vector3f(0.95f, 0.97f, 1.0f);
+                    }
+                }
+                // ── STORM OVERLAY (lightning charging / active) ───────────────
+                float stormI = player.lightning.stormIntensity;
+                if (stormI > 0f) {
+                    // Dark blue-gray tint that intensifies as storm builds
+                    float stormStr = stormI * 0.42f;
+                    if (stormStr > compositeOverlayStr) {
+                        compositeOverlayStr   = stormStr;
+                        compositeOverlayColor = new Vector3f(0.05f, 0.05f, 0.20f);
                     }
                 }
 
@@ -1598,35 +1659,59 @@ public class Window {
                         float    typeOverlayStr;
                         // Mud-trapped overrides type colour with a brown tint
                         if (enemy.mudTrapTimer > 0f) {
-                            typeColor      = new Vector3f(0.45f, 0.28f, 0.05f); // brown
+                            typeColor      = new Vector3f(0.45f, 0.28f, 0.05f);
                             typeOverlayStr = 0.45f;
                         } else {
                             switch (enemy.type) {
-                                case BRUTE   -> { typeColor = new Vector3f(0.55f, 0.10f, 0.80f); typeOverlayStr = 0.18f; }
-                                case STALKER -> { typeColor = new Vector3f(0.55f, 0.90f, 0.10f); typeOverlayStr = 0.18f; }
-                                default      -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; }
+                                case BRUTE    -> { typeColor = new Vector3f(0.55f, 0.10f, 0.80f); typeOverlayStr = 0.20f; }
+                                case STALKER  -> { typeColor = new Vector3f(0.55f, 0.90f, 0.10f); typeOverlayStr = 0.18f; }
+                                case GOLEM    -> { typeColor = new Vector3f(0.55f, 0.60f, 0.70f); typeOverlayStr = 0.22f; }
+                                case THROWER  -> { typeColor = new Vector3f(0.85f, 0.45f, 0.05f); typeOverlayStr = 0.18f; }
+                                case PREDATOR -> { typeColor = new Vector3f(0.20f, 0.80f, 0.15f); typeOverlayStr = 0.20f; }
+                                default       -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; }
                             }
                         }
 
                         shader.setUniform("alphaMultiplier", alpha);
                         if (flashF > 0f) {
-                            // White-hot hit flash overrides type colour
                             shader.setUniform("overlayVignetteStrength", flashF * 0.65f);
                             shader.setUniform("overlayVignetteColor", new Vector3f(1.0f, 0.25f, 0.15f));
                         } else {
-                            // Ambient type-colour tint
                             shader.setUniform("overlayVignetteStrength", typeOverlayStr);
                             shader.setUniform("overlayVignetteColor", typeColor);
                         }
 
-                        float scale = enemy.renderScale();
+                        // Non-uniform scale so new types look visually distinct
+                        float[] sv = enemy.renderScaleVec();
                         Matrix4f enemyMat = new Matrix4f()
                                 .translate(enemy.position.x, enemy.position.y, enemy.position.z)
-                                .scale(scale);
+                                .scale(sv[0], sv[1], sv[2]);
                         shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(enemyMat));
                         enemyModel.render();
                     }
                     // Reset overlay state
+                    shader.setUniform("overlayVignetteStrength", 0f);
+                    shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
+                    shader.setUniform("alphaMultiplier", 1.0f);
+                }
+
+                // ── Render enemy projectiles (boulders / thrown rocks) ────────────
+                if (!enemyManager.projectiles.isEmpty()) {
+                    com.leaf.game.render.ModelMesh stoneModel =
+                            com.leaf.game.render.AssetManager.get().getModel("player");
+                    shader.setUniform("overlayVignetteStrength", 0.25f);
+                    shader.setUniform("overlayVignetteColor", new Vector3f(0.55f, 0.55f, 0.60f));
+                    for (EnemyManager.EnemyProjectile proj : enemyManager.projectiles) {
+                        if (!proj.alive) continue;
+                        float lifeF = proj.lifetime / GameConfig.projectileLifetime;
+                        shader.setUniform("alphaMultiplier", Math.min(1f, lifeF * 4f));
+                        float pScale = 0.22f;
+                        Matrix4f projMat = new Matrix4f()
+                                .translate(proj.pos.x, proj.pos.y, proj.pos.z)
+                                .scale(pScale);
+                        shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(projMat));
+                        stoneModel.render();
+                    }
                     shader.setUniform("overlayVignetteStrength", 0f);
                     shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
                     shader.setUniform("alphaMultiplier", 1.0f);
@@ -1806,13 +1891,16 @@ public class Window {
         // 2. Ejecta burst
         spawnCraterEjecta(ix, iy, iz, r);
 
-        // 3. Dynamic Screen Shake scaling based on the radius size
+        // 3. Splash damage + knockback for nearby enemies
+        enemyManager.processSmashKnockback(ix, iy, iz, r);
+
+        // 4. Dynamic Screen Shake scaling based on the radius size
         float scaleFactor = (float) r / GameConfig.smashCraterRadius;
         activeShakeDuration  = GameConfig.smashShakeDuration * Math.min(2.5f, scaleFactor);
         activeShakeAmplitude = GameConfig.smashShakeAmplitude * Math.min(3.0f, scaleFactor);
         smashShakeTimer      = activeShakeDuration;
 
-        // 4. Network sync
+        // 5. Network sync
         if (network != null && network.connected) {
             network.sendCrater(ix, iy, iz, r);
         }
@@ -2047,6 +2135,86 @@ public class Window {
     private void renderHUD(Camera camera, float screenW, float screenH) {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
+
+        // ── LIGHTNING BOLT RENDERING ──────────────────────────────────────────
+        // Draw screen-space zigzag bolts from sky to each struck target.
+        // The world-to-screen projection is done here where we have camera matrices.
+        if (!player.lightning.activeBolts.isEmpty()) {
+            Matrix4f vp = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
+            for (com.leaf.game.entity.LightningController.LightningBolt bolt : player.lightning.activeBolts) {
+                float bright = bolt.brightness();
+                if (bright < 0.01f) continue;
+
+                // Project the target world position to screen
+                org.joml.Vector4f cp = new org.joml.Vector4f(
+                        bolt.worldTarget.x, bolt.worldTarget.y, bolt.worldTarget.z, 1.0f).mul(vp);
+                if (cp.w <= 0f) continue; // behind camera
+                float ndcX = cp.x / cp.w;
+                float ndcY = cp.y / cp.w;
+                if (Math.abs(ndcX) > 1.5f || Math.abs(ndcY) > 1.5f) continue; // far off screen
+
+                float targetScrX = (ndcX + 1f) * 0.5f * screenW;
+                float targetScrY = (1f - ndcY) * 0.5f * screenH;
+
+                // Generate seeded zigzag segments from sky (top of screen) to target
+                java.util.Random boltRng = new java.util.Random(bolt.hashCode());
+                int   segments = bolt.isAoe ? 6 : 10;
+                float[] bx = new float[segments + 1];
+                float[] by = new float[segments + 1];
+                bx[0] = targetScrX + (boltRng.nextFloat() - 0.5f) * 60f;
+                by[0] = 0f; // top of screen (sky)
+                bx[segments] = targetScrX;
+                by[segments] = targetScrY;
+                for (int s = 1; s < segments; s++) {
+                    float t = (float) s / segments;
+                    float midX = bx[0] + (targetScrX - bx[0]) * t;
+                    float midY = by[0] + (targetScrY - by[0]) * t;
+                    bx[s] = midX + (boltRng.nextFloat() - 0.5f) * 80f * (1f - t);
+                    by[s] = midY;
+                }
+
+                // Draw glow layers (thick→thin, bright to transparent)
+                float[][] layers = {
+                    { 12f, 0.08f * bright },
+                    {  6f, 0.25f * bright },
+                    {  3f, 0.65f * bright },
+                    {  1.5f, 1.00f * bright },
+                };
+                for (float[] layer : layers) {
+                    float thickness = layer[0];
+                    float a         = Math.min(1f, layer[1]);
+                    int   baseColor = bolt.isAoe
+                        ? ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, a)  // AOE = blue-white
+                        : ImGui.colorConvertFloat4ToU32(0.9f, 0.95f, 1.0f, a); // single = white
+                    for (int s = 0; s < segments; s++) {
+                        draw.addLine(bx[s], by[s], bx[s+1], by[s+1], baseColor, thickness);
+                    }
+                }
+
+                // Strike flash at target
+                if (bright > 0.5f) {
+                    float radius = 25f * bright;
+                    int   flash  = ImGui.colorConvertFloat4ToU32(1f, 1f, 0.9f, bright * 0.85f);
+                    draw.addCircleFilled(targetScrX, targetScrY, radius, flash);
+                }
+            }
+        }
+
+        // ── KAMUI PHASE BORDER EFFECT ─────────────────────────────────────────
+        // Shimmering purple frame around the screen edges while Kamui is active.
+        if (player.abilities.isKamui) {
+            float urgency   = 1f - player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration;
+            float pulse     = 0.5f + 0.5f * (float) Math.sin(glfwGetTime() * 6.0 + urgency * 4.0);
+            float edgeAlpha = 0.4f + urgency * 0.25f + pulse * 0.15f;
+            int   edgeColor = ImGui.colorConvertFloat4ToU32(0.6f, 0.0f, 1.0f, edgeAlpha);
+            float edgeW = 18f + pulse * 8f;
+            // Four edges of the screen
+            draw.addRectFilled(0, 0, screenW, edgeW,         edgeColor);
+            draw.addRectFilled(0, screenH - edgeW, screenW, screenH, edgeColor);
+            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW,         edgeColor);
+            draw.addRectFilled(screenW - edgeW, edgeW, screenW, screenH - edgeW, edgeColor);
+        }
+
         // ── MANHATTAN TRANSFER 2D OFF-SCREEN INDICATOR ────────────────────────
         if (player.stand.isDeployed() && !player.stand.isInStandPerspective()) {
 
@@ -2876,12 +3044,12 @@ public class Window {
 
         // Row 1 — Q / E / F / G / Z / K / J / M / I
         {
-            float totalW = 9 * iconSize + 8 * spacing;
+            float totalW = 11 * iconSize + 10 * spacing;
             float startX = screenW - totalW - 14f;
             float startY = screenH - iconSize * 2f - spacing - 14f;
 
-            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I"    };
-            String[] tooltips = { "Dash","Blink","Slash","Cannon","Rewind","Pillar","Swap","Quagmire","Stone" };
+            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I",     "U",         "Z•"  };
+            String[] tooltips = { "Dash","Blink","Slash","Cannon","Kamui","Pillar","Swap","Quagmire","Stone","Lightning","Kamui" };
             float todoFrac = (GameConfig.todoCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, todoSwapCooldown / GameConfig.todoCooldown))
                     : 0f;
@@ -2893,30 +3061,45 @@ public class Window {
                     : ((GameConfig.stoneCanonCooldown > 0f)
                         ? Math.max(0f, Math.min(1f, 1f - stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
                         : 1f);
+            float lightningFrac = player.lightning.isCharging()
+                    ? player.lightning.getChargeFrac()
+                    : player.lightning.getCooldownFrac();
+            float kamuiFrac = player.abilities.isKamui
+                    ? player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration  // drain while active
+                    : player.abilities.getKamuiCooldownFrac();
             float[]  fracs = {
                     player.abilities.getDashCooldownFrac(),
                     player.abilities.getBlinkCooldownFrac(),
                     player.attacks.getMeleeCooldownFrac(),
                     player.abilities.getCannonCooldownFrac(),
-                    player.abilities.getRewindCooldownFrac(),
+                    kamuiFrac,
                     player.abilities.getPillarCooldownFrac(),
                     todoFrac,
                     quagFrac,
-                    stoneFrac
+                    stoneFrac,
+                    lightningFrac,
+                    kamuiFrac  // second slot reserved for future use; show same as kamui for now
             };
-            // Stone canon color pulses orange while charging
+            // Stone canon color pulses orange while charging; lightning pulses white while charging
             float stoneR = isChargingStoneCanon
                     ? 0.85f + (float)Math.sin(glfwGetTime() * 6) * 0.15f : 0.65f;
+            float lightningA = player.lightning.isCharging()
+                    ? 0.6f + (float)Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
+            // Kamui pulses purple when active
+            float kamuiR = player.abilities.isKamui
+                    ? 0.55f + (float)Math.sin(glfwGetTime() * 8) * 0.2f : 0.45f;
             int[] colors = {
-                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),  // Q dash: cyan
-                    ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),  // E blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f), // F slash: amber
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.1f, 1.0f),  // G cannon: gold
-                    ImGui.colorConvertFloat4ToU32(0.3f,  0.6f,  1.0f, 1.0f),  // Z rewind: blue
-                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f), // K pillar: grey
-                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f, 1.0f),  // J swap: pink-magenta
-                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f), // M quagmire: muddy green
-                    ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f) // I stone: orange-grey
+                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),       // Q dash: cyan
+                    ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),       // E blink: white
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f),      // F slash: amber
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.1f,  1.0f),      // G cannon: gold
+                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f,  1.0f),      // Z Kamui: purple
+                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f),      // K pillar: grey
+                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f,  1.0f),      // J swap: pink-magenta
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f),      // M quagmire: muddy green
+                    ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f),     // I stone: orange-grey
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f,  lightningA),// U lightning: ice-blue
+                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f,  0.5f)       // duplicate (placeholder)
             };
 
             for (int i = 0; i < labels.length; i++) {

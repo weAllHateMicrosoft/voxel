@@ -11,30 +11,21 @@ import java.util.List;
 /**
  * Enemy — an AI-driven combat target.
  *
- * ── Three types ───────────────────────────────────────────────────────────────
- *   GRUNT   standard pursuer — medium speed, medium health
- *   BRUTE   slow tank        — low speed, very high health, hits hard
- *   STALKER fast flanker     — high speed, fragile, long aggro range
+ * ── Six types ─────────────────────────────────────────────────────────────────
+ *   GRUNT    standard pursuer — medium speed, medium health
+ *   BRUTE    slow tank        — low speed, very high health, hits hard
+ *   STALKER  fast flanker     — high speed, fragile, long aggro range
+ *   GOLEM    stone colossus   — very slow, huge, slam + boulder throw
+ *   THROWER  ranged attacker  — keeps distance, arc-throws rock projectiles
+ *   PREDATOR feral animal     — very fast, pounces on the player
  *
- * ── AI state machine ─────────────────────────────────────────────────────────
- *   IDLE     → player enters aggroRange → ALERTED
- *   ALERTED  → brief dramatic pause (alertTimer) → CHASE
- *   CHASE    → within attackRange → ATTACK
- *             → player > leashRange away → IDLE
- *   ATTACK   → player leaves attackRange → CHASE
- *             → enemy dead → removed by EnemyManager
- *
- * ── Movement ─────────────────────────────────────────────────────────────────
- *   Direct horizontal move toward player each frame.
- *   Gravity + velocityY for realistic falling.
- *   Jumps over single blocks (checks one-block clearance above).
- *   If horizontally blocked and can't jump, tries a perpendicular strafe
- *   that alternates direction each STRAFE_FLIP_SECS seconds.
- *   Separation force prevents stacking with other enemies.
- *
- * ── Damage ───────────────────────────────────────────────────────────────────
- *   framePlayerDamage accumulates each update() call.
- *   EnemyManager sums these into pendingPlayerDamage, drained by Window.
+ * ── State machine ─────────────────────────────────────────────────────────────
+ *   IDLE → (in aggro range) → ALERTED → (alert timer) → CHASE
+ *   CHASE → (in attack range) → ATTACK  |  (leash) → IDLE
+ *   ATTACK → (range lost) → CHASE
+ *   RETREATING  [THROWER only]  — backs away when player is too close
+ *   SLAMMING    [GOLEM only]    — brief delay before shockwave AoE
+ *   POUNCING    [PREDATOR only] — airborne burst toward player
  */
 public class Enemy {
 
@@ -42,49 +33,61 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type { GRUNT, BRUTE, STALKER }
-
-    public enum State { IDLE, ALERTED, CHASE, ATTACK }
+    public enum Type  { GRUNT, BRUTE, STALKER, GOLEM, THROWER, PREDATOR }
+    public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING, POUNCING }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  Constants
+    //  Static constants (default hitbox; per-type values override via instance)
     // ═════════════════════════════════════════════════════════════════════════
 
     public static final float RADIUS      = 0.5f;
     public static final float HALF_HEIGHT = 1.0f;
 
-    // How often (seconds) the strafe alternation flips to avoid infinite wall-stuck
     private static final float STRAFE_FLIP_SECS = 0.8f;
-    private static final float GRAVITY           = 28f;
-    private static final float MAX_FALL_SPEED    = 30f;
+    private static final float GRAVITY          = 28f;
+    private static final float MAX_FALL_SPEED   = 30f;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Identity
     // ═════════════════════════════════════════════════════════════════════════
 
     private static int nextId = 0;
-    public  final  int id;
+    public  final  int  id;
     public  final  Type type;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Stats (copied from GameConfig at construction)
     // ═════════════════════════════════════════════════════════════════════════
 
-    public final  float maxHealth;
+    public  final float maxHealth;
     public        float health;
     private final float speed;
     private final float damagePerSec;
     private final float aggroRange;
     private final float attackRange;
+    private final float attackInterval;
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Per-instance hitbox (varies by type)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** Horizontal collision radius.  Used by SealController + hit tests. */
+    public final float collisionRadius;
+    /** Half the total standing height.  Full height = 2 × halfHeight. */
+    public final float halfHeight;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  World state
     // ═════════════════════════════════════════════════════════════════════════
 
     public  final  Vector3f position;
-    public         boolean  alive      = true;
-    private        float    velocityY  = 0f;
-    private        boolean  onGround   = false;
+    public         boolean  alive    = true;
+    private        float    velocityY = 0f;
+    private        boolean  onGround  = false;
+
+    /** Horizontal knockback/pounce velocity; decays over time. */
+    public float knockbackVelX = 0f;
+    public float knockbackVelZ = 0f;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  AI state
@@ -92,25 +95,32 @@ public class Enemy {
 
     public  State state       = State.IDLE;
     private float alertTimer  = 0f;
-    /** Accumulated strafe-toggle clock. */
     private float strafeTimer = 0f;
-    /** +1 or -1, flips every STRAFE_FLIP_SECS seconds. */
     private float strafeSign  = 1f;
+    private float attackCooldown = 0f;
+
+    // ── GOLEM special ─────────────────────────────────────────────────────────
+    private float slamCooldown  = 0f;
+    private float slamWindUp    = 0f;   // time spent in SLAMMING state
+    /** EnemyManager reads this to spawn a boulder projectile. */
+    public  boolean wantsToThrow = false;
+    private float throwCooldown  = 0f;
+
+    // ── THROWER special ───────────────────────────────────────────────────────
+    // (wantsToThrow also used here; throwCooldown shared)
+
+    // ── PREDATOR special ──────────────────────────────────────────────────────
+    private float pounceCooldown  = 0f;
+    private float pounceTimer     = 0f;   // countdown while airborne in pounce
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Visual / output
     // ═════════════════════════════════════════════════════════════════════════
 
-    /** Window reads this for the red hit-flash vignette. */
-    public float hitFlashTimer = 0f;
-    /** Damage dealt to the player this frame — accumulated by EnemyManager. */
+    public float hitFlashTimer    = 0f;
     public float framePlayerDamage = 0f;
-    /** Counts down between discrete attack hits — prevents continuous damage. */
-    private float attackCooldown = 0f;
-    /** Seconds between attack hits (set per-type in constructor). */
-    private float attackInterval;
     /** When > 0 the enemy is mud-trapped and cannot move or attack. */
-    public float mudTrapTimer = 0f;
+    public float mudTrapTimer     = 0f;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Construction
@@ -121,226 +131,407 @@ public class Enemy {
         this.type     = type;
         this.position = new Vector3f(x, y, z);
 
+        float cr = RADIUS, hh = HALF_HEIGHT;
+        float health_, speed_, dps_, aggro_, atk_, atkI_;
+
         switch (type) {
             case GRUNT -> {
-                maxHealth      = GameConfig.gruntHealth;
-                speed          = GameConfig.gruntSpeed;
-                damagePerSec   = GameConfig.gruntDamagePerSec;
-                aggroRange     = GameConfig.gruntAggroRange;
-                attackRange    = GameConfig.gruntAttackRange;
-                attackInterval = GameConfig.gruntAttackInterval;
+                health_ = GameConfig.gruntHealth;  speed_ = GameConfig.gruntSpeed;
+                dps_    = GameConfig.gruntDamagePerSec; aggro_ = GameConfig.gruntAggroRange;
+                atk_    = GameConfig.gruntAttackRange;  atkI_  = GameConfig.gruntAttackInterval;
             }
             case BRUTE -> {
-                maxHealth      = GameConfig.bruteHealth;
-                speed          = GameConfig.bruteSpeed;
-                damagePerSec   = GameConfig.bruteDamagePerSec;
-                aggroRange     = GameConfig.bruteAggroRange;
-                attackRange    = GameConfig.bruteAttackRange;
-                attackInterval = GameConfig.bruteAttackInterval;
+                health_ = GameConfig.bruteHealth;  speed_ = GameConfig.bruteSpeed;
+                dps_    = GameConfig.bruteDamagePerSec; aggro_ = GameConfig.bruteAggroRange;
+                atk_    = GameConfig.bruteAttackRange;  atkI_  = GameConfig.bruteAttackInterval;
+                cr = 0.7f; hh = 1.3f;
             }
             case STALKER -> {
-                maxHealth      = GameConfig.stalkerHealth;
-                speed          = GameConfig.stalkerSpeed;
-                damagePerSec   = GameConfig.stalkerDamagePerSec;
-                aggroRange     = GameConfig.stalkerAggroRange;
-                attackRange    = GameConfig.stalkerAttackRange;
-                attackInterval = GameConfig.stalkerAttackInterval;
+                health_ = GameConfig.stalkerHealth; speed_ = GameConfig.stalkerSpeed;
+                dps_    = GameConfig.stalkerDamagePerSec; aggro_ = GameConfig.stalkerAggroRange;
+                atk_    = GameConfig.stalkerAttackRange;  atkI_  = GameConfig.stalkerAttackInterval;
+                cr = 0.35f; hh = 0.8f;
+            }
+            case GOLEM -> {
+                health_ = GameConfig.golemHealth;  speed_ = GameConfig.golemSpeed;
+                dps_    = GameConfig.golemDamagePerSec;  aggro_ = GameConfig.golemAggroRange;
+                atk_    = GameConfig.golemAttackRange;   atkI_  = GameConfig.golemAttackInterval;
+                cr = 1.1f; hh = 1.8f;   // wide and tall
+            }
+            case THROWER -> {
+                health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
+                dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
+                atk_    = GameConfig.throwerAttackRange;  atkI_  = GameConfig.throwerAttackInterval;
+                cr = 0.5f; hh = 1.1f;
+            }
+            case PREDATOR -> {
+                health_ = GameConfig.predatorHealth; speed_ = GameConfig.predatorSpeed;
+                dps_    = GameConfig.predatorDamagePerSec; aggro_ = GameConfig.predatorAggroRange;
+                atk_    = GameConfig.predatorAttackRange;  atkI_  = GameConfig.predatorAttackInterval;
+                cr = 0.6f; hh = 0.55f;  // low to the ground
             }
             default -> {
-                maxHealth      = 50f;
-                speed          = 2f;
-                damagePerSec   = 2f;
-                aggroRange     = 20f;
-                attackRange    = 1.5f;
-                attackInterval = 1.5f;
+                health_ = 50f; speed_ = 2f; dps_ = 2f;
+                aggro_  = 20f; atk_   = 1.5f; atkI_ = 1.5f;
             }
         }
-        this.health = maxHealth;
+
+        this.maxHealth      = health_;
+        this.health         = health_;
+        this.speed          = speed_;
+        this.damagePerSec   = dps_;
+        this.aggroRange     = aggro_;
+        this.attackRange    = atk_;
+        this.attackInterval = atkI_;
+        this.collisionRadius = cr;
+        this.halfHeight      = hh;
     }
 
-    /** Convenience: default GRUNT at given position. */
-    public Enemy(float x, float y, float z) {
-        this(x, y, z, Type.GRUNT);
-    }
+    public Enemy(float x, float y, float z) { this(x, y, z, Type.GRUNT); }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  Damage API
+    //  Damage / knockback API
     // ═════════════════════════════════════════════════════════════════════════
 
     /** Apply damage and trigger hit-flash. Returns true if the kill shot. */
     public boolean applyDamage(float amount) {
         if (!alive) return false;
+        // Golems have smash resistance
+        if (type == Type.GOLEM) amount *= GameConfig.golemSmashResist + (1f - GameConfig.golemSmashResist);
         health        = Math.max(0f, health - amount);
         hitFlashTimer = 0.18f;
-        if (health <= 0f) {
-            alive = false;
-            return true;
-        }
+        if (health <= 0f) { alive = false; return true; }
         return false;
     }
 
+    /**
+     * Apply knockback impulse.
+     * kx/kz = horizontal launch speed (blocks/s); ky = upward speed (added, not replaced).
+     * Golems are heavily resistant to knockback.
+     */
+    public void applyKnockback(float kx, float ky, float kz) {
+        float resist = (type == Type.GOLEM) ? 0.15f : 1.0f;
+        knockbackVelX = kx * resist;
+        knockbackVelZ = kz * resist;
+        if (ky > 0f) velocityY = Math.max(velocityY, ky * resist);
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
-    //  Main update — called by EnemyManager each frame
+    //  Main update
     // ═════════════════════════════════════════════════════════════════════════
 
-    /**
-     * @param dt          scaled delta time
-     * @param world       for block collision and LOS
-     * @param playerPos   player feet position
-     * @param allEnemies  full list for separation force
-     */
     public void update(float dt, World world, Vector3f playerPos, List<Enemy> allEnemies) {
         framePlayerDamage = 0f;
+        wantsToThrow      = false;
         if (!alive) {
             if (hitFlashTimer > 0f) hitFlashTimer = Math.max(0f, hitFlashTimer - dt);
             return;
         }
-
         if (hitFlashTimer > 0f) hitFlashTimer = Math.max(0f, hitFlashTimer - dt);
 
-        // Player chest for targeting (more reliable than feet)
         Vector3f playerCentre = new Vector3f(playerPos.x, playerPos.y + 0.9f, playerPos.z);
         float    distToPlayer = new Vector3f(playerCentre).sub(getCentre()).length();
 
-        tickAI(dt, distToPlayer);
+        tickCooldowns(dt);
+        tickAI(dt, distToPlayer, playerCentre, playerPos);
         tickMovement(dt, world, playerCentre, distToPlayer, allEnemies);
         tickGravity(dt, world);
+
+        // Horizontal knockback decay
+        if (knockbackVelX != 0f || knockbackVelZ != 0f) {
+            position.x += knockbackVelX * dt;
+            position.z += knockbackVelZ * dt;
+            float decay = (float) Math.pow(GameConfig.knockbackDecay, dt);
+            knockbackVelX *= decay;
+            knockbackVelZ *= decay;
+            if (Math.abs(knockbackVelX) < 0.05f) knockbackVelX = 0f;
+            if (Math.abs(knockbackVelZ) < 0.05f) knockbackVelZ = 0f;
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Cooldown ticks
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private void tickCooldowns(float dt) {
+        if (slamCooldown  > 0f) slamCooldown  -= dt;
+        if (throwCooldown > 0f) throwCooldown  -= dt;
+        if (pounceCooldown > 0f) pounceCooldown -= dt;
+        if (pounceTimer    > 0f) pounceTimer   -= dt;
+        if (mudTrapTimer   > 0f) mudTrapTimer   -= dt;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
     //  AI State Machine
     // ═════════════════════════════════════════════════════════════════════════
 
-    private void tickAI(float dt, float distToPlayer) {
-        // Mud-trapped: frozen in place, cannot act
-        if (mudTrapTimer > 0f) {
-            mudTrapTimer = Math.max(0f, mudTrapTimer - dt);
-            return;
+    private void tickAI(float dt, float distToPlayer,
+                        Vector3f playerCentre, Vector3f playerPos) {
+        if (mudTrapTimer > 0f) return;
+
+        float leash = aggroRange * 1.8f;
+
+        switch (type) {
+
+            // ── GRUNT / BRUTE / STALKER — classic melee ───────────────────────
+            case GRUNT, BRUTE, STALKER -> tickMeleeAI(dt, distToPlayer, leash);
+
+            // ── GOLEM — slam + ranged throw ───────────────────────────────────
+            case GOLEM -> tickGolemAI(dt, distToPlayer, leash, playerCentre);
+
+            // ── THROWER — ranged; retreats from close player ──────────────────
+            case THROWER -> tickThrowerAI(dt, distToPlayer, leash);
+
+            // ── PREDATOR — fast; pounces ──────────────────────────────────────
+            case PREDATOR -> tickPredatorAI(dt, distToPlayer, leash, playerCentre, playerPos);
         }
+    }
 
-        float leash = aggroRange * 1.6f; // give up chasing past this distance
+    // ─── Melee (GRUNT / BRUTE / STALKER) ─────────────────────────────────────
 
+    private void tickMeleeAI(float dt, float dist, float leash) {
         switch (state) {
-            case IDLE -> {
-                if (distToPlayer <= aggroRange) {
-                    state      = State.ALERTED;
-                    alertTimer = (type == Type.BRUTE) ? 1.1f : 0.55f;
-                }
-            }
-            case ALERTED -> {
-                alertTimer -= dt;
-                if (alertTimer <= 0f) state = State.CHASE;
-            }
-            case CHASE -> {
-                if (distToPlayer <= attackRange)  state = State.ATTACK;
-                else if (distToPlayer > leash)    state = State.IDLE;
-            }
-            case ATTACK -> {
-                // Discrete hits rather than continuous damage
-                if (attackCooldown > 0f) {
-                    attackCooldown -= dt;
-                } else {
+            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED;
+                                alertTimer = (type == Type.BRUTE) ? 1.1f : 0.55f; } }
+            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
+            case CHASE   -> { if (dist <= attackRange) state = State.ATTACK;
+                              else if (dist > leash) state = State.IDLE; }
+            case ATTACK  -> {
+                if (attackCooldown <= 0f) {
                     framePlayerDamage = damagePerSec * attackInterval;
                     attackCooldown    = attackInterval;
                 }
-                if (distToPlayer > attackRange * 1.25f) state = State.CHASE;
+                if (dist > attackRange * 1.25f) state = State.CHASE;
             }
+            default -> state = State.IDLE;
+        }
+    }
+
+    // ─── GOLEM ────────────────────────────────────────────────────────────────
+
+    private void tickGolemAI(float dt, float dist, float leash, Vector3f playerCentre) {
+        switch (state) {
+            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 1.5f; } }
+            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
+
+            case CHASE -> {
+                if (dist > leash) { state = State.IDLE; break; }
+                // Slam check
+                if (dist <= GameConfig.golemSlamRange && slamCooldown <= 0f) {
+                    state = State.SLAMMING;
+                    slamWindUp = 0.6f;
+                    break;
+                }
+                // Long-range throw
+                if (dist >= GameConfig.golemSlamRange && dist <= GameConfig.golemThrowRange
+                        && throwCooldown <= 0f) {
+                    wantsToThrow  = true;
+                    throwCooldown = GameConfig.golemThrowCooldown;
+                }
+                if (dist <= attackRange) state = State.ATTACK;
+            }
+
+            case SLAMMING -> {
+                slamWindUp -= dt;
+                if (slamWindUp <= 0f) {
+                    // Shockwave — damage/knockback is processed by EnemyManager.pendingPlayerDamage
+                    // We signal it through framePlayerDamage with a massive number capped by Window
+                    // Actually: EnemyManager doesn't have the player dist here.
+                    // Use framePlayerDamage; Window checks dist.
+                    framePlayerDamage = GameConfig.golemSlamDamage; // distance checked by EnemyManager
+                    slamCooldown = GameConfig.golemSlamCooldown;
+                    state        = State.CHASE;
+                }
+            }
+
+            case ATTACK -> {
+                if (attackCooldown <= 0f) {
+                    framePlayerDamage = damagePerSec * attackInterval;
+                    attackCooldown    = attackInterval;
+                }
+                if (dist > attackRange * 1.3f) state = State.CHASE;
+            }
+            default -> state = State.CHASE;
+        }
+    }
+
+    // ─── THROWER ──────────────────────────────────────────────────────────────
+
+    private void tickThrowerAI(float dt, float dist, float leash) {
+        switch (state) {
+            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.4f; } }
+            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
+
+            case CHASE -> {
+                if (dist > leash) { state = State.IDLE; break; }
+                // Too close — retreat
+                if (dist < GameConfig.throwerPreferredDist * 0.6f) {
+                    state = State.RETREATING; break;
+                }
+                // In throw range and cooldown ready
+                if (dist <= GameConfig.throwerAggroRange && throwCooldown <= 0f) {
+                    wantsToThrow  = true;
+                    throwCooldown = GameConfig.throwerThrowCooldown;
+                }
+                // Weak melee if cornered
+                if (dist <= attackRange) state = State.ATTACK;
+            }
+
+            case RETREATING -> {
+                // Return to CHASE once preferred distance is re-established
+                if (dist >= GameConfig.throwerPreferredDist) state = State.CHASE;
+                if (dist > leash) state = State.IDLE;
+            }
+
+            case ATTACK -> {
+                // Only used if player corners the thrower
+                if (attackCooldown <= 0f) {
+                    framePlayerDamage = damagePerSec * attackInterval;
+                    attackCooldown    = attackInterval;
+                }
+                if (dist > attackRange * 1.5f) state = State.CHASE;
+            }
+            default -> state = State.CHASE;
+        }
+    }
+
+    // ─── PREDATOR ─────────────────────────────────────────────────────────────
+
+    private void tickPredatorAI(float dt, float dist, float leash,
+                                 Vector3f playerCentre, Vector3f playerPos) {
+        switch (state) {
+            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.3f; } }
+            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
+
+            case CHASE -> {
+                if (dist > leash) { state = State.IDLE; break; }
+                // Pounce trigger
+                if (dist <= GameConfig.predatorPounceDist && pounceCooldown <= 0f && onGround) {
+                    state       = State.POUNCING;
+                    pounceTimer = 0.55f;
+                    // Launch horizontally toward player + leap
+                    float dx = playerCentre.x - position.x;
+                    float dz = playerCentre.z - position.z;
+                    float hd = (float) Math.sqrt(dx * dx + dz * dz);
+                    if (hd > 0.01f) {
+                        knockbackVelX = (dx / hd) * GameConfig.predatorPounceSpeed;
+                        knockbackVelZ = (dz / hd) * GameConfig.predatorPounceSpeed;
+                    }
+                    velocityY     = GameConfig.predatorPounceLeap;
+                    pounceCooldown = GameConfig.predatorPounceCooldown;
+                    break;
+                }
+                if (dist <= attackRange) state = State.ATTACK;
+            }
+
+            case POUNCING -> {
+                // Deal pounce damage if we connect during the airborne window
+                if (dist <= attackRange * 1.2f) {
+                    framePlayerDamage = GameConfig.predatorPounceDamage;
+                    // End pounce on hit
+                    knockbackVelX = 0f;
+                    knockbackVelZ = 0f;
+                    state         = State.CHASE;
+                } else if (pounceTimer <= 0f || onGround) {
+                    // Missed or landed — back to chase
+                    state = State.CHASE;
+                }
+            }
+
+            case ATTACK -> {
+                if (attackCooldown <= 0f) {
+                    framePlayerDamage = damagePerSec * attackInterval;
+                    attackCooldown    = attackInterval;
+                }
+                if (dist > attackRange * 1.5f) state = State.CHASE;
+            }
+            default -> state = State.CHASE;
         }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  Horizontal movement + obstacle avoidance
+    //  Horizontal movement
     // ═════════════════════════════════════════════════════════════════════════
 
     private void tickMovement(float dt, World world, Vector3f target,
                               float distToTarget, List<Enemy> allEnemies) {
-
-        // Mud-trapped: can't move (mudTrapTimer already ticked in tickAI)
         if (mudTrapTimer > 0f) return;
 
-        // Only move when actively chasing
-        if (state != State.CHASE && state != State.ATTACK) return;
+        boolean shouldMove = switch (state) {
+            case CHASE, ATTACK, SLAMMING -> true;
+            case RETREATING -> true;   // Thrower moves away
+            case POUNCING   -> false;  // knockback handles pounce movement
+            default         -> false;
+        };
+        if (!shouldMove) return;
 
-        // Direction to target (horizontal only)
-        float dx = target.x - position.x;
-        float dz = target.z - position.z;
+        float dx, dz;
+        if (state == State.RETREATING) {
+            // Move away from player
+            dx = position.x - target.x;
+            dz = position.z - target.z;
+        } else {
+            dx = target.x - position.x;
+            dz = target.z - position.z;
+        }
         float hd = (float) Math.sqrt(dx * dx + dz * dz);
         if (hd < 0.1f) return;
 
         float ndx = dx / hd;
         float ndz = dz / hd;
 
-        // ── MUD underfoot check — slow to 10% speed ───────────────────────────
         int underX = (int) Math.floor(position.x);
         int underY = (int) Math.floor(position.y - 0.1f);
         int underZ = (int) Math.floor(position.z);
-        boolean onMud = world.getBlock(underX, underY, underZ) == Block.MUD;
+        boolean onMud  = world.getBlock(underX, underY, underZ) == Block.MUD;
+        float   moveSpeed = (state == State.RETREATING)
+                ? GameConfig.throwerRetreatSpeed : speed;
+        float step = moveSpeed * dt * (onMud ? 0.10f : 1.0f);
 
-        float step = speed * dt * (onMud ? 0.10f : 1.0f);
-
-        // ── Try X then Z independently ────────────────────────────────────────
         float nx = position.x + ndx * step;
         float nz = position.z + ndz * step;
-
-        int footY = (int) Math.floor(position.y + 0.1f);
+        int   footY = (int) Math.floor(position.y + 0.1f);
 
         boolean blockedX = isSolidColumn(world, nx, footY, position.z);
         boolean blockedZ = isSolidColumn(world, position.x, footY, nz);
 
-        if (!blockedX) {
-            position.x = nx;
-        }
-        if (!blockedZ) {
-            position.z = nz;
-        }
+        if (!blockedX) position.x = nx;
+        if (!blockedZ) position.z = nz;
 
-        // ── Jump if still blocked ─────────────────────────────────────────────
         if ((blockedX || blockedZ) && onGround) {
-            // Check that two blocks above the obstacle are clear
             int blockAheadX = (int) Math.floor(position.x + ndx * 0.9f);
             int blockAheadZ = (int) Math.floor(position.z + ndz * 0.9f);
-            boolean clearAbove1 = !world.getBlock(blockAheadX, footY + 1, blockAheadZ).isSolid();
-            boolean clearAbove2 = !world.getBlock(blockAheadX, footY + 2, blockAheadZ).isSolid();
-            if (clearAbove1 && clearAbove2) {
-                velocityY = 7.5f;
+            boolean clear1  = !world.getBlock(blockAheadX, footY + 1, blockAheadZ).isSolid();
+            boolean clear2  = !world.getBlock(blockAheadX, footY + 2, blockAheadZ).isSolid();
+            if (clear1 && clear2) {
+                velocityY = (type == Type.PREDATOR) ? 10f : 7.5f;
             } else {
-                // Can't jump — strafe around obstacle
                 strafeTimer += dt;
-                if (strafeTimer >= STRAFE_FLIP_SECS) {
-                    strafeSign  = -strafeSign;
-                    strafeTimer = 0f;
-                }
-                float perpX = -ndz * strafeSign;
-                float perpZ =  ndx * strafeSign;
-                float sx = position.x + perpX * step;
-                float sz = position.z + perpZ * step;
-                if (!isSolidColumn(world, sx, footY, sz)) {
-                    position.x = sx;
-                    position.z = sz;
-                }
+                if (strafeTimer >= STRAFE_FLIP_SECS) { strafeSign = -strafeSign; strafeTimer = 0f; }
+                float sx = position.x + (-ndz * strafeSign) * step;
+                float sz = position.z + ( ndx * strafeSign) * step;
+                if (!isSolidColumn(world, sx, footY, sz)) { position.x = sx; position.z = sz; }
             }
         }
 
-        // ── Separation force — prevent enemies stacking ───────────────────────
+        // Separation
+        float sepRadius = collisionRadius * 2.2f;
         for (Enemy other : allEnemies) {
             if (other == this || !other.alive) continue;
-            float sepX = position.x - other.position.x;
-            float sepZ = position.z - other.position.z;
-            float dist = (float) Math.sqrt(sepX * sepX + sepZ * sepZ);
-            if (dist < 1.3f && dist > 0.001f) {
-                float pushStrength = (1.3f - dist) / 1.3f * 3.5f;
-                position.x += (sepX / dist) * pushStrength * dt;
-                position.z += (sepZ / dist) * pushStrength * dt;
+            float sx = position.x - other.position.x;
+            float sz = position.z - other.position.z;
+            float dist = (float) Math.sqrt(sx * sx + sz * sz);
+            if (dist < sepRadius && dist > 0.001f) {
+                float push = (sepRadius - dist) / sepRadius * 3.5f;
+                position.x += (sx / dist) * push * dt;
+                position.z += (sz / dist) * push * dt;
             }
         }
     }
 
-    /** Returns true if any of the two foot-level blocks at (x, y, z) and
-     *  (x, y+1, z) would block horizontal movement. */
     private boolean isSolidColumn(World world, float x, int footY, float z) {
         int bx = (int) Math.floor(x);
         int bz = (int) Math.floor(z);
-        // Check two blocks tall (enemy capsule height)
         return world.getBlock(bx, footY,     bz).isSolid()
             || world.getBlock(bx, footY + 1, bz).isSolid();
     }
@@ -354,15 +545,13 @@ public class Enemy {
         velocityY -= GRAVITY * dt;
         velocityY  = Math.max(-MAX_FALL_SPEED, velocityY);
 
-        float dy   = velocityY * dt;
-        int   bx   = (int) Math.floor(position.x);
-        int   bz   = (int) Math.floor(position.z);
+        float dy = velocityY * dt;
+        int   bx = (int) Math.floor(position.x);
+        int   bz = (int) Math.floor(position.z);
 
         if (dy < 0f) {
-            // Falling — check block below feet
             int feetY = (int) Math.floor(position.y + dy);
-            if (feetY >= 0 && feetY < Chunk.HEIGHT
-                    && world.getBlock(bx, feetY, bz).isSolid()) {
+            if (feetY >= 0 && feetY < Chunk.HEIGHT && world.getBlock(bx, feetY, bz).isSolid()) {
                 position.y = feetY + 1f;
                 velocityY  = 0f;
                 onGround   = true;
@@ -370,49 +559,56 @@ public class Enemy {
                 position.y += dy;
             }
         } else if (dy > 0f) {
-            // Rising (jump) — check block above head
-            int headY = (int) Math.floor(position.y + 2f * HALF_HEIGHT + dy);
-            if (headY >= 0 && headY < Chunk.HEIGHT
-                    && world.getBlock(bx, headY, bz).isSolid()) {
+            int headY = (int) Math.floor(position.y + 2f * halfHeight + dy);
+            if (headY >= 0 && headY < Chunk.HEIGHT && world.getBlock(bx, headY, bz).isSolid()) {
                 velocityY = 0f;
             } else {
                 position.y += dy;
             }
         } else {
-            // Check if still on ground when not moving vertically
             int feetY = (int) Math.floor(position.y - 0.05f);
-            if (feetY >= 0 && world.getBlock(bx, feetY, bz).isSolid()) {
-                onGround = true;
-            }
+            if (feetY >= 0 && world.getBlock(bx, feetY, bz).isSolid()) onGround = true;
         }
-
-        // Clamp to world bounds
         position.y = Math.max(1f, Math.min(Chunk.HEIGHT - 2f, position.y));
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  Targeting helpers
+    //  Helpers / accessors
     // ═════════════════════════════════════════════════════════════════════════
 
-    /** Body centre — used for LOS checks, HP bar projection, and targeting. */
+    /** Body centre — used for LOS checks, HP bar, targeting, and seal-attach. */
     public Vector3f getCentre() {
-        return new Vector3f(position.x, position.y + HALF_HEIGHT, position.z);
+        return new Vector3f(position.x, position.y + halfHeight, position.z);
     }
 
-    /** Returns true if a 3D point lies within this enemy's collision cylinder. */
-    public boolean isPointInside(Vector3f p) {
-        if (p.y < position.y || p.y > position.y + 2f * HALF_HEIGHT) return false;
+    /** Test whether point p is inside the enemy's capsule-approximated hitbox. */
+    public boolean isHitByPlayer(Vector3f p) {
+        if (p.y < position.y || p.y > position.y + 2f * halfHeight) return false;
         float dx = p.x - position.x;
         float dz = p.z - position.z;
-        return (dx * dx + dz * dz) <= RADIUS * RADIUS;
+        return (dx * dx + dz * dz) <= collisionRadius * collisionRadius;
     }
 
-    /** Visual scale multiplier used by Window for per-type size. */
-    public float renderScale() {
+    // ── Visual scale per type (non-uniform for new types) ────────────────────
+
+    /**
+     * Returns { scaleX, scaleY, scaleZ } for rendering.
+     * Window uses .scale(v[0], v[1], v[2]) instead of a single uniform scale.
+     */
+    public float[] renderScaleVec() {
         return switch (type) {
-            case BRUTE   -> 0.80f;
-            case STALKER -> 0.38f;
-            default      -> 0.50f; // GRUNT
+            case BRUTE   -> new float[]{ 0.80f, 0.80f, 0.80f };
+            case STALKER -> new float[]{ 0.38f, 0.38f, 0.38f };
+            case GOLEM   -> new float[]{ 1.40f, 1.60f, 1.40f }; // wide and tall
+            case THROWER -> new float[]{ 0.52f, 0.58f, 0.52f };
+            case PREDATOR-> new float[]{ 0.80f, 0.38f, 0.80f }; // wide, low
+            default      -> new float[]{ 0.50f, 0.50f, 0.50f }; // GRUNT
         };
+    }
+
+    /** Uniform scale fallback (used when renderScaleVec is not needed). */
+    public float renderScale() {
+        float[] v = renderScaleVec();
+        return v[1]; // use Y (height) as proxy
     }
 }

@@ -107,13 +107,29 @@ public class GameConfig {
     public static float rollLerpSpeed      = 2.5f;   // roll lerp rate (reduced from 6.0 — was too fast/disorienting)
 
     // ── GROUND SMASH ─────────────────────────────────────────────────────────
-    public static float smashMinHeight      = 2.0f;   // blocks fallen before smash triggers
-    public static float smashTriggerVelocity = -3.0f; // must be falling at least this fast
-    public static float smashDescentSpeed   = 65.0f;   // locked downward speed during smash
-    public static int   smashCraterRadius   = 4;       // sphere radius in blocks
+    public static float smashMinHeight        = 2.0f;   // blocks fallen before smash triggers
+    public static float smashTriggerVelocity  = -3.0f;  // must be falling at least this fast
+    public static float smashDescentSpeed     = 65.0f;  // initial speed at smash start (legacy, kept for reference)
+    public static float smashDescentAccel     = 200.0f; // acceleration during smash (blocks/s²)
+    public static float smashDescentMaxSpeed  = 130.0f; // terminal smash speed (blocks/s)
+    public static int   smashCraterRadius     = 4;      // sphere radius in blocks
     public static float smashShakeDuration  = 0.8f;    // seconds of screen shake
     public static float smashShakeAmplitude = 0.28f;   // max camera offset magnitude
     public static float smashShakeFrequency = 20.0f;   // oscillations per second
+
+    // ── SMASH SPLASH / KNOCKBACK ──────────────────────────────────────────────
+    /** Blast radius = craterRadius × this multiplier (enemies within are hit). */
+    public static float smashSplashRadiusMult    = 2.5f;
+    /** Max damage dealt to an enemy at the centre of the blast (linear falloff). */
+    public static float smashSplashDamage        = 60f;
+    /** Peak horizontal launch speed (blocks/sec) applied to closest enemies. */
+    public static float smashKnockbackStrength   = 28f;
+    /**
+     * Per-second multiplier for knockback velocity decay.
+     * A value of 0.05 means the velocity drops to 5% of its initial value each second
+     * (pow(0.05, dt) ≈ exponential decay with half-life ~0.23 s).
+     */
+    public static float knockbackDecay           = 0.05f;
 
     // ── TIME DILATION ─────────────────────────────────────────────────────────
     // Hold R = slow motion, hold Y = fast time.
@@ -263,7 +279,7 @@ public class GameConfig {
     // ── QUAGMIRE (M key) ─────────────────────────────────────────────────────
     // A wave of mud erupts from slightly in front of the player and races
     // toward the targeted enemy, trapping it on contact.
-    public static float quagmireRange        = 30f;  // max target range (blocks)
+    public static float quagmireRange        = 50f;  // max target range (blocks)
     public static float quagmireTrapDuration = 4.0f; // seconds the enemy is frozen
     public static float quagmireSpreadSpeed  = 14f;  // blocks/sec the mud wave travels
     public static float quagmireCooldown     = 8.0f;
@@ -287,7 +303,7 @@ public class GameConfig {
 
     // ── TODO'S TECHNIQUE (J key) ──────────────────────────────────────────────
     // Tap J to instantly swap positions with the nearest visible enemy.
-    public static float todoRange    = 30f;  // max swap range (blocks)
+    public static float todoRange    = 80f;  // max swap range (blocks)
     public static float todoCooldown = 4.0f; // seconds between swaps
 
     // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────────────────────────
@@ -300,7 +316,102 @@ public class GameConfig {
     public static float substituteBlastDamage  = 80f;   // dummy explosion damage (hp)
     public static float substituteCooldown     = 10.0f; // seconds between activations
 
-    // ── HEALING (Hold J) ──────────────────────────────────────────────────────
-    public static float healPerSecond = 15.0f;  // HP restored per second while holding
-    public static float healCooldown  = 4.0f;   // Seconds before you can heal again after stopping
+    // ── HEALING (Hold L) ──────────────────────────────────────────────────────
+    public static float healPerSecond   = 15.0f;  // HP restored per second while holding
+    public static float healCooldown    = 4.0f;   // Seconds before you can heal again after stopping
+    public static float healMaxDuration = 3.5f;   // Max continuous seconds before forced cooldown
+
+    // ── KAMUI (Z toggle) ─────────────────────────────────────────────────────
+    /** Seconds the player can stay phased before being forced out. */
+    public static float kamuiMaxDuration = 6.0f;
+    /** Cooldown after exiting Kamui (whether voluntary or by timer). */
+    public static float kamuiCooldown    = 14.0f;
+
+    // ── LIGHTNING (U key) ────────────────────────────────────────────────────
+    /** Seconds to reach full charge. */
+    public static float lightningMaxCharge   = 2.0f;
+    /** Aimed-strike damage at zero charge. */
+    public static float lightningBaseDamage  = 75f;
+    /** Aimed-strike damage at full charge (scales linearly between these). */
+    public static float lightningMaxDamage   = 280f;
+    /** AOE-burst damage per enemy (triggered by double-tap U). */
+    public static float lightningAoeDamage   = 50f;
+    /** AOE-burst radius (blocks). */
+    public static float lightningAoeRadius   = 14f;
+    /** Maximum range for aimed targeting (blocks). */
+    public static float lightningRange       = 100f;
+    /** Cooldown after a charged single-target strike. */
+    public static float lightningCooldown    = 4.5f;
+    /** Cooldown after an AOE burst. */
+    public static float lightningAoeCooldown = 9.0f;
+    /** Damage multiplier when the target stands on or in water. */
+    public static float lightningWaterMult   = 2.8f;
+    /** Seconds the lightning bolt visual remains on screen. */
+    public static float lightningBoltLife    = 0.5f;
+    /** Maximum window (seconds) between two U presses to count as a double-tap. */
+    public static float lightningDoubleTapWindow = 0.35f;
+
+    // ── ENEMY: GOLEM ─────────────────────────────────────────────────────────
+    public static float golemHealth          = 420f;
+    public static float golemSpeed           = 1.6f;
+    /** Melee contact damage per second (close-in body slam). */
+    public static float golemDamagePerSec    = 20f;
+    public static float golemAggroRange      = 45f;
+    public static float golemAttackRange     = 2.8f;
+    public static float golemAttackInterval  = 1.8f;
+    /** Radius of the shockwave slam attack. */
+    public static float golemSlamRadius      = 5.0f;
+    /** Damage dealt by the shockwave slam. */
+    public static float golemSlamDamage      = 55f;
+    /** Cooldown between slam uses. */
+    public static float golemSlamCooldown    = 5.0f;
+    /** Distance at which the golem triggers a slam. */
+    public static float golemSlamRange       = 3.5f;
+    /** Distance at which the golem tries to throw a boulder. */
+    public static float golemThrowRange      = 18.0f;
+    public static float golemThrowCooldown   = 7.0f;
+    public static float golemThrowDamage     = 40f;
+    /** Horizontal launch speed of boulder projectiles (blocks/s). */
+    public static float golemThrowSpeed      = 18f;
+    /** Fraction of smash-splash damage golems absorb (1.0 = full, 0.5 = half). */
+    public static float golemSmashResist     = 0.35f;
+
+    // ── ENEMY: THROWER ───────────────────────────────────────────────────────
+    public static float throwerHealth         = 95f;
+    public static float throwerSpeed          = 4.8f;
+    public static float throwerDamagePerSec   = 4f;   // weak melee if cornered
+    public static float throwerAggroRange     = 40f;
+    public static float throwerAttackRange    = 2.0f;
+    public static float throwerAttackInterval = 2.5f;
+    public static float throwerThrowCooldown  = 4.5f;
+    public static float throwerThrowDamage    = 30f;
+    public static float throwerThrowSpeed     = 22f;
+    /** Thrower tries to maintain this distance from the player. */
+    public static float throwerPreferredDist  = 12.0f;
+    /** Max retreat speed when the player is too close. */
+    public static float throwerRetreatSpeed   = 5.5f;
+
+    // ── ENEMY: PREDATOR ──────────────────────────────────────────────────────
+    public static float predatorHealth         = 70f;
+    public static float predatorSpeed          = 9.5f;
+    public static float predatorDamagePerSec   = 18f;
+    public static float predatorAggroRange     = 35f;
+    public static float predatorAttackRange    = 1.8f;
+    public static float predatorAttackInterval = 0.75f;
+    /** Distance at which the predator initiates a pounce. */
+    public static float predatorPounceDist     = 7.0f;
+    /** Horizontal burst speed of the pounce (blocks/s). */
+    public static float predatorPounceSpeed    = 22f;
+    /** Vertical leap during a pounce (blocks/s upward). */
+    public static float predatorPounceLeap     = 9f;
+    /** Extra damage dealt on landing a pounce hit. */
+    public static float predatorPounceDamage   = 45f;
+    /** Cooldown between pounces. */
+    public static float predatorPounceCooldown = 6.0f;
+
+    // ── ENEMY PROJECTILE ─────────────────────────────────────────────────────
+    /** Gravity applied to arc-trajectory projectiles (blocks/s²). */
+    public static float projectileGravity  = 18f;
+    /** Max seconds an enemy projectile travels before despawning. */
+    public static float projectileLifetime = 6.0f;
 }
