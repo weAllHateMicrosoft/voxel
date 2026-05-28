@@ -170,7 +170,9 @@ public class AttackController {
             case IDLE -> {
                 // Leading edge of F, not on cooldown, no ability stealing control
                 if (fHeld && !lastF && meleeCooldown <= 0f
-                        && !player.abilities.isAnyAbilityActive()) {
+                        && !player.abilities.isAnyAbilityActive()
+                        && player.mana >= GameConfig.manaCleave) {
+                    player.mana -= GameConfig.manaCleave;
                     meleePhase = MeleePhase.WINDUP;
                     meleeTimer = GameConfig.meleeWindupDuration;
                 }
@@ -367,11 +369,14 @@ public class AttackController {
                 fovBoost = lerp(fovBoost, -35f * cf, 12f * dt);
             }
         } else if (isCharging) {
-            // C released — fire
+            // C released — fire (only if enough mana)
             float cf = Math.min(1f, chargeTime / GameConfig.voidShardMaxCharge);
-            fireBolt(camera, world, cf);
+            if (player.mana >= GameConfig.manaVoidShard) {
+                player.mana -= GameConfig.manaVoidShard;
+                fireBolt(camera, world, cf);
+                rangedCooldown = GameConfig.voidShardCooldown;
+            }
             isCharging    = false;
-            rangedCooldown = GameConfig.voidShardCooldown;
             overlayColor.set(0.75f, 0.40f, 1.0f);
             overlayStrength = 0f;
         }

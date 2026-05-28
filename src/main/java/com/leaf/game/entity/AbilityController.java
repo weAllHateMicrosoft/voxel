@@ -89,13 +89,28 @@ public class AbilityController {
     public  final List<Vector3f> trajectoryArc = new ArrayList<>();
 
     // ── KAMUI (Z toggle) — phase into a separate dimension ───────────────────
-    /** True while the player is phased (invincible, cannot deal damage). */
+    /** True while the player is phased (invincible). */
     public  boolean isKamui        = false;
     /** Seconds remaining in the current kamui phase. */
     public  float   kamuiTimer     = 0f;
     /** Cooldown after exiting kamui. */
     private float   kamuiCooldown  = 0f;
     private boolean lastZ          = false;
+    /**
+     * True when Kamui was temporarily auto-exited so the player can attack.
+     * We re-enter automatically once kamuiResumeTimer hits zero and attack keys are up.
+     */
+    public  boolean kamuiAutoExited  = false;
+    private float   kamuiResumeTimer = 0f;
+
+    // ── KAMUI ABSORPTION ─────────────────────────────────────────────────────
+    /** True while the player is actively absorbing a target into the Kamui dimension. */
+    public  boolean isAbsorbing       = false;
+    /** 0→1 charge progress for the current absorption. */
+    public  float   absorptionCharge  = 0f;
+    /** Screen-space X/Y of the absorption vortex origin (set by Window). */
+    public  float   absorptionScrX    = 0f;
+    public  float   absorptionScrY    = 0f;
 
     // ── STATE REWIND (internal — no longer key-bound, kept for possible future use) ─
     public  boolean  isRewinding    = false;   // always false; legacy field kept for Window compat
@@ -178,36 +193,23 @@ public class AbilityController {
                 sy--;
             }
 
-            // 1. MUST BE ON GROUND: player feet must be at most 0.6 blocks above surface
-            boolean isGrounded = (player.position.y - sy) <= 0.6f;
+            // 1. MUST BE ON GROUND: player feet must be at most 1.2 blocks above surface
+            boolean isGrounded = (player.position.y - sy) <= 1.2f;
 
-            // 2. DENSE 3×3×3 CHECK directly below player — rejects pillar tops (which
-            //    are only 1 block wide) and floating platforms.  All 27 blocks must be solid.
+            // 2. MINIMAL FOUNDATION CHECK: just verify 3×3 directly below has some solid
+            //    mass. Rejects single-block pillar tops but allows natural terrain.
             int denseCount = 0;
-            if (isGrounded && sy >= 2) {
+            if (isGrounded && sy >= 1) {
                 for (int ddx = -1; ddx <= 1; ddx++) {
                     for (int ddz = -1; ddz <= 1; ddz++) {
-                        for (int ddy = 0; ddy >= -2; ddy--) {
-                            if (world.getBlock(cx + ddx, sy + ddy, cz + ddz).isSolid()) denseCount++;
-                        }
+                        if (world.getBlock(cx + ddx, sy, cz + ddz).isSolid()) denseCount++;
                     }
                 }
             }
 
-            // 3. WIDE MASS CHECK: 5×5 area, 5 blocks deep — rejects narrow spires/pillars.
-            int solidMass = 0;
-            if (isGrounded && sy > 0) {
-                for (int dx = -2; dx <= 2; dx++) {
-                    for (int dz = -2; dz <= 2; dz++) {
-                        for (int dy = 0; dy >= -4; dy--) {
-                            if (sy + dy >= 0 && world.getBlock(cx + dx, sy + dy, cz + dz).isSolid()) solidMass++;
-                        }
-                    }
-                }
-            }
-
-            // Dense core (24/27) AND broad foundation (100/125) must both pass.
-            if (isGrounded && denseCount >= 24 && solidMass >= 100) {
+            // Need at least 5/9 of the 3×3 surface to be solid (allows uneven terrain).
+            if (isGrounded && denseCount >= 5 && player.mana >= GameConfig.manaPillar) {
+                player.mana -= GameConfig.manaPillar;
                 isPillaring = true;
                 pillarCenterX = player.position.x;
                 pillarCenterZ = player.position.z;
@@ -217,7 +219,10 @@ public class AbilityController {
         }
 
         if (isPillaring) {
-            if (!kHeld || (player.position.y - pillarStartPlayerY) > GameConfig.pillarMaxHeight) {
+            // Continuous mana drain while rising — cancel early if mana runs out
+            player.mana = Math.max(0f, player.mana - GameConfig.manaPillarPerSec * dt);
+            if (!kHeld || (player.position.y - pillarStartPlayerY) > GameConfig.pillarMaxHeight
+                    || player.mana <= 0f) {
                 // End ability
                 isPillaring = false;
                 pillarCooldownTimer = GameConfig.pillarCooldown;
@@ -361,45 +366,83 @@ public class AbilityController {
         }
 
         // ── KAMUI (Z toggle) — phase into a separate dimension ───────────────
-        boolean zHeld = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
+        boolean zHeld       = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
+        // Attack keys — pressing either briefly exits Kamui, then re-enters
+        boolean attackHeld  = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS
+                           || glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS;
         if (kamuiCooldown > 0f) kamuiCooldown -= dt;
 
         if (zHeld && !lastZ) {
-            if (!isKamui && kamuiCooldown <= 0f && !isAnyAbilityActive()) {
-                // Enter the dimension pocket
-                isKamui     = true;
-                kamuiTimer  = GameConfig.kamuiMaxDuration;
-            } else if (isKamui) {
-                // Voluntary exit
-                isKamui        = false;
-                kamuiCooldown  = GameConfig.kamuiCooldown;
-                kamuiTimer     = 0f;
+            if (!isKamui && !kamuiAutoExited && kamuiCooldown <= 0f && !isAnyAbilityActive()) {
+                isKamui          = true;
+                kamuiTimer       = GameConfig.kamuiMaxDuration;
+                kamuiAutoExited  = false;
+            } else if (isKamui || kamuiAutoExited) {
+                // Voluntary full exit — cancel any pending re-enter
+                isKamui          = false;
+                kamuiAutoExited  = false;
+                kamuiResumeTimer = 0f;
+                kamuiCooldown    = GameConfig.kamuiCooldown;
+                kamuiTimer       = 0f;
             }
         }
+
+        // Auto-exit when the player presses an attack key while in Kamui
+        if (isKamui && attackHeld) {
+            isKamui          = false;
+            kamuiAutoExited  = true;
+            kamuiResumeTimer = 0.7f; // stay out at least this long after releasing attack
+        }
+
+        // Auto re-enter after attack is done and brief cooldown elapsed
+        if (kamuiAutoExited && !isKamui) {
+            if (!attackHeld) kamuiResumeTimer -= dt; // only count down when not attacking
+            if (kamuiResumeTimer <= 0f && !attackHeld && kamuiTimer > 0f) {
+                isKamui         = true;
+                kamuiAutoExited = false;
+            } else if (kamuiTimer <= 0f) {
+                // Timer expired during the attack gap — full exit
+                kamuiAutoExited  = false;
+                kamuiCooldown    = GameConfig.kamuiCooldown;
+            }
+        }
+
         if (isKamui) {
             kamuiTimer -= dt;
             if (kamuiTimer <= 0f) {
-                // Timer expired — forced exit
                 isKamui       = false;
+                kamuiAutoExited = false;
                 kamuiCooldown = GameConfig.kamuiCooldown;
                 kamuiTimer    = 0f;
-            } else {
-                // Pulsing purple/silver shimmer — intensity builds as timer runs low
-                float urgency = 1f - kamuiTimer / GameConfig.kamuiMaxDuration;
-                blendOverlay(new Vector3f(0.45f, 0.0f, 0.85f), 0.22f + urgency * 0.18f, dt);
             }
+            // No blendOverlay here — the FBO distort shader is the sole source of
+            // all Kamui visual effects (pulsing vignette + purple tint).
+            // Applying a 3-D shader overlay ON TOP of the FBO post-process would
+            // double-stack the colour, making the scene almost unreadable.
         }
         lastZ = zHeld;
+
+        // Reset absorption if Kamui is not active
+        if (!isKamui) {
+            isAbsorbing      = false;
+            absorptionCharge = 0f;
+        }
 
         // Snapshot recording kept (not triggered by key, but buffer stays warm for future use)
         recordSnapshot(camera, dt);
 
-        // Decay effects when nothing active (Kamui handles its own overlay above)
+        // Decay effects when nothing active.
+        // Kamui is deliberately NOT excluded here: it doesn't set any roll or FOV,
+        // so any leftover camera effects from a prior ability should still decay cleanly.
         boolean quiet = !isDashing && !isCannonballing && !isCharging_
-                && blinkFlashTimer <= 0f && !isPillaring && !isKamui;
+                && blinkFlashTimer <= 0f && !isPillaring && !isAbsorbing;
         if (quiet) {
             decayCameraEffects(0f, 0f, dt);
-            blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
+            // Only decay overlay to zero when not in Kamui — Kamui's overlay is
+            // handled by the FBO distort shader, so the 3-D shader overlay should be clear.
+            if (!isKamui) {
+                blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
+            }
         }
 
         return false;
@@ -410,6 +453,8 @@ public class AbilityController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void startDash(long window, Camera camera) {
+        if (player.mana < GameConfig.manaDash) return;  // insufficient mana — silently block
+        player.mana -= GameConfig.manaDash;
         isDashing    = true;
         dashTimer    = GameConfig.dashDuration;
         dashCooldown = GameConfig.dashCooldown;
@@ -434,6 +479,8 @@ public class AbilityController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void fireCannonball(Camera camera) {
+        if (player.mana < GameConfig.manaCannonball) return;  // insufficient mana
+        player.mana -= GameConfig.manaCannonball;
         isCannonballing = true;
         cannonCooldown  = GameConfig.cannonCooldown;
 
@@ -531,6 +578,8 @@ public class AbilityController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void executeBlink(Camera camera, World world) {
+        if (player.mana < GameConfig.manaBlink) return;  // insufficient mana
+        player.mana -= GameConfig.manaBlink;
         Vector3f dir  = camera.getLookDirection();
         float    step = 0.45f;
         float    rx   = camera.position.x, ry = camera.position.y, rz = camera.position.z;

@@ -19,6 +19,12 @@ public class Player {
     public float maxHealth = 20.0f;
     public float highestY  = -1000f;
 
+    // ── MANA ──────────────────────────────────────────────────────────────────
+    // Consumed by abilities; regenerates passively over time.
+    // All costs are defined in GameConfig so designers can tweak them.
+    public float mana    = 100f;
+    public float maxMana = 100f;
+
     private float   velocityY  = 0.0f;
     private boolean onGround   = false;
     private boolean wasInWater = false;
@@ -179,13 +185,15 @@ public class Player {
         }
 
         // ── ATTACK TICK ────────────────────────────────────────────────────────
-        // Blocked during Kamui — the player cannot deal damage while phased.
-        if (!abilities.isKamui) {
-            attacks.tick(window, camera, world, deltaTime);
-        }
+        // Attacks always tick — AbilityController auto-exits Kamui when an attack key
+        // is pressed and re-enters once the attack completes.
+        attacks.tick(window, camera, world, deltaTime);
 
         // ── SEAL TICK (Minato's Seal) ──────────────────────────────────────────
         seals.tick(window, camera, world, deltaTime);
+
+        // ── MANA REGENERATION ──────────────────────────────────────────────────
+        mana = Math.min(maxMana, mana + GameConfig.manaRegenRate * deltaTime);
 
         // ── LIGHTNING TICK ─────────────────────────────────────────────────────
         lightning.tick(window, camera, world, deltaTime, (float) glfwGetTime());
@@ -270,6 +278,7 @@ public class Player {
                     && velocityY < GameConfig.smashTriggerVelocity
                     && (highestY - position.y) > GameConfig.smashMinHeight) {
                 isSmashing = true;
+                mana = Math.max(0f, mana - GameConfig.manaSmash);  // drain; never cancel mid-air
             }
         }
 

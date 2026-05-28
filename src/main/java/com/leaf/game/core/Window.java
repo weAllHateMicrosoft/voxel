@@ -44,20 +44,27 @@ import java.util.Map;
 import java.util.Random;
 
 public class Window {
-    private long window;
-    private Player player;
-    private World world;
-    private WorldGen worldGen;
+    long window;
+    Player player;
+    World world;
+    WorldGen worldGen;
 
-    private NoiseVisualizer noiseVis;
-    private boolean showNoiseViewer = false;
-    private RaycastResult lastTarget = null;
+    // ── SPAWN POINT ───────────────────────────────────────────────────────────
+    // Fixed world-spawn XZ. Y is determined by scanning for the surface at load.
+    private static final float SPAWN_X = 777.0f;
+    private static final float SPAWN_Z = 777.0f;
+    /** Actual surface Y found during preload; used for respawning on death. */
+    private float spawnSurfaceY = 250.0f;
 
-    private NetworkSession network;
-    private RemotePlayer remotePlayer;
+    NoiseVisualizer noiseVis;
+    boolean showNoiseViewer = false;
+    RaycastResult lastTarget = null;
+
+    NetworkSession network;
+    RemotePlayer remotePlayer;
 
     private boolean networkInitialized = false;
-    private final ImString ipInput = new ImString("127.0.0.1", 64);
+    final ImString ipInput = new ImString("127.0.0.1", 64);
 
     private final double[]  lastMouseX = {640.0};
     private final double[]  lastMouseY = {360.0};
@@ -67,36 +74,36 @@ public class Window {
     private final ImGuiImplGl3  imguiGl3  = new ImGuiImplGl3();
 
     // ── UI STATE ──────────────────────────────────────────────────────────────
-    private boolean isPaused  = false;
-    private boolean showDebug = false;
-    private boolean showChat  = false;
-    private final ImString chatInput = new ImString(256);
-    private final List<String> chatHistory = new ArrayList<>();
-    private final ImString seedInput = new ImString(32);
+    boolean isPaused  = false;
+    boolean showDebug = false;
+    boolean showChat  = false;
+    final ImString chatInput = new ImString(256);
+    final List<String> chatHistory = new ArrayList<>();
+    final ImString seedInput = new ImString(32);
 
-    private final Inventory inventory = new Inventory();
-    private int   selectedSlot  = 0;
-    private Block selectedBlock = Block.AIR;
+    final Inventory inventory = new Inventory();
+    int   selectedSlot  = 0;
+    Block selectedBlock = Block.AIR;
 
-    private final Block[] hotbar = {
+    final Block[] hotbar = {
             Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
             Block.AIR, Block.AIR, Block.AIR, Block.AIR, Block.AIR
     };
 
-    private final List<DroppedItem> droppedItems = new ArrayList<>();
+    final List<DroppedItem> droppedItems = new ArrayList<>();
     private final Map<Block, Mesh>  itemMeshes   = new HashMap<>();
 
     // ── ENEMY SYSTEM ──────────────────────────────────────────────────────────
-    private EnemyManager enemyManager;
+    EnemyManager enemyManager;
     /** Edge-detect for P key to spawn enemies. */
     private boolean lastP = false;
 
     // ── TODO'S TECHNIQUE (J key) ──────────────────────────────────────────────
-    private float   todoSwapCooldown = 0f;
+    float   todoSwapCooldown = 0f;
     private boolean lastJ            = false;
 
     // ── QUAGMIRE (M key) ─────────────────────────────────────────────────────
-    private float   quagmireCooldown = 0f;
+    float   quagmireCooldown = 0f;
     private boolean lastM            = false;
     /**
      * Active mud waves.  Each float[12]:
@@ -105,16 +112,16 @@ public class Window {
      *   [8]   target enemy ID    [9]   (reserved)
      *   [10]  last placed block X  [11] last placed block Z
      */
-    private final List<float[]> mudWaves = new ArrayList<>();
+    final List<float[]> mudWaves = new ArrayList<>();
 
     // ── STONE CANON (I key) ───────────────────────────────────────────────────
-    private boolean isChargingStoneCanon    = false;
-    private float   stoneCanonCharge        = 0f;
+    boolean isChargingStoneCanon    = false;
+    float   stoneCanonCharge        = 0f;
     private float   stoneCanonNextConsume   = 0f;  // countdown to next block consumed
     private int     stoneCanonBlocksConsumed = 0;
     private Vector3f stoneCanonLockedPos    = null; // position locked when charging starts
     private Vector3f stoneCanonGroundPos   = null; // ground point in front where boulder rises
-    private float   stoneCanonCooldownTimer = 0f;
+    float   stoneCanonCooldownTimer = 0f;
     private boolean lastI                   = false;
     private final List<ActiveStoneShot> stoneShotList = new ArrayList<>();
 
@@ -136,8 +143,8 @@ public class Window {
 
     // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────────────────────────
     /** True while V is held and the ability is ready — next hit will be negated. */
-    private boolean substitutePrimed   = false;
-    private float   substituteCooldown = 0f;
+    boolean substitutePrimed   = false;
+    float   substituteCooldown = 0f;
     /**
      * Live paper dummies.  Each entry: float[5] = { x, y, z, timer, maxTimer }.
      * Timer counts down from substituteDummyLifetime to 0, then explodes.
@@ -146,27 +153,40 @@ public class Window {
 
     // ── TUTORIAL / HELP ───────────────────────────────────────────────────────
     /** F1 toggles the full controls reference overlay. */
-    private boolean showHelp       = false;
+    boolean showHelp       = false;
     private boolean lastF1         = false;
     /** Auto-dismiss welcome banner shown when the game first loads. */
-    private float   welcomeTimer   = 0f;
+    float   welcomeTimer   = 0f;
     private boolean welcomeStarted = false;
     /** One-liner contextual hint (e.g. first stand deploy, first seal placed). */
-    private String  hintText       = null;
-    private float   hintTimer      = 0f;
+    String  hintText       = null;
+    float   hintTimer      = 0f;
     private boolean standHintShown = false;
     private boolean sealHintShown  = false;
     /** Edge-detect for contextual hint triggers. */
     private boolean wasStandDeployed = false;
     private int     lastSealCount    = 0;
 
-    private float   breakProgress = 0.0f;
-    private int     breakX, breakY, breakZ;
-    private boolean breakingActive = false;
+    float   breakProgress = 0.0f;
+    int     breakX, breakY, breakZ;
+    boolean breakingActive = false;
+
+    // ── KAMUI DISTORTION FBO ─────────────────────────────────────────────────
+    // When Kamui is active the 3-D scene is rendered into an off-screen texture,
+    // then a post-process distortion shader warps it before ImGui is composited.
+    private int  kamuiFbo        = 0;
+    private int  kamuiFboTex     = 0;
+    private int  kamuiFboRbo     = 0;   // depth renderbuffer
+    private int  kamuiScreenQuad = 0;   // VAO for the full-screen triangle pair
+    private int  kamuiFboW       = 0;   // last known FBO size — recreate on resize
+    private int  kamuiFboH       = 0;
+    private com.leaf.game.render.Shader distortShader = null;
+    /** All ImGui HUD rendering — see WindowHud.java */
+    WindowHud hud;
 
     // ── PRE-GENERATION STATE ──────────────────────────────────────────────────
-    private boolean     isPreloading = false;
-    private int         preloadRadius = 10;
+    boolean     isPreloading = false;
+    int         preloadRadius = 10;
     private final List<Chunk> chunksToGenerate = new ArrayList<>();
     private int         totalPreloadCount    = 0;
     private int         currentPreloadProgress = 0;
@@ -198,7 +218,7 @@ public class Window {
     private boolean wasSmashing      = false;
     private boolean wasCannonballing = false;
     private boolean wasCharging      = false;   // edge-detect for preload trigger
-    private float   pathReadiness    = 0f;      // 0..1 shown in HUD during charging
+    float   pathReadiness    = 0f;      // 0..1 shown in HUD during charging
     private boolean clientSpawnedAtHost = false;
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -272,10 +292,13 @@ public class Window {
 
             if (key == GLFW_KEY_F3 && action == GLFW_RELEASE && !showChat) {
                 showDebug = !showDebug;
-                // F3 does NOT capture/release the cursor — debug HUD is transparent overlay,
-                // mouse stays locked so the player can still look around.
-                // No cursor mode change needed here.
-                // (firstMouse reset is not needed either since cursor stays DISABLED)
+                // F3 releases cursor so ImGui debug elements are clickable.
+                // The cursorPos callback returns early when showDebug is true,
+                // so camera won't spin when the cursor is free.
+                boolean overlay3 = showHelp || showDebug || showNoiseViewer || isPaused;
+                glfwSetInputMode(window, GLFW_CURSOR,
+                        overlay3 ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                if (!overlay3) firstMouse[0] = true;
             }
 
             if (key == GLFW_KEY_F4 && action == GLFW_RELEASE && !showChat) {
@@ -307,11 +330,20 @@ public class Window {
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 // While piloting the stand drone OR auto-aiming at an enemy, LMB is
                 // consumed by the stand — block normal block-breaking.
+                // While Kamui is active, LMB drives the absorption system instead.
                 boolean standConsumedLMB = player.stand.isInStandPerspective()
                         || player.stand.autoAimedThisFrame;
-                if (!standConsumedLMB) {
+                boolean kamuiConsumedLMB = player != null && player.abilities.isKamui;
+                if (!standConsumedLMB && !kamuiConsumedLMB) {
                     breakingActive = (action == GLFW_PRESS || action == GLFW_REPEAT);
                     if (action == GLFW_RELEASE) breakProgress = 0.0f;
+                }
+                if (kamuiConsumedLMB && action == GLFW_RELEASE) {
+                    // Release resets absorption charge
+                    if (player != null) {
+                        player.abilities.absorptionCharge = 0f;
+                        player.abilities.isAbsorbing      = false;
+                    }
                 }
             }
 
@@ -372,7 +404,7 @@ public class Window {
         });
     }
 
-    private void startPreload() {
+    void startPreload() {
         worldGen.resetSeed(GameConfig.seed);
         world.clearAllChunks();
         world.meshingQueue.clear();
@@ -390,14 +422,45 @@ public class Window {
         Shader shader = new Shader(
                 "src/main/resources/shaders/vertex.glsl",
                 "src/main/resources/shaders/fragment.glsl");
+
+        // ── KAMUI DISTORTION SHADER + SCREEN QUAD ────────────────────────────
+        distortShader = new com.leaf.game.render.Shader(
+                "src/main/resources/shaders/distort_vertex.glsl",
+                "src/main/resources/shaders/distort_fragment.glsl");
+
+        // Full-screen quad: two triangles covering NDC [-1,1]
+        float[] quadVerts = {
+            // x      y     u     v
+            -1.0f,  1.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+            -1.0f,  1.0f, 0.0f, 1.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+             1.0f,  1.0f, 1.0f, 1.0f
+        };
+        kamuiScreenQuad = org.lwjgl.opengl.GL30.glGenVertexArrays();
+        int quadVbo = org.lwjgl.opengl.GL15.glGenBuffers();
+        org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
+        org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, quadVbo);
+        org.lwjgl.opengl.GL15.glBufferData(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER,
+                quadVerts, org.lwjgl.opengl.GL15.GL_STATIC_DRAW);
+        // attrib 0: position (xy)
+        org.lwjgl.opengl.GL20.glVertexAttribPointer(0, 2, GL_FLOAT, false, 4*4, 0L);
+        org.lwjgl.opengl.GL20.glEnableVertexAttribArray(0);
+        // attrib 1: texcoord (uv)
+        org.lwjgl.opengl.GL20.glVertexAttribPointer(1, 2, GL_FLOAT, false, 4*4, 2L*4);
+        org.lwjgl.opengl.GL20.glEnableVertexAttribArray(1);
+        org.lwjgl.opengl.GL30.glBindVertexArray(0);
+
         Camera camera = new Camera();
         setupMouseLook(camera);
+        hud = new WindowHud(this);
 
         // ── SPAWN POINT ────────────────────────────────────────────────────────
         // Spawn at (777, 250, 777): these coordinates produce non-integer noise
         // inputs at every frequency used by the terrain samplers, ensuring the
         // terrain is visibly seed-dependent right at the start.
-        this.player   = new Player(777.0f, 250.0f, 777.0f);
+        this.player   = new Player(SPAWN_X, 250.0f, SPAWN_Z);
         this.world    = new World();
         this.worldGen = new WorldGen();
         this.noiseVis = new NoiseVisualizer(worldGen);
@@ -492,7 +555,7 @@ public class Window {
                     player.position.y = 250.0f;
                     // Keep XZ at spawn if player hasn't moved yet (avoids drift during load)
                     if (player.position.x == 0f && player.position.z == 0f) {
-                        player.position.x = 777.0f; player.position.z = 777.0f;
+                        player.position.x = SPAWN_X; player.position.z = SPAWN_Z;
                     }
                     world.updateChunks(world, worldGen, player);
                 } else {
@@ -500,17 +563,18 @@ public class Window {
                         isPreloading = false;
                         int spawnX = (int)Math.floor(player.position.x);
                         int spawnZ = (int)Math.floor(player.position.z);
-                        for (int ly = Chunk.HEIGHT - 1; ly >= 1; ly--) {
+                        // Scan from ceiling down; find first solid block with 3 clear blocks
+                        // above it so player never materialises inside stone.
+                        for (int ly = Chunk.HEIGHT - 2; ly >= 1; ly--) {
                             if (world.getBlock(spawnX, ly, spawnZ).isSolid()) {
-                                // Ensure the two blocks above this surface are clear
-                                // so the player doesn't materialise inside stone.
                                 boolean clear = !world.getBlock(spawnX, ly + 1, spawnZ).isSolid()
-                                             && !world.getBlock(spawnX, ly + 2, spawnZ).isSolid();
+                                             && !world.getBlock(spawnX, ly + 2, spawnZ).isSolid()
+                                             && !world.getBlock(spawnX, ly + 3, spawnZ).isSolid();
                                 if (clear) {
-                                    player.position.y = ly + 1.5f;
+                                    spawnSurfaceY     = ly + 1.5f;
+                                    player.position.y = spawnSurfaceY;
                                     break;
                                 }
-                                // Surface blocked above — keep scanning down for next solid
                             }
                         }
                         // Zero out any velocity accumulated during loading so the player
@@ -527,7 +591,7 @@ public class Window {
                     if (!showChat && !showNoiseViewer && !isPaused && !showHelp) {
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
                         player.update(window, camera, world, deltaTime);
-                        updateBreaking(deltaTime);
+                        hud.updateBreaking(deltaTime);
 
                         // ── METEOR SPAWN: smash start → STAR_IRON falling from sky ──
                         // Detects the leading edge of isSmashing so the meteor only
@@ -689,11 +753,99 @@ public class Window {
                                 player.health -= enemyManager.pendingPlayerDamage;
                                 enemyManager.pendingPlayerDamage = 0f;
                                 if (player.health <= 0f) {
-                                    System.out.println("You died!");
-                                    player.position.set(1000, 255, 1000);
+                                    System.out.println("You died! Respawning at spawn point.");
+                                    player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
                                     player.setVelocityY(0f);
                                     player.health = player.maxHealth;
+                                    // Reset Kamui / lightning state on death
+                                    player.abilities.isKamui       = false;
+                                    player.abilities.kamuiAutoExited = false;
+                                    player.abilities.absorptionCharge = 0f;
                                 }
+                            }
+                        }
+
+                        // ── KAMUI MANA DRAIN (passive while active) ───────────────
+                        if (player.abilities.isKamui) {
+                            player.mana = Math.max(0f,
+                                    player.mana - GameConfig.manaKamuiDrain * deltaTime);
+                        }
+
+                        // ── KAMUI ABSORPTION (LMB held while in Kamui) ────────────
+                        if (player.abilities.isKamui) {
+                            boolean lmbHeld = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+                            if (lmbHeld) {
+                                // Find best target: enemy in crosshair takes priority, else block.
+                                // No range limit — Kamui can reach anything the player looks at.
+                                Vector3f eyePos = camera.position;
+                                Enemy absorbEnemy = enemyManager.findMostAligned(
+                                        world, eyePos, camera.getLookDirection(), 2000f);
+                                boolean hasTarget = absorbEnemy != null
+                                        || (lastTarget != null && lastTarget.hit
+                                            && world.getBlock(lastTarget.hitX, lastTarget.hitY, lastTarget.hitZ) != com.leaf.game.world.Block.AIR);
+
+                                if (hasTarget) {
+                                    player.abilities.isAbsorbing     = true;
+                                    player.abilities.absorptionCharge = Math.min(1f,
+                                            player.abilities.absorptionCharge
+                                            + deltaTime / GameConfig.kamuiAbsorptionTime);
+
+                                    // Project target world pos to screen for the vortex visual
+                                    Vector3f targetPos = (absorbEnemy != null)
+                                            ? absorbEnemy.getCentre()
+                                            : new Vector3f(lastTarget.hitX + 0.5f,
+                                                           lastTarget.hitY + 0.5f,
+                                                           lastTarget.hitZ + 0.5f);
+                                    Matrix4f vp = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
+                                    org.joml.Vector4f cp = new org.joml.Vector4f(
+                                            targetPos.x, targetPos.y, targetPos.z, 1f).mul(vp);
+                                    if (cp.w > 0f) {
+                                        float ndcX = cp.x / cp.w;
+                                        float ndcY = cp.y / cp.w;
+                                        player.abilities.absorptionScrX = (ndcX + 1f) * 0.5f * ww[0];
+                                        player.abilities.absorptionScrY = (1f - ndcY) * 0.5f * wh[0];
+                                    }
+
+                                    // When fully charged: absorb (delete) the target
+                                    if (player.abilities.absorptionCharge >= 1f) {
+                                        player.mana = Math.max(0f,
+                                                player.mana - GameConfig.manaKamuiAbsorption);
+                                        if (absorbEnemy != null) {
+                                            absorbEnemy.applyDamage(999999f); // instant kill
+                                        } else if (lastTarget != null && lastTarget.hit) {
+                                            // Absorb a sphere of blocks around the target
+                                            int bx0 = lastTarget.hitX, by0 = lastTarget.hitY, bz0 = lastTarget.hitZ;
+                                            int absorptionR = 3;
+                                            java.util.Set<com.leaf.game.world.Chunk> dirty = new java.util.HashSet<>();
+                                            for (int ax = -absorptionR; ax <= absorptionR; ax++) {
+                                                for (int ay = -absorptionR; ay <= absorptionR; ay++) {
+                                                    for (int az = -absorptionR; az <= absorptionR; az++) {
+                                                        if (ax*ax + ay*ay + az*az > absorptionR*absorptionR) continue;
+                                                        int nx = bx0+ax, ny = by0+ay, nz = bz0+az;
+                                                        if (world.getBlock(nx, ny, nz) != com.leaf.game.world.Block.AIR) {
+                                                            world.setBlock(nx, ny, nz, com.leaf.game.world.Block.AIR);
+                                                            com.leaf.game.world.Chunk c = world.getChunk(
+                                                                    Math.floorDiv(nx, Chunk.SIZE), 0, Math.floorDiv(nz, Chunk.SIZE));
+                                                            if (c != null) dirty.add(c);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            for (com.leaf.game.world.Chunk c : dirty) world.buildChunkMeshes(c);
+                                        }
+                                        player.abilities.absorptionCharge = 0f;
+                                        player.abilities.isAbsorbing      = false;
+                                    }
+                                } else {
+                                    // No valid target — drain charge back
+                                    player.abilities.absorptionCharge = Math.max(0f,
+                                            player.abilities.absorptionCharge - deltaTime * 2f);
+                                }
+                            } else {
+                                // LMB released — bleed charge away
+                                player.abilities.isAbsorbing     = false;
+                                player.abilities.absorptionCharge = Math.max(0f,
+                                        player.abilities.absorptionCharge - deltaTime * 3f);
                             }
                         }
 
@@ -741,12 +893,14 @@ public class Window {
                         // ── TODO'S TECHNIQUE (J key) ──────────────────────────
                         if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
                         boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS;
-                        if (jHeld && !lastJ && !player.debugMode && todoSwapCooldown <= 0f) {
+                        if (jHeld && !lastJ && !player.debugMode && todoSwapCooldown <= 0f
+                                && player.mana >= GameConfig.manaTodoSwap) {
                             Vector3f eyePos = new Vector3f(player.position.x,
                                     player.position.y + 1.6f, player.position.z);
                             Enemy swapTarget = enemyManager.findClosestVisible(
                                     world, eyePos, GameConfig.todoRange);
                             if (swapTarget != null) {
+                                player.mana -= GameConfig.manaTodoSwap;
                                 Vector3f oldPlayerPos = new Vector3f(player.position);
                                 Vector3f oldEnemyPos  = new Vector3f(swapTarget.position);
                                 player.position.set(oldEnemyPos);
@@ -763,7 +917,8 @@ public class Window {
                         // ── QUAGMIRE (M key) ──────────────────────────────────
                         if (quagmireCooldown > 0f) quagmireCooldown -= deltaTime;
                         boolean mHeld = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
-                        if (mHeld && !lastM && !player.debugMode && quagmireCooldown <= 0f) {
+                        if (mHeld && !lastM && !player.debugMode && quagmireCooldown <= 0f
+                                && player.mana >= GameConfig.manaQuagmire) {
                             Vector3f eyePos = new Vector3f(player.position.x,
                                     player.position.y + 1.6f, player.position.z);
                             Enemy target = enemyManager.findMostAligned(
@@ -789,6 +944,7 @@ public class Window {
                                         0f,                              // [9] reserved
                                         -99999f, -99999f                 // [10-11] last placed block col
                                     });
+                                    player.mana -= GameConfig.manaQuagmire;
                                     quagmireCooldown = GameConfig.quagmireCooldown;
                                 }
                             }
@@ -839,14 +995,28 @@ public class Window {
                                                     (int) e.position.z,
                                                     Block.MUD, mv));
                                         }
-                                        // Also stamp MUD under the enemy
+                                        // Stamp a large irregular mud pool (~3-block radius)
+                                        // around the enemy's feet.
                                         int ex = (int) Math.floor(e.position.x);
                                         int ez = (int) Math.floor(e.position.z);
-                                        for (int scanY = (int) Math.floor(e.position.y) + 1; scanY >= 0; scanY--) {
-                                            if (world.getBlock(ex, scanY, ez).isSolid()) {
-                                                world.setBlock(ex, scanY, ez, Block.MUD);
-                                                world.rebuildChunkAt(ex, scanY, ez);
-                                                break;
+                                        int baseY2 = (int) Math.floor(e.position.y) + 2;
+                                        int poolR = GameConfig.quagmirePoolRadius;
+                                        for (int dbx = -poolR - 1; dbx <= poolR + 1; dbx++) {
+                                            for (int dbz = -poolR - 1; dbz <= poolR + 1; dbz++) {
+                                                // Irregular edge: sine/cosine noise on column coords
+                                                float noiseR = (float)(
+                                                    Math.sin(dbx * 2.3 + ez * 0.7) *
+                                                    Math.cos(dbz * 1.9 + ex * 0.5)) * 0.9f;
+                                                float effR = poolR + noiseR;
+                                                if (dbx * dbx + dbz * dbz > effR * effR) continue;
+                                                int bx2 = ex + dbx, bz2 = ez + dbz;
+                                                for (int scanY = baseY2; scanY >= 0; scanY--) {
+                                                    if (world.getBlock(bx2, scanY, bz2).isSolid()) {
+                                                        world.setBlock(bx2, scanY, bz2, Block.MUD);
+                                                        world.rebuildChunkAt(bx2, scanY, bz2);
+                                                        break;
+                                                    }
+                                                }
                                             }
                                         }
                                         break;
@@ -861,7 +1031,8 @@ public class Window {
                         boolean iHeld = glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS;
 
                         if (!isChargingStoneCanon && iHeld && !lastI
-                                && !player.debugMode && stoneCanonCooldownTimer <= 0f) {
+                                && !player.debugMode && stoneCanonCooldownTimer <= 0f
+                                && player.mana >= GameConfig.manaStoneCanonBase) {
                             // Start charging — lock position
                             isChargingStoneCanon     = true;
                             stoneCanonCharge         = 0f;
@@ -895,6 +1066,13 @@ public class Window {
 
                             stoneCanonCharge += deltaTime;
                             stoneCanonNextConsume -= deltaTime;
+                            // Continuous mana drain; cancel if mana runs out
+                            player.mana = Math.max(0f,
+                                    player.mana - GameConfig.manaStoneCanonBase * deltaTime);
+                            if (player.mana <= 0f) {
+                                isChargingStoneCanon = false;
+                                stoneCanonCooldownTimer = GameConfig.stoneCanonCooldown * 0.5f;
+                            }
 
                             // Consume one stone block per interval
                             if (stoneCanonNextConsume <= 0f) {
@@ -934,6 +1112,9 @@ public class Window {
                                 if (stoneCanonBlocksConsumed > 0) {
                                     float chargeF = Math.min(1f,
                                             stoneCanonCharge / GameConfig.stoneCanonMaxCharge);
+                                    // One-time fire cost (charge-scaled; deduct whatever's left)
+                                    player.mana = Math.max(0f, player.mana
+                                            - GameConfig.manaStoneCanonMax * chargeF);
                                     float speed = GameConfig.stoneCanonMinSpeed
                                             + chargeF * (GameConfig.stoneCanonMaxSpeed - GameConfig.stoneCanonMinSpeed);
                                     float scale = GameConfig.stoneCanonMinScale
@@ -1225,6 +1406,72 @@ public class Window {
             if (hintTimer    > 0f) hintTimer    = Math.max(0f, hintTimer    - rawDeltaTime);
 
             // ── RENDER ────────────────────────────────────────────────────────
+
+            // ── KAMUI DISTORTION FBO ──────────────────────────────────────────
+            // When Kamui is active the 3-D scene is redirected into an off-screen
+            // texture. After all 3-D rendering is done we apply a GLSL distortion
+            // shader (swirl / vortex UV warp) to that texture and blit the result
+            // to the default framebuffer. ImGui is then composited on top normally.
+            boolean doKamuiDistort = player != null && !isPreloading
+                    && player.abilities.isKamui && distortShader != null;
+            if (doKamuiDistort) {
+                // Recreate the FBO whenever the window is resized or on first use
+                if (ww[0] != kamuiFboW || wh[0] != kamuiFboH) {
+                    if (kamuiFbo != 0) {
+                        org.lwjgl.opengl.GL30.glDeleteFramebuffers(kamuiFbo);
+                        org.lwjgl.opengl.GL11.glDeleteTextures(kamuiFboTex);
+                        org.lwjgl.opengl.GL30.glDeleteRenderbuffers(kamuiFboRbo);
+                    }
+                    kamuiFbo    = org.lwjgl.opengl.GL30.glGenFramebuffers();
+                    kamuiFboTex = org.lwjgl.opengl.GL11.glGenTextures();
+                    kamuiFboRbo = org.lwjgl.opengl.GL30.glGenRenderbuffers();
+
+                    org.lwjgl.opengl.GL30.glBindFramebuffer(
+                            org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, kamuiFbo);
+
+                    // Color texture attachment
+                    org.lwjgl.opengl.GL11.glBindTexture(
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D, kamuiFboTex);
+                    org.lwjgl.opengl.GL11.glTexImage2D(
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0,
+                            org.lwjgl.opengl.GL11.GL_RGB, ww[0], wh[0], 0,
+                            org.lwjgl.opengl.GL11.GL_RGB,
+                            org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE,
+                            (java.nio.ByteBuffer) null);
+                    org.lwjgl.opengl.GL11.glTexParameteri(
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D,
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_MIN_FILTER,
+                            org.lwjgl.opengl.GL11.GL_LINEAR);
+                    org.lwjgl.opengl.GL11.glTexParameteri(
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D,
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_MAG_FILTER,
+                            org.lwjgl.opengl.GL11.GL_LINEAR);
+                    org.lwjgl.opengl.GL30.glFramebufferTexture2D(
+                            org.lwjgl.opengl.GL30.GL_FRAMEBUFFER,
+                            org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0,
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D, kamuiFboTex, 0);
+
+                    // Depth renderbuffer attachment
+                    org.lwjgl.opengl.GL30.glBindRenderbuffer(
+                            org.lwjgl.opengl.GL30.GL_RENDERBUFFER, kamuiFboRbo);
+                    org.lwjgl.opengl.GL30.glRenderbufferStorage(
+                            org.lwjgl.opengl.GL30.GL_RENDERBUFFER,
+                            org.lwjgl.opengl.GL14.GL_DEPTH_COMPONENT24, ww[0], wh[0]);
+                    org.lwjgl.opengl.GL30.glFramebufferRenderbuffer(
+                            org.lwjgl.opengl.GL30.GL_FRAMEBUFFER,
+                            org.lwjgl.opengl.GL30.GL_DEPTH_ATTACHMENT,
+                            org.lwjgl.opengl.GL30.GL_RENDERBUFFER, kamuiFboRbo);
+
+                    kamuiFboW = ww[0];
+                    kamuiFboH = wh[0];
+                    org.lwjgl.opengl.GL30.glBindFramebuffer(
+                            org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+                }
+                // Redirect 3-D render into the off-screen FBO
+                org.lwjgl.opengl.GL30.glBindFramebuffer(
+                        org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, kamuiFbo);
+            }
+
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             if (networkInitialized) {
@@ -1264,15 +1511,18 @@ public class Window {
                 // ── ABILITY + ATTACK OVERLAY VIGNETTE ────────────────────────
                 // Use whichever overlay is currently stronger so neither system
                 // silently stomps the other during simultaneous effects.
-                float abilityOverlayStr = player.abilities.getOverlayStrength();
-                float attackOverlayStr = player.attacks.getOverlayStrength();
+                // When Kamui FBO post-process is active the distort shader is the
+                // sole source of colour effects — zero the 3-D overlay so the
+                // scene captured into the FBO is clean and readable.
+                float abilityOverlayStr = doKamuiDistort ? 0f : player.abilities.getOverlayStrength();
+                float attackOverlayStr  = player.attacks.getOverlayStrength();
                 Vector3f compositeOverlayColor;
                 float compositeOverlayStr;
                 if (attackOverlayStr >= abilityOverlayStr) {
                     compositeOverlayColor = player.attacks.getOverlayColor();
                     compositeOverlayStr = attackOverlayStr;
                 } else {
-                    compositeOverlayColor = player.abilities.getOverlayColor();
+                    compositeOverlayColor = doKamuiDistort ? new Vector3f(0f) : player.abilities.getOverlayColor();
                     compositeOverlayStr = abilityOverlayStr;
                 }
                 // ── SEAL TELEPORT OVERLAY ─────────────────────────────────
@@ -1296,11 +1546,11 @@ public class Window {
                 // ── STORM OVERLAY (lightning charging / active) ───────────────
                 float stormI = player.lightning.stormIntensity;
                 if (stormI > 0f) {
-                    // Dark blue-gray tint that intensifies as storm builds
-                    float stormStr = stormI * 0.42f;
+                    // Deep purple-black storm that really darkens the scene
+                    float stormStr = stormI * 0.72f;
                     if (stormStr > compositeOverlayStr) {
                         compositeOverlayStr   = stormStr;
-                        compositeOverlayColor = new Vector3f(0.05f, 0.05f, 0.20f);
+                        compositeOverlayColor = new Vector3f(0.02f, 0.02f, 0.12f);
                     }
                 }
 
@@ -1663,12 +1913,9 @@ public class Window {
                             typeOverlayStr = 0.45f;
                         } else {
                             switch (enemy.type) {
-                                case BRUTE    -> { typeColor = new Vector3f(0.55f, 0.10f, 0.80f); typeOverlayStr = 0.20f; }
-                                case STALKER  -> { typeColor = new Vector3f(0.55f, 0.90f, 0.10f); typeOverlayStr = 0.18f; }
-                                case GOLEM    -> { typeColor = new Vector3f(0.55f, 0.60f, 0.70f); typeOverlayStr = 0.22f; }
-                                case THROWER  -> { typeColor = new Vector3f(0.85f, 0.45f, 0.05f); typeOverlayStr = 0.18f; }
-                                case PREDATOR -> { typeColor = new Vector3f(0.20f, 0.80f, 0.15f); typeOverlayStr = 0.20f; }
-                                default       -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; }
+                                case GOLEM   -> { typeColor = new Vector3f(0.55f, 0.60f, 0.70f); typeOverlayStr = 0.22f; }
+                                case THROWER -> { typeColor = new Vector3f(0.85f, 0.45f, 0.05f); typeOverlayStr = 0.18f; }
+                                default      -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; }
                             }
                         }
 
@@ -1823,24 +2070,57 @@ public class Window {
 
                 glDisable(GL_BLEND);
                 shader.unbind();
+
+                // ── KAMUI DISTORTION POST-PROCESS ─────────────────────────────
+                // Blit the off-screen FBO texture back to the default framebuffer
+                // through the swirl/vortex distortion shader.
+                if (doKamuiDistort) {
+                    org.lwjgl.opengl.GL30.glBindFramebuffer(
+                            org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    distortShader.bind();
+                    distortShader.setUniform("screenTexture", 0);
+                    distortShader.setUniform("time", (float) glfwGetTime());
+                    distortShader.setUniform("kamuiCharge",
+                            player.abilities.absorptionCharge);
+                    distortShader.setUniform("absorptionPos",
+                            player.abilities.absorptionScrX / Math.max(1, ww[0]),
+                            player.abilities.absorptionScrY / Math.max(1, wh[0]));
+                    distortShader.setUniform("aspectRatio",
+                            (float) ww[0] / Math.max(1, wh[0]));
+
+                    org.lwjgl.opengl.GL13.glActiveTexture(
+                            org.lwjgl.opengl.GL13.GL_TEXTURE0);
+                    org.lwjgl.opengl.GL11.glBindTexture(
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D, kamuiFboTex);
+
+                    glDisable(GL_DEPTH_TEST);
+                    org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    org.lwjgl.opengl.GL30.glBindVertexArray(0);
+                    glEnable(GL_DEPTH_TEST);
+
+                    distortShader.unbind();
+                }
             }
             // ── IMGUI ─────────────────────────────────────────────────────────
             imguiGlfw.newFrame();
             ImGui.newFrame();
 
             if (!networkInitialized) {
-                renderConnectionMenu(ww[0], wh[0]);
+                hud.renderConnectionMenu(ww[0], wh[0]);
             } else {
                 if (isPreloading) {
-                    renderPreloadProgress(ww[0], wh[0]);
+                    hud.renderPreloadProgress(ww[0], wh[0]);
                 } else {
-                    renderHUD(camera, ww[0], wh[0]);
-                    renderTargetCracks(camera, ww[0], wh[0]);
-                    if (showDebug)       renderDebugMenu();
+                    hud.renderHUD(camera, ww[0], wh[0]);
+                    hud.renderTargetCracks(camera, ww[0], wh[0]);
+                    if (showDebug)       hud.renderDebugMenu();
                     if (showNoiseViewer) noiseVis.renderWindow(player);
-                    if (showChat || !chatHistory.isEmpty()) renderChatBox(wh[0]);
-                    if (isPaused)        renderPauseMenu(ww[0], wh[0]);
-                    if (showHelp)        renderHelpScreen(ww[0], wh[0]);
+                    if (showChat || !chatHistory.isEmpty()) hud.renderChatBox(wh[0]);
+                    if (isPaused)        hud.renderPauseMenu(ww[0], wh[0]);
+                    if (showHelp)        hud.renderHelpScreen((float)ww[0], (float)wh[0]);
                 }
             }
 
@@ -1969,972 +2249,6 @@ public class Window {
         return new Vector3f(shakeX, shakeY, 0f);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    //  UI — Connection Menu
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private void renderConnectionMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 150.0f, h / 2.0f - 180.0f);
-        ImGui.setNextWindowSize(300.0f, 340.0f);
-        ImGui.begin("Start Screen",
-                imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
-
-        ImGui.text("Minecraft Voxel Engine");
-        ImGui.separator();
-        ImGui.spacing();
-
-        ImGui.text("Pre-generate Radius:");
-        int[] rad = {preloadRadius};
-        if (ImGui.sliderInt("##rad", rad, 0, 100)) preloadRadius = rad[0];
-        if (preloadRadius > 40) {
-            ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "WARNING: Radii > 40 require");
-            ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "allocating extra JVM RAM!");
-        } else {
-            ImGui.textDisabled("(0=instant, 10=fast, 50=massive, 100=epic)");
-        }
-        ImGui.spacing();
-
-        if (ImGui.button("Single Player", 280, 30)) {
-            network = null;
-            startPreload();
-        }
-        ImGui.spacing();
-
-        if (SaveManager.saveExists()) {
-            if (ImGui.button("Load Saved Game", 280, 30)) {
-                java.util.Arrays.fill(hotbar, Block.AIR);
-                SaveManager.loadGame(world, player, inventory);
-                for (Block b : Block.values()) {
-                    if (inventory.getCount(b) > 0) addBlockToHotbar(b);
-                }
-                worldGen.resetSeed(GameConfig.seed);
-                world.clearAllChunks();
-                network = null;
-                startPreload();
-            }
-            ImGui.spacing();
-        }
-
-        ImGui.separator();
-        ImGui.spacing();
-
-        if (ImGui.button("Host Multiplayer Game", 280, 30)) {
-            network = new NetworkSession(true, null);
-            network.start();
-            remotePlayer = new RemotePlayer();
-            startPreload();
-        }
-        ImGui.spacing();
-        ImGui.inputText("Host IP", ipInput);
-        if (ImGui.button("Join Multiplayer Game", 280, 30)) {
-            network = new NetworkSession(false, ipInput.get().trim());
-            network.start();
-            remotePlayer = new RemotePlayer();
-            startPreload();
-        }
-        ImGui.end();
-    }
-
-    private void renderPreloadProgress(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 160.0f, h / 2.0f - 65.0f);
-        ImGui.setNextWindowSize(320.0f, 130.0f);
-        ImGui.begin("Pre-generating Terrain",
-                imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
-        ImGui.text("Generating world in background...");
-        ImGui.text("Please wait a moment while the spawn");
-        ImGui.text("area finishes compiling...");
-        ImGui.spacing();
-        float progress = (float)(glfwGetTime() % 2.0) / 2.0f;
-        ImGui.progressBar(progress, 300, 24);
-        ImGui.end();
-    }
-
-    private void renderPauseMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 100.0f, h / 2.0f - 110.0f);
-        ImGui.setNextWindowSize(200.0f, 210.0f);
-        ImGui.begin("Paused",
-                imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
-        ImGui.text("Game Paused");
-        ImGui.separator();
-        ImGui.spacing();
-        if (ImGui.button("Resume", 180, 30)) {
-            isPaused = false;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        }
-        ImGui.spacing();
-        if (ImGui.button("Controls  [F1]", 180, 30)) {
-            // Open help without closing pause — player can read then ESC back
-            showHelp = true;
-        }
-        ImGui.spacing();
-        if (ImGui.button("Save Game", 180, 30))  SaveManager.saveGame(world, player, inventory);
-        ImGui.spacing();
-        if (ImGui.button("Save & Quit", 180, 30)) {
-            SaveManager.saveGame(world, player, inventory);
-            glfwSetWindowShouldClose(window, true);
-        }
-        ImGui.end();
-    }
-
-    private void renderChatBox(int screenHeight) {
-        ImGui.setNextWindowPos(10, screenHeight - 280);
-        ImGui.setNextWindowSize(400, 200);
-        int flags = imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove;
-        if (!showChat) flags |= imgui.flag.ImGuiWindowFlags.NoBackground;
-        ImGui.begin("Chat", flags);
-        for (int i = Math.max(0, chatHistory.size() - 10); i < chatHistory.size(); i++)
-            ImGui.text(chatHistory.get(i));
-        if (showChat) {
-            ImGui.setKeyboardFocusHere();
-            if (ImGui.inputText("##chat", chatInput,
-                    imgui.flag.ImGuiInputTextFlags.EnterReturnsTrue)) {
-                String msg = chatInput.get().trim();
-                if (!msg.isEmpty()) {
-                    chatHistory.add("[You]: " + msg);
-                    if (network != null && network.connected) network.sendChat(msg);
-                    chatInput.set("");
-                }
-                showChat = false;
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            }
-        }
-        ImGui.end();
-    }
-
-    private void renderTargetCracks(Camera camera, float w, float h) {
-        if (lastTarget == null || !lastTarget.hit || !breakingActive || breakProgress <= 0) return;
-        Matrix4f viewProj = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
-        int bx = lastTarget.hitX, by = lastTarget.hitY, bz = lastTarget.hitZ;
-        float e = 0.005f;
-        Vector3f[] corners = {
-                new Vector3f(bx-e,   by-e,   bz-e),   new Vector3f(bx+1+e, by-e,   bz-e),
-                new Vector3f(bx+1+e, by+1+e, bz-e),   new Vector3f(bx-e,   by+1+e, bz-e),
-                new Vector3f(bx-e,   by-e,   bz+1+e), new Vector3f(bx+1+e, by-e,   bz+1+e),
-                new Vector3f(bx+1+e, by+1+e, bz+1+e), new Vector3f(bx-e,   by+1+e, bz+1+e)
-        };
-        org.joml.Vector4f[] proj = new org.joml.Vector4f[8];
-        for (int i = 0; i < 8; i++) {
-            proj[i] = new org.joml.Vector4f(corners[i].x, corners[i].y, corners[i].z, 1.0f).mul(viewProj);
-            if (proj[i].w > 0) { proj[i].x /= proj[i].w; proj[i].y /= proj[i].w; }
-        }
-        int finalColor = ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 0.5f + breakProgress * 0.4f);
-        float finalThickness = 2.0f + breakProgress * 3.0f;
-        var draw = ImGui.getBackgroundDrawList();
-        java.util.function.BiConsumer<Integer, Integer> drawCrack = (i, j) -> {
-            if (proj[i].w > 0 && proj[j].w > 0) {
-                float x1 = (proj[i].x + 1) * 0.5f * w, y1 = (1 - proj[i].y) * 0.5f * h;
-                float x2 = (proj[j].x + 1) * 0.5f * w, y2 = (1 - proj[j].y) * 0.5f * h;
-                draw.addLine(x1, y1, x2, y2, finalColor, finalThickness);
-            }
-        };
-        if (breakProgress > 0.1f) { drawCrack.accept(0, 6); drawCrack.accept(3, 5); }
-        if (breakProgress > 0.4f) { drawCrack.accept(1, 7); drawCrack.accept(2, 4); }
-        if (breakProgress > 0.7f) { drawCrack.accept(0, 2); drawCrack.accept(5, 7); }
-    }
-
-    private void renderHUD(Camera camera, float screenW, float screenH) {
-        var draw = ImGui.getForegroundDrawList();
-        float cx = screenW / 2.0f, cy = screenH / 2.0f;
-
-        // ── LIGHTNING BOLT RENDERING ──────────────────────────────────────────
-        // Draw screen-space zigzag bolts from sky to each struck target.
-        // The world-to-screen projection is done here where we have camera matrices.
-        if (!player.lightning.activeBolts.isEmpty()) {
-            Matrix4f vp = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
-            for (com.leaf.game.entity.LightningController.LightningBolt bolt : player.lightning.activeBolts) {
-                float bright = bolt.brightness();
-                if (bright < 0.01f) continue;
-
-                // Project the target world position to screen
-                org.joml.Vector4f cp = new org.joml.Vector4f(
-                        bolt.worldTarget.x, bolt.worldTarget.y, bolt.worldTarget.z, 1.0f).mul(vp);
-                if (cp.w <= 0f) continue; // behind camera
-                float ndcX = cp.x / cp.w;
-                float ndcY = cp.y / cp.w;
-                if (Math.abs(ndcX) > 1.5f || Math.abs(ndcY) > 1.5f) continue; // far off screen
-
-                float targetScrX = (ndcX + 1f) * 0.5f * screenW;
-                float targetScrY = (1f - ndcY) * 0.5f * screenH;
-
-                // Generate seeded zigzag segments from sky (top of screen) to target
-                java.util.Random boltRng = new java.util.Random(bolt.hashCode());
-                int   segments = bolt.isAoe ? 6 : 10;
-                float[] bx = new float[segments + 1];
-                float[] by = new float[segments + 1];
-                bx[0] = targetScrX + (boltRng.nextFloat() - 0.5f) * 60f;
-                by[0] = 0f; // top of screen (sky)
-                bx[segments] = targetScrX;
-                by[segments] = targetScrY;
-                for (int s = 1; s < segments; s++) {
-                    float t = (float) s / segments;
-                    float midX = bx[0] + (targetScrX - bx[0]) * t;
-                    float midY = by[0] + (targetScrY - by[0]) * t;
-                    bx[s] = midX + (boltRng.nextFloat() - 0.5f) * 80f * (1f - t);
-                    by[s] = midY;
-                }
-
-                // Draw glow layers (thick→thin, bright to transparent)
-                float[][] layers = {
-                    { 12f, 0.08f * bright },
-                    {  6f, 0.25f * bright },
-                    {  3f, 0.65f * bright },
-                    {  1.5f, 1.00f * bright },
-                };
-                for (float[] layer : layers) {
-                    float thickness = layer[0];
-                    float a         = Math.min(1f, layer[1]);
-                    int   baseColor = bolt.isAoe
-                        ? ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, a)  // AOE = blue-white
-                        : ImGui.colorConvertFloat4ToU32(0.9f, 0.95f, 1.0f, a); // single = white
-                    for (int s = 0; s < segments; s++) {
-                        draw.addLine(bx[s], by[s], bx[s+1], by[s+1], baseColor, thickness);
-                    }
-                }
-
-                // Strike flash at target
-                if (bright > 0.5f) {
-                    float radius = 25f * bright;
-                    int   flash  = ImGui.colorConvertFloat4ToU32(1f, 1f, 0.9f, bright * 0.85f);
-                    draw.addCircleFilled(targetScrX, targetScrY, radius, flash);
-                }
-            }
-        }
-
-        // ── KAMUI PHASE BORDER EFFECT ─────────────────────────────────────────
-        // Shimmering purple frame around the screen edges while Kamui is active.
-        if (player.abilities.isKamui) {
-            float urgency   = 1f - player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration;
-            float pulse     = 0.5f + 0.5f * (float) Math.sin(glfwGetTime() * 6.0 + urgency * 4.0);
-            float edgeAlpha = 0.4f + urgency * 0.25f + pulse * 0.15f;
-            int   edgeColor = ImGui.colorConvertFloat4ToU32(0.6f, 0.0f, 1.0f, edgeAlpha);
-            float edgeW = 18f + pulse * 8f;
-            // Four edges of the screen
-            draw.addRectFilled(0, 0, screenW, edgeW,         edgeColor);
-            draw.addRectFilled(0, screenH - edgeW, screenW, screenH, edgeColor);
-            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW,         edgeColor);
-            draw.addRectFilled(screenW - edgeW, edgeW, screenW, screenH - edgeW, edgeColor);
-        }
-
-        // ── MANHATTAN TRANSFER 2D OFF-SCREEN INDICATOR ────────────────────────
-        if (player.stand.isDeployed() && !player.stand.isInStandPerspective()) {
-
-            // 1. Use the Matrix only to check if the drone is visible on-screen
-            Matrix4f viewProj = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
-            Vector3f dronePos = player.stand.standPos;
-
-            org.joml.Vector4f clipPos = new org.joml.Vector4f(dronePos.x, dronePos.y, dronePos.z, 1.0f).mul(viewProj);
-            boolean inFront = clipPos.w > 0.0f;
-            float ndcX = clipPos.x / Math.abs(clipPos.w);
-            float ndcY = clipPos.y / Math.abs(clipPos.w);
-            boolean onScreen = inFront && Math.abs(ndcX) <= 1.0f && Math.abs(ndcY) <= 1.0f;
-
-            // 2. Draw the edge arrow ONLY if it is off-screen
-            if (!onScreen) {
-                // To avoid matrix flipping bugs, we use simple Dot Products with
-                // the camera's local axes to find the true, stable direction.
-                Vector3f toDrone = new Vector3f(dronePos).sub(camera.position).normalize();
-                Vector3f right   = camera.getRight();
-                // Cross product: Right x Forward = Local Up Vector
-                Vector3f up      = new Vector3f(right).cross(camera.getLookDirection()).normalize();
-
-                // Screen X grows right. Screen Y grows DOWN (so we invert Y).
-                float dirX = toDrone.dot(right);
-                float dirY = -toDrone.dot(up);
-
-                float angle = (float) Math.atan2(dirY, dirX);
-                float radius = Math.min(cx, cy) * 0.85f;
-
-                float indicatorX = cx + (float)Math.cos(angle) * radius;
-                float indicatorY = cy + (float)Math.sin(angle) * radius;
-
-                // 3. Draw Custom "Tag" Shape (Made slightly larger)
-                float L = 46f;      // Total length of the shape
-                float W = 32f;      // Total width
-                float tipL = 16f;   // Length of the pointy triangle tip
-
-                float[][] pts = {
-                        { L/2, 0 },               // 0: Tip
-                        { L/2 - tipL, W/2 },      // 1: Top Right corner
-                        { -L/2, W/2 },            // 2: Top Left corner
-                        { -L/2, -W/2 },           // 3: Bottom Left corner
-                        { L/2 - tipL, -W/2 }      // 4: Bottom Right corner
-                };
-
-                // Rotate and translate vertices to the edge of the screen
-                float cosA = (float)Math.cos(angle);
-                float sinA = (float)Math.sin(angle);
-                for(int i = 0; i < 5; i++) {
-                    float px = pts[i][0];
-                    float py = pts[i][1];
-                    float rotX = px * cosA - py * sinA;
-                    float rotY = px * sinA + py * cosA;
-                    pts[i][0] = indicatorX + rotX;
-                    pts[i][1] = indicatorY + rotY;
-                }
-
-                // Colors
-                int goldFill = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.15f, 0.95f);
-                int outline  = ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 1.0f);
-                int redAlert = ImGui.colorConvertFloat4ToU32(1.0f, 0.15f, 0.15f, 1.0f);
-
-                // Fill the shape
-                draw.addQuadFilled(pts[1][0], pts[1][1], pts[2][0], pts[2][1], pts[3][0], pts[3][1], pts[4][0], pts[4][1], goldFill);
-                draw.addTriangleFilled(pts[0][0], pts[0][1], pts[1][0], pts[1][1], pts[4][0], pts[4][1], goldFill);
-
-                // Draw thick outline
-                float thick = 2.5f;
-                draw.addLine(pts[0][0], pts[0][1], pts[1][0], pts[1][1], outline, thick);
-                draw.addLine(pts[1][0], pts[1][1], pts[2][0], pts[2][1], outline, thick);
-                draw.addLine(pts[2][0], pts[2][1], pts[3][0], pts[3][1], outline, thick);
-                draw.addLine(pts[3][0], pts[3][1], pts[4][0], pts[4][1], outline, thick);
-                draw.addLine(pts[4][0], pts[4][1], pts[0][0], pts[0][1], outline, thick);
-
-                // 4. Draw large, bright RED "!"
-                float textOffsetX = -tipL / 2.0f;
-                float centerIconX = indicatorX + textOffsetX * cosA;
-                float centerIconY = indicatorY + textOffsetX * sinA;
-
-                // Draw exclamation mark using filled rectangles (bypassing text limits so it's massive)
-                // Top bar
-                draw.addRectFilled(centerIconX - 2.5f, centerIconY - 9f, centerIconX + 2.5f, centerIconY + 3f, redAlert);
-                // Bottom dot
-                draw.addRectFilled(centerIconX - 2.5f, centerIconY + 6f, centerIconX + 2.5f, centerIconY + 11f, redAlert);
-
-                // Outline the exclamation mark so it pops beautifully inside the gold box
-                draw.addRect(centerIconX - 2.5f, centerIconY - 9f, centerIconX + 2.5f, centerIconY + 3f, outline, 0f, 0, 1.5f);
-                draw.addRect(centerIconX - 2.5f, centerIconY + 6f, centerIconX + 2.5f, centerIconY + 11f, outline, 0f, 0, 1.5f);
-                // Outline the exclamation mark so it pops beautifully inside the gold box
-                draw.addRect(centerIconX - 2.5f, centerIconY - 9f, centerIconX + 2.5f, centerIconY + 3f, outline, 0f, 0, 1.5f);
-                draw.addRect(centerIconX - 2.5f, centerIconY + 6f, centerIconX + 2.5f, centerIconY + 11f, outline, 0f, 0, 1.5f);
-            } else {
-                // ── ON-SCREEN 2D DRONE OUTLINE (Always bright, always visible!) ──
-                float dScrX = (ndcX * 0.5f + 0.5f) * screenW;
-                float dScrY = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
-
-                float dist = new Vector3f(dronePos).sub(camera.position).length();
-                // Scale the 2D UI box so it shrinks slightly at a distance, but never gets too tiny
-                float s = Math.max(14f, Math.min(45f, 400f / dist));
-
-                boolean aimingAtDrone = player.attacks.isAimingAtStand(camera);
-
-                int yellow    = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
-                int dimYellow = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 0.45f); // 45% opacity when idle
-
-                int brightRed = ImGui.colorConvertFloat4ToU32(1.0f, 0.0f, 0.0f, 1.0f); // 100% opacity bright red
-                int dimRed    = ImGui.colorConvertFloat4ToU32(1.0f, 0.0f, 0.0f, 0.45f); // 45% opacity dim red
-
-                int color     = aimingAtDrone ? brightRed : dimRed;
-                float thick = aimingAtDrone ? 3.0f : 1.5f;
-
-                // Draw a 2D Diamond Outline exactly over the drone
-                draw.addQuad(
-                        dScrX, dScrY - s,
-                        dScrX + s, dScrY,
-                        dScrX, dScrY + s,
-                        dScrX - s, dScrY, color, thick);
-
-                if (aimingAtDrone) {
-                    // Draw a striking inner crosshair when locked on
-                    float in = s * 0.5f;
-                    draw.addLine(dScrX - in, dScrY, dScrX + in, dScrY, yellow, 2.0f);
-                    draw.addLine(dScrX, dScrY - in, dScrX, dScrY + in, yellow, 2.0f);
-                }
-            }
-        }
-        // Crosshair
-        int black = ImGui.colorConvertFloat4ToU32(0, 0, 0, 0.6f);
-        int white = ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1.0f);
-
-        float chargeF = player.attacks.getChargeFrac();
-
-        if (chargeF > 0f) {
-            // ── SNIPER / CHARGING MODE — red shrinking circle crosshair ──────────
-            int red = ImGui.colorConvertFloat4ToU32(1.0f, 0.12f, 0.12f, 0.95f);
-            float ring = Math.max(4f, 18f - 13f * chargeF); // shrinks from 18 → 5 px as charge builds
-
-            draw.addCircle(cx, cy, ring, red, 32, 1.8f);
-            draw.addCircleFilled(cx, cy, 2.2f, red, 8);
-
-            // Four radiating lines — sniper style
-            float gap = ring + 2f, ext = gap + 9f;
-            draw.addLine(cx - ext, cy,  cx - gap, cy,  red, 1.5f);
-            draw.addLine(cx + gap, cy,  cx + ext, cy,  red, 1.5f);
-            draw.addLine(cx, cy - ext,  cx, cy - gap,  red, 1.5f);
-            draw.addLine(cx, cy + gap,  cx, cy + ext,  red, 1.5f);
-
-            // Charge % below crosshair
-            String pct = String.format("%.0f%%", chargeF * 100f);
-            draw.addText(cx - 10f, cy + ring + 8f, black, pct);
-            draw.addText(cx - 11f, cy + ring + 7f, red,   pct);
-
-        } else {
-            // ── NORMAL — plain white crosshair ────────────────────────────────────
-            draw.addLine(cx - 11, cy, cx + 11, cy, black, 3.0f);
-            draw.addLine(cx, cy - 11, cx, cy + 11, black, 3.0f);
-            draw.addLine(cx - 10, cy, cx + 10, cy, white, 1.5f);
-            draw.addLine(cx, cy - 10, cx, cy + 10, white, 1.5f);
-        }
-
-        // ── REDIRECT INDICATOR ──
-        boolean aimingAtDrone  = !player.stand.isInStandPerspective() && player.attacks.isAimingAtStand(camera);
-        boolean redirectReady  = aimingAtDrone && player.attacks.isRedirectAvailable(world);
-
-        if (aimingAtDrone) {
-            // Both states are now high-contrast Yellow/Gold
-            int yellow  = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
-            int grey = ImGui.colorConvertFloat4ToU32(0.5f, 0.5f, 0.5f, 1.0f);
-
-            int blackBg = ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.85f);
-
-            float circleRadius = 12.0f; // Shorter, tighter radius (down from 18)
-
-            if (redirectReady) {
-                draw.addRectFilled(cx + 12f, cy - 20f, cx + 115f, cy + 4f, blackBg, 4f);
-                draw.addText(cx + 18f, cy - 12f, yellow, "REDIRECT [C]");
-                draw.addCircle(cx, cy, circleRadius, yellow, 32, 2.5f);
-            } else {
-                draw.addRectFilled(cx + 12f, cy - 20f, cx + 110f, cy + 4f, blackBg, 4f);
-                draw.addText(cx + 18f, cy - 12f, grey, "REFLECT [C]"); // Yellow indicator
-                draw.addCircle(cx, cy, circleRadius, grey, 32, 2.0f); // Yellow circle
-            }
-        }
-        // Health bar and hotbar — hidden while piloting the drone
-        if (!player.stand.isInStandPerspective()) {
-
-            // Health bar
-            float hpWidth = 200f, hpHeight = 15f;
-            float hpX = cx - hpWidth / 2.0f, hpY = screenH - 75f;
-            draw.addRectFilled(hpX, hpY, hpX + hpWidth, hpY + hpHeight,
-                    ImGui.colorConvertFloat4ToU32(0.2f, 0, 0, 0.8f));
-            float fillW = hpWidth * (Math.max(0, player.health) / player.maxHealth);
-            draw.addRectFilled(hpX, hpY, hpX + fillW, hpY + hpHeight,
-                    ImGui.colorConvertFloat4ToU32(0.8f, 0.1f, 0.1f, 1.0f));
-            draw.addRect(hpX, hpY, hpX + hpWidth, hpY + hpHeight, black, 0f, 0, 2.0f);
-
-            // Hotbar
-            float slotSize = 40.0f, spacing = 5.0f;
-            int   numSlots = 9;
-            float startX = cx - ((numSlots * slotSize + (numSlots - 1) * spacing) / 2.0f);
-            float startY = screenH - slotSize - 10.0f;
-            selectedBlock = hotbar[selectedSlot];
-
-            for (int i = 0; i < numSlots; i++) {
-                float x = startX + i * (slotSize + spacing);
-                int bgCol  = (i == selectedSlot)
-                        ? ImGui.colorConvertFloat4ToU32(0.6f, 0.6f, 0.6f, 0.8f)
-                        : ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
-                draw.addRectFilled(x, startY, x + slotSize, startY + slotSize, bgCol, 4.0f);
-                int outCol = (i == selectedSlot)
-                        ? ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1.0f)
-                        : ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.8f);
-                draw.addRect(x, startY, x + slotSize, startY + slotSize, outCol, 4.0f, 0,
-                        (i == selectedSlot) ? 3.0f : 1.5f);
-                Block b     = hotbar[i];
-                int   count = inventory.getCount(b);
-                if (b != Block.AIR && count > 0) {
-                    float shrink = 8.0f;
-                    int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
-                    draw.addRectFilled(x + shrink, startY + shrink,
-                            x + slotSize - shrink, startY + slotSize - shrink, blockCol, 2.0f);
-                    draw.addRect(x + shrink, startY + shrink,
-                            x + slotSize - shrink, startY + slotSize - shrink, black, 2.0f, 0, 1.5f);
-                    String countStr = String.valueOf(count);
-                    draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
-                    draw.addText(x + slotSize - 15, startY + slotSize - 19, white , countStr);
-                }
-            }
-        } // end !isInStandPerspective (health bar + hotbar guard)
-
-        // ── FLIGHT MODE INDICATOR ─────────────────────────────────────────────
-        if (player.debugMode) {
-            FlightController.FlightMode mode = player.flightController.getMode();
-            String modeLabel = switch (mode) {
-                case SKIM    -> "✦ SKIM";
-                case SOAR    -> "✦ SOAR";
-                case GRAPPLE -> "✦ GRAPPLE";
-            };
-            int modeColor = switch (mode) {
-                case SKIM    -> ImGui.colorConvertFloat4ToU32(0.4f, 0.9f, 0.4f, 0.9f);
-                case SOAR    -> ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, 0.9f);
-                case GRAPPLE -> ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.2f, 0.9f);
-            };
-            draw.addText(cx - 30, cy - 60, black, modeLabel);
-            draw.addText(cx - 31, cy - 61, modeColor, modeLabel);
-            draw.addText(cx - 55, cy - 44, black, "[V] cycle mode");
-            draw.addText(cx - 56, cy - 45,
-                    ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), "[V] cycle mode");
-
-            // ── GRAPPLE FEEDBACK ─────────────────────────────────────────────
-            // Gives the player clear state feedback so they always know whether
-            // they are hooked, where the anchor is, and how to use it.
-            if (mode == FlightController.FlightMode.GRAPPLE) {
-                FlightController fc = player.flightController;
-                int grappleGold = ImGui.colorConvertFloat4ToU32(1.0f, 0.78f, 0.1f, 1.0f);
-                int grappleRed  = ImGui.colorConvertFloat4ToU32(1.0f, 0.35f, 0.1f, 0.9f);
-                int grappleGrey = ImGui.colorConvertFloat4ToU32(0.75f, 0.75f, 0.75f, 0.7f);
-
-                if (fc.isHooked()) {
-                    // Show hook distance
-                    float hookDist = new Vector3f(fc.getHookPoint()).sub(player.position).length();
-                    String hookedStr = String.format("⦿ ZIPPING  %.0fm  Release to launch", hookDist);
-                    draw.addText(cx - 72, cy + 28, black, hookedStr);
-                    draw.addText(cx - 73, cy + 27, grappleGold, hookedStr);
-
-                    // Draw a small "anchor" diamond at crosshair center to distinguish state
-                    float d = 7f;
-                    draw.addLine(cx,     cy - d, cx + d, cy,     grappleGold, 2.0f);
-                    draw.addLine(cx + d, cy,     cx,     cy + d, grappleGold, 2.0f);
-                    draw.addLine(cx,     cy + d, cx - d, cy,     grappleGold, 2.0f);
-                    draw.addLine(cx - d, cy,     cx,     cy - d, grappleGold, 2.0f);
-                } else {
-                    // Unhooked: show targeting guide
-                    String aimStr = "[ ] AIM + Hold [RIGHT-CLICK] or [F]";
-                    draw.addText(cx - 88, cy + 28, black, aimStr);
-                    draw.addText(cx - 89, cy + 27, grappleGrey, aimStr);
-
-                    // Draw a square targeting reticle around the crosshair
-                    float s = 12f;
-                    // Four corner brackets
-                    draw.addLine(cx - s, cy - s, cx - s + 5, cy - s, grappleRed, 1.5f);
-                    draw.addLine(cx - s, cy - s, cx - s, cy - s + 5, grappleRed, 1.5f);
-                    draw.addLine(cx + s, cy - s, cx + s - 5, cy - s, grappleRed, 1.5f);
-                    draw.addLine(cx + s, cy - s, cx + s, cy - s + 5, grappleRed, 1.5f);
-                    draw.addLine(cx - s, cy + s, cx - s + 5, cy + s, grappleRed, 1.5f);
-                    draw.addLine(cx - s, cy + s, cx - s, cy + s - 5, grappleRed, 1.5f);
-                    draw.addLine(cx + s, cy + s, cx + s - 5, cy + s, grappleRed, 1.5f);
-                    draw.addLine(cx + s, cy + s, cx + s, cy + s - 5, grappleRed, 1.5f);
-                }
-            }
-        }
-
-        // ── CANNONBALL CHARGE BAR + READINESS ────────────────────────────────
-        if (player.abilities.isCharging()) {
-            float barW = 180f, barH = 12f;
-            float barX = cx - barW / 2f, barY = cy + 42f;
-
-            // Power bar (gold → red-orange)
-            draw.addRectFilled(barX, barY, barX + barW, barY + barH,
-                    ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 0.7f), 4f);
-            float fill = player.abilities.chargePower;
-            int barColor = fill >= 0.99f
-                    ? ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.05f, 1.0f)
-                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.1f, 1.0f);
-            draw.addRectFilled(barX, barY, barX + barW * fill, barY + barH, barColor, 4f);
-            draw.addRect(barX, barY, barX + barW, barY + barH, black, 4f, 0, 1.5f);
-
-            String powerLabel = fill >= 0.99f ? "FULL POWER" : String.format("CHARGING %.0f%%", fill * 100f);
-            draw.addText(cx - 43, barY + 16f, black, powerLabel);
-            draw.addText(cx - 44, barY + 15f, barColor, powerLabel);
-
-            // Readiness bar (blue — shows chunk generation progress)
-            float rdyBarY = barY + 30f;
-            draw.addRectFilled(barX, rdyBarY, barX + barW, rdyBarY + barH,
-                    ImGui.colorConvertFloat4ToU32(0.05f, 0.05f, 0.15f, 0.7f), 4f);
-            int rdyColor = pathReadiness >= 0.95f
-                    ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.4f, 1.0f)   // ready = green
-                    : ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, 1.0f);  // loading = blue
-            draw.addRectFilled(barX, rdyBarY, barX + barW * pathReadiness, rdyBarY + barH, rdyColor, 4f);
-            draw.addRect(barX, rdyBarY, barX + barW, rdyBarY + barH, black, 4f, 0, 1.5f);
-
-            String rdyLabel = pathReadiness >= 0.95f
-                    ? "PATH CLEAR — release [G] to fire!"
-                    : String.format("Loading terrain... %.0f%%", pathReadiness * 100f);
-            int rdyTextColor = pathReadiness >= 0.95f
-                    ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.4f, 0.95f)
-                    : ImGui.colorConvertFloat4ToU32(0.5f, 0.75f, 1.0f, 0.85f);
-            draw.addText(cx - 70, rdyBarY + 16f, black, rdyLabel);
-            draw.addText(cx - 71, rdyBarY + 15f, rdyTextColor, rdyLabel);
-
-            // Crosshair lock indicator (camera is frozen to aim direction)
-            draw.addText(cx - 55, cy - 22, black, "[ AIM LOCKED ]");
-            draw.addText(cx - 56, cy - 23,
-                    ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.3f, 0.85f), "[ AIM LOCKED ]");
-        }
-
-        // ── REWIND TRAIL INDICATOR ────────────────────────────────────────────
-        if (player.abilities.isRewinding) {
-            draw.addText(cx - 42, cy - 90, black, "⟲ REWINDING ⟲");
-            draw.addText(cx - 43, cy - 91,
-                    ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, 1.0f), "⟲ REWINDING ⟲");
-        }
-
-        // ── SMASH INDICATOR ───────────────────────────────────────────────────
-        if (player.isSmashing()) {
-            draw.addText(cx - 35, cy - 90, black, "▼ SMASHING ▼");
-            draw.addText(cx - 36, cy - 91,
-                    ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.1f, 1.0f), "▼ SMASHING ▼");
-        }
-
-        // ── STAND PERSPECTIVE OVERLAY ────────────────────────────────────────
-        // When piloting the drone: replace most HUD with a clean drone cockpit view.
-        if (player.stand.isInStandPerspective()) {
-            // Dim border vignette to indicate we are in drone mode
-            int vigCol  = ImGui.colorConvertFloat4ToU32(0.05f, 0.1f, 0.35f, 0.55f);
-            float vEdge = 80f;
-            draw.addRectFilled(0f,                screenH - vEdge, screenW, screenH,          vigCol);
-            draw.addRectFilled(0f,                0f,               screenW, vEdge,            vigCol);
-            draw.addRectFilled(0f,                0f,               vEdge,   screenH,          vigCol);
-            draw.addRectFilled(screenW - vEdge,   0f,               screenW, screenH,          vigCol);
-
-            // ── Stand health bar ──────────────────────────────────────────────
-            float shW = 160f, shH = 12f;
-            float shX = cx - shW / 2f, shY = 18f;
-            int shBg  = ImGui.colorConvertFloat4ToU32(0.05f, 0.05f, 0.2f,  0.85f);
-            int shFg  = ImGui.colorConvertFloat4ToU32(0.25f, 0.65f, 1.0f,  1.0f);
-            draw.addRectFilled(shX, shY, shX + shW, shY + shH, shBg, 4f);
-            float shFill = (player.stand.standHealth / GameConfig.standMaxHealth) * shW;
-            draw.addRectFilled(shX, shY, shX + shFill, shY + shH, shFg, 4f);
-            draw.addRect(shX, shY, shX + shW, shY + shH, black, 4f, 0, 1.5f);
-            String shLabel = String.format("STAND HP  %.0f / %.0f",
-                    player.stand.standHealth, GameConfig.standMaxHealth);
-            draw.addText(cx - 50f, shY + shH + 4f, black, shLabel);
-            draw.addText(cx - 51f, shY + shH + 3f, ImGui.colorConvertFloat4ToU32(0.6f, 0.85f, 1.0f, 0.9f), shLabel);
-
-            // ── LOS status indicators ─────────────────────────────────────────
-            // Two dots: owner→stand (left), stand→target (right).
-            // Green = clear, red = blocked.
-            float dotY   = shY + shH + 26f;
-            float dotR   = 5f;
-            int losGreen = ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.35f, 1.0f);
-            int losRed   = ImGui.colorConvertFloat4ToU32(1.0f, 0.2f, 0.15f, 1.0f);
-            int losDim   = ImGui.colorConvertFloat4ToU32(0.4f, 0.4f, 0.4f,  0.6f);
-
-            // Owner→Stand
-            float d1X = cx - 28f;
-            draw.addCircleFilled(d1X, dotY, dotR,
-                    player.stand.losOwnerToStand ? losGreen : losRed, 16);
-            draw.addCircle(d1X, dotY, dotR, black, 16, 1.2f);
-            draw.addText(d1X - 14f, dotY + 8f,
-                    ImGui.colorConvertFloat4ToU32(0.75f, 0.75f, 0.75f, 0.8f), "OWNER");
-
-            // Connecting line
-            draw.addLine(cx - 22f, dotY, cx + 22f, dotY, losDim, 1.2f);
-
-            // Stand→Target
-            float d2X = cx + 28f;
-            draw.addCircleFilled(d2X, dotY, dotR,
-                    player.stand.losStandToTarget ? losGreen : losRed, 16);
-            draw.addCircle(d2X, dotY, dotR, black, 16, 1.2f);
-            draw.addText(d2X - 12f, dotY + 8f,
-                    ImGui.colorConvertFloat4ToU32(0.75f, 0.75f, 0.75f, 0.8f), "TGT");
-
-            // Fire-ready composite state
-            boolean readyToFire = player.stand.losOwnerToStand && player.stand.losStandToTarget;
-            String fireHint = readyToFire ? "[LMB] Fire redirect shot" : "No clear line of fire";
-            int fireColor = readyToFire
-                    ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.4f, 0.95f)
-                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.4f, 0.2f, 0.75f);
-            draw.addText(cx - 65f, dotY + 20f, black, fireHint);
-            draw.addText(cx - 66f, dotY + 19f, fireColor, fireHint);
-
-            // ── Master position marker (glowing dot + distance) ───────────────
-            // Project player body position to screen so pilot can see where master is.
-            Camera sc      = player.stand.standCamera;
-            Matrix4f svp   = new Matrix4f(sc.getProjectionMatrix()).mul(sc.getViewMatrix());
-            org.joml.Vector4f masterClip = new org.joml.Vector4f(
-                    player.position.x, player.position.y + 0.9f, player.position.z, 1f).mul(svp);
-            boolean masterInFront = masterClip.w > 0f;
-            float masterDist = new Vector3f(player.stand.standPos).sub(player.position).length();
-            String distLabel = String.format("%.0fm", masterDist);
-
-            if (masterInFront) {
-                float mNdcX = masterClip.x / masterClip.w;
-                float mNdcY = masterClip.y / masterClip.w;
-                boolean mOnScreen = Math.abs(mNdcX) <= 0.92f && Math.abs(mNdcY) <= 0.92f;
-                float mScrX = (mNdcX  * 0.5f + 0.5f) * screenW;
-                float mScrY = (1f - (mNdcY * 0.5f + 0.5f)) * screenH;
-
-                if (mOnScreen) {
-                    // Pulsing gold ring — master is visible from drone camera
-                    int masterGold = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.15f, 0.9f);
-                    draw.addCircle(mScrX, mScrY, 11f, masterGold, 24, 2.5f);
-                    draw.addCircle(mScrX, mScrY, 7f,  masterGold, 24, 1.5f);
-                    draw.addText(mScrX - 12f, mScrY + 14f, black, distLabel);
-                    draw.addText(mScrX - 13f, mScrY + 13f, masterGold, distLabel);
-                }
-            }
-
-            // ── Return hint ───────────────────────────────────────────────────
-            String returnHint = "[TAB]  Return to body";
-            draw.addText(cx - 52f, screenH - 30f, black, returnHint);
-            draw.addText(cx - 53f, screenH - 31f,
-                    ImGui.colorConvertFloat4ToU32(0.7f, 0.82f, 1.0f, 0.85f), returnHint);
-        }
-
-        // ── SEAL COUNT DISPLAY ────────────────────────────────────────────────
-        // Show placed seal count + place cooldown tick only when NOT in drone view.
-        if (!player.stand.isInStandPerspective() && !player.debugMode) {
-            int placed  = player.seals.getSealCount();
-            int maxSeals = GameConfig.sealMaxCount;
-            // Pip row: filled diamond = placed, hollow = available slot
-            float pipY     = screenH - 120f;
-            float pipGap   = 14f;
-            float pipStartX = cx - (maxSeals - 1) * pipGap / 2f;
-            int sealCyan  = ImGui.colorConvertFloat4ToU32(0.2f, 0.95f, 0.95f, 1.0f);
-            int sealDim   = ImGui.colorConvertFloat4ToU32(0.3f, 0.3f, 0.3f,  0.55f);
-
-            for (int i = 0; i < maxSeals; i++) {
-                float px  = pipStartX + i * pipGap;
-                float half = 5f;
-                if (i < placed) {
-                    // Filled diamond
-                    draw.addQuadFilled(px,       pipY - half,
-                            px + half, pipY,
-                            px,        pipY + half,
-                            px - half, pipY, sealCyan);
-                    draw.addQuad(px,       pipY - half,
-                            px + half, pipY,
-                            px,        pipY + half,
-                            px - half, pipY, black, 1.2f);
-                } else {
-                    // Empty diamond outline
-                    draw.addQuad(px,       pipY - half,
-                            px + half, pipY,
-                            px,        pipY + half,
-                            px - half, pipY, sealDim, 1.2f);
-                }
-            }
-
-            // Label: seal key hints on first and last slot
-            float placeF    = player.seals.getPlaceCooldownFrac();
-            float teleportF = player.seals.getTeleportCooldownFrac();
-            String sealLabel = String.format("[H] Place  [B] Teleport  [N] Reclaim   %d/%d",
-                    placed, maxSeals);
-            int labelCol = (placeF >= 1f)
-                    ? ImGui.colorConvertFloat4ToU32(0.6f, 0.95f, 0.95f, 0.75f)
-                    : ImGui.colorConvertFloat4ToU32(0.45f, 0.6f,  0.6f,  0.55f);
-            draw.addText(cx - 95f, pipY + 10f, black, sealLabel);
-            draw.addText(cx - 96f, pipY + 9f,  labelCol, sealLabel);
-        }
-
-        // ── SEAL HUD MARKERS ─────────────────────────────────────────────────
-        // Always-visible indicators so seals are spottable at any distance:
-        //   • On-screen seal  → pulsing cyan ring + distance label
-        //   • Off-screen seal → small cyan arrow on screen edge
-        if (!player.stand.isInStandPerspective()
-                && !player.seals.placedSeals.isEmpty()) {
-
-            Matrix4f sealVP = new Matrix4f(camera.getProjectionMatrix())
-                    .mul(camera.getViewMatrix());
-
-            for (SealController.SealEntry seal : player.seals.placedSeals) {
-                org.joml.Vector4f clip = new org.joml.Vector4f(
-                        seal.position.x, seal.position.y, seal.position.z, 1f)
-                        .mul(sealVP);
-
-                boolean inFront = clip.w > 0f;
-                float absW = Math.abs(clip.w);
-                float ndcX = clip.x / absW;
-                float ndcY = clip.y / absW;
-                boolean onScreen = inFront
-                        && Math.abs(ndcX) <= 1.0f && Math.abs(ndcY) <= 1.0f;
-
-                float dist = new Vector3f(seal.position).sub(camera.position).length();
-                String distLabel = String.format("%.0fm", dist);
-
-                int sealRingColor = seal.targeted
-                        ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 1.0f, 1.0f)
-                        : ImGui.colorConvertFloat4ToU32(0.1f, 0.8f, 0.8f, 0.85f);
-                int sealDimText = ImGui.colorConvertFloat4ToU32(0.2f, 0.9f, 0.9f, 0.75f);
-
-                if (onScreen) {
-                    // Project to pixel coords
-                    float sx = (ndcX  * 0.5f + 0.5f) * screenW;
-                    float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
-
-                    // Pulse: ring radius grows/shrinks slightly
-                    float pulse = 1f + 0.12f * (float)Math.sin(seal.pulsePhase * 2f);
-                    float outerR = (seal.targeted ? 18f : 11f) * pulse;
-                    float innerR = outerR * 0.55f;
-
-                    // Outer ring
-                    draw.addCircle(sx, sy, outerR, sealRingColor, 20, seal.targeted ? 2.5f : 1.8f);
-                    // Inner dot for targeted seal
-                    if (seal.targeted) {
-                        draw.addCircleFilled(sx, sy, innerR,
-                                ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 1.0f, 0.35f), 16);
-                    }
-                    // Distance label just below the ring
-                    float labelY = sy + outerR + 3f;
-                    draw.addText(sx - 12f, labelY + 1f, black, distLabel);
-                    draw.addText(sx - 13f, labelY,      sealDimText, distLabel);
-
-                } else {
-                    // Off-screen arrow — same dot-product technique as the stand indicator
-                    Vector3f toSeal = new Vector3f(seal.position)
-                            .sub(camera.position).normalize();
-                    Vector3f right = camera.getRight();
-                    Vector3f up    = new Vector3f(right)
-                            .cross(camera.getLookDirection()).normalize();
-
-                    float dirX  = toSeal.dot(right);
-                    float dirY  = -toSeal.dot(up);
-                    float angle = (float)Math.atan2(dirY, dirX);
-                    float edgeR = Math.min(cx, cy) * 0.80f;
-
-                    float ax = cx + (float)Math.cos(angle) * edgeR;
-                    float ay = cy + (float)Math.sin(angle) * edgeR;
-
-                    // Small triangle arrow
-                    float cosA = (float)Math.cos(angle);
-                    float sinA = (float)Math.sin(angle);
-                    float tl = 12f, tw = 7f;
-                    // tip, left-base, right-base
-                    float t1x = ax + cosA * tl * 0.5f, t1y = ay + sinA * tl * 0.5f;
-                    float t2x = ax - cosA * tl * 0.5f + sinA * tw * 0.5f;
-                    float t2y = ay - sinA * tl * 0.5f - cosA * tw * 0.5f;
-                    float t3x = ax - cosA * tl * 0.5f - sinA * tw * 0.5f;
-                    float t3y = ay - sinA * tl * 0.5f + cosA * tw * 0.5f;
-                    draw.addTriangleFilled(t1x, t1y, t2x, t2y, t3x, t3y, sealRingColor);
-                    draw.addTriangle(t1x, t1y, t2x, t2y, t3x, t3y, black, 1.2f);
-
-                    // Distance label beside arrow
-                    draw.addText(ax + cosA * (tl + 3f) - 10f,
-                                 ay + sinA * (tl + 3f) - 6f, black, distLabel);
-                    draw.addText(ax + cosA * (tl + 3f) - 11f,
-                                 ay + sinA * (tl + 3f) - 7f, sealDimText, distLabel);
-                }
-            }
-        }
-
-        // ── ENEMY HP BARS ─────────────────────────────────────────────────────
-        // World-space health bar projected above each enemy's head.
-        // Use the active camera: stand camera in drone mode, player camera otherwise.
-        if (!enemyManager.getEnemies().isEmpty() && !player.stand.isInStandPerspective()) {
-            // Build VP from the actual player eye position/orientation
-            float aspect = screenW / screenH;
-            float fovRad = (float) Math.toRadians(
-                    (camera.dynamicFov >= 0f) ? camera.dynamicFov : GameConfig.fov);
-            Matrix4f hpProj = new Matrix4f().perspective(fovRad, aspect, 0.1f, 1000f);
-            Matrix4f hpView = camera.getViewMatrix();
-            Matrix4f enemyVP = new Matrix4f(hpProj).mul(hpView);
-
-            // Camera eye position and look direction for in-front culling
-            Vector3f eyePos  = new Vector3f(camera.position);
-            Vector3f lookDir = camera.getLookDirection();
-
-            for (Enemy enemy : enemyManager.getEnemies()) {
-                if (!enemy.alive) continue;
-
-                // Cull enemies more than 60 blocks away
-                Vector3f headPos = new Vector3f(
-                        enemy.position.x,
-                        enemy.position.y + 2.3f,    // just above model top
-                        enemy.position.z);
-                Vector3f toEnemy = new Vector3f(headPos).sub(eyePos);
-                float dist = toEnemy.length();
-                if (dist > 60f) continue;
-
-                // Cull enemies behind the camera (dot product < 0)
-                if (dist > 0.001f && toEnemy.dot(lookDir) / dist < 0.0f) continue;
-
-                // Project to clip space
-                org.joml.Vector4f clip = new org.joml.Vector4f(
-                        headPos.x, headPos.y, headPos.z, 1f).mul(enemyVP);
-                if (clip.w <= 0.001f) continue; // behind near plane
-
-                float ndcX = clip.x / clip.w;
-                float ndcY = clip.y / clip.w;
-                // Tight cull — only show when enemy is well within screen bounds
-                if (ndcX < -1.05f || ndcX > 1.05f || ndcY < -1.05f || ndcY > 1.05f) continue;
-
-                float sx = (ndcX  * 0.5f + 0.5f) * screenW;
-                float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
-
-                float hpFrac = Math.max(0f, enemy.health / enemy.maxHealth);
-                float barW   = 44f, barH = 6f;
-                float barX   = sx - barW / 2f, barY = sy - barH;
-
-                // Background
-                draw.addRectFilled(barX, barY, barX + barW, barY + barH,
-                        ImGui.colorConvertFloat4ToU32(0.1f, 0f, 0f, 0.8f), 2f);
-                // HP fill — green → red as health drops
-                float r = 0.15f + 0.85f * (1f - hpFrac);
-                float g = 0.9f * hpFrac;
-                draw.addRectFilled(barX, barY, barX + barW * hpFrac, barY + barH,
-                        ImGui.colorConvertFloat4ToU32(r, g, 0.05f, 1.0f), 2f);
-                draw.addRect(barX, barY, barX + barW, barY + barH,
-                        ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.9f), 2f, 0, 1.2f);
-
-                // HP numbers
-                String hpStr = String.format("%.0f", enemy.health);
-                draw.addText(sx - 7f, barY - 12f, black, hpStr);
-                draw.addText(sx - 8f, barY - 13f,
-                        ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.85f, 0.85f), hpStr);
-            }
-        }
-
-        // ── ABILITY COOLDOWN ICONS ────────────────────────────────────────────
-        if (!player.debugMode) {
-            renderAbilityHUD(draw, screenW, screenH);
-        }
-
-        // ── WELCOME BANNER ───────────────────────────────────────────────────
-        // Shown for ~6 s after the world first loads. Guides new players to F1.
-        if (welcomeTimer > 0f && !showHelp) {
-            renderWelcomeBanner(draw, screenW, screenH, welcomeTimer);
-        }
-
-        // ── CONTEXTUAL HINT BANNER ────────────────────────────────────────────
-        // One-liners that fire on first stand deploy / first seal placement.
-        if (hintTimer > 0f && hintText != null && !showHelp) {
-            renderHintBanner(draw, screenW, screenH, hintTimer, hintText);
-        }
-
-        // ── WAVE COUNTER ──────────────────────────────────────────────────────
-        // Top-left: "WAVE N — next in Xs" or "MAX ENEMIES REACHED"
-        if (!player.stand.isInStandPerspective() && !player.debugMode) {
-            int   waveNum   = enemyManager.getWaveNumber();
-            float waveTimer = enemyManager.getWaveTimer();
-            int   liveCount = (int) enemyManager.getEnemies().stream().filter(e -> e.alive).count();
-            int   maxCount  = GameConfig.spawnMaxEnemies;
-
-            String waveLabel;
-            int    waveColor;
-            if (liveCount >= maxCount) {
-                waveLabel = String.format("WAVE %d  ■ MAX ENEMIES (%d/%d)", waveNum, liveCount, maxCount);
-                waveColor = ImGui.colorConvertFloat4ToU32(1.0f, 0.4f, 0.15f, 0.95f);
-            } else if (waveNum == 0) {
-                waveLabel = String.format("Next wave in %.0fs", waveTimer);
-                waveColor = ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.65f);
-            } else {
-                waveLabel = String.format("WAVE %d  — next in %.0fs  [%d alive]",
-                        waveNum, waveTimer, liveCount);
-                // Pulse red as the next wave approaches (< 8 s)
-                float urgency = Math.max(0f, 1f - waveTimer / 8f);
-                waveColor = ImGui.colorConvertFloat4ToU32(
-                        0.75f + 0.25f * urgency,
-                        0.85f - 0.50f * urgency,
-                        0.85f - 0.75f * urgency,
-                        0.85f);
-            }
-            draw.addText(12f, 13f, black,      waveLabel);
-            draw.addText(11f, 12f, waveColor,  waveLabel);
-        }
-
-        // ── TIME SCALE INDICATOR ──────────────────────────────────────────────
-        TimeController tc = TimeController.getInstance();
-        if (tc.getSlownessFactor() > 0.05f || tc.getFastnessFactor() > 0.05f) {
-            String timeLabel = tc.getSlownessFactor() > 0.05f
-                    ? String.format("⧗ %.2fx", tc.getScale())
-                    : String.format("⚡ %.1fx", tc.getScale());
-            int timeColor = tc.getSlownessFactor() > 0.05f
-                    ? ImGui.colorConvertFloat4ToU32(0.6f, 0.7f, 1.0f, 0.9f)
-                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.65f, 0.2f, 0.9f);
-            draw.addText(screenW - 80f, 12f, black, timeLabel);
-            draw.addText(screenW - 81f, 11f, timeColor, timeLabel);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    //  ABILITY VISUAL RENDERING
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Renders ghost trails for dash/rewind and trajectory arc for cannonball.
-     * Called after normal item rendering, inside the main GL block.
-     * Uses the alphaMultiplier uniform to control transparency per ghost.
-     */
     private void renderAbilityGhosts(Shader shader, Matrix4f projection, Matrix4f view) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -3033,391 +2347,6 @@ public class Window {
      * corner of the screen. Each icon shows a coloured fill based on the
      * ability's ready fraction: full = coloured, on-cooldown = grey fill.
      */
-    private void renderAbilityHUD(imgui.ImDrawList draw, float screenW, float screenH) {
-        // ── Ability icon layout: two rows, bottom-right ───────────────────────
-        // Row 1 (top): Q  E  F  G  Z  K  J   — combat abilities + swap
-        // Row 2 (bot): X  H  B  V             — Stand + Seal + Substitute
-        float iconSize = 28f;
-        float spacing  = 6f;
-        int   black    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
-        int   grey     = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
-
-        // Row 1 — Q / E / F / G / Z / K / J / M / I
-        {
-            float totalW = 11 * iconSize + 10 * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize * 2f - spacing - 14f;
-
-            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I",     "U",         "Z•"  };
-            String[] tooltips = { "Dash","Blink","Slash","Cannon","Kamui","Pillar","Swap","Quagmire","Stone","Lightning","Kamui" };
-            float todoFrac = (GameConfig.todoCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, todoSwapCooldown / GameConfig.todoCooldown))
-                    : 0f;
-            float quagFrac = (GameConfig.quagmireCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, quagmireCooldown / GameConfig.quagmireCooldown))
-                    : 0f;
-            float stoneFrac = isChargingStoneCanon
-                    ? Math.min(1f, stoneCanonCharge / GameConfig.stoneCanonMaxCharge)
-                    : ((GameConfig.stoneCanonCooldown > 0f)
-                        ? Math.max(0f, Math.min(1f, 1f - stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
-                        : 1f);
-            float lightningFrac = player.lightning.isCharging()
-                    ? player.lightning.getChargeFrac()
-                    : player.lightning.getCooldownFrac();
-            float kamuiFrac = player.abilities.isKamui
-                    ? player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration  // drain while active
-                    : player.abilities.getKamuiCooldownFrac();
-            float[]  fracs = {
-                    player.abilities.getDashCooldownFrac(),
-                    player.abilities.getBlinkCooldownFrac(),
-                    player.attacks.getMeleeCooldownFrac(),
-                    player.abilities.getCannonCooldownFrac(),
-                    kamuiFrac,
-                    player.abilities.getPillarCooldownFrac(),
-                    todoFrac,
-                    quagFrac,
-                    stoneFrac,
-                    lightningFrac,
-                    kamuiFrac  // second slot reserved for future use; show same as kamui for now
-            };
-            // Stone canon color pulses orange while charging; lightning pulses white while charging
-            float stoneR = isChargingStoneCanon
-                    ? 0.85f + (float)Math.sin(glfwGetTime() * 6) * 0.15f : 0.65f;
-            float lightningA = player.lightning.isCharging()
-                    ? 0.6f + (float)Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
-            // Kamui pulses purple when active
-            float kamuiR = player.abilities.isKamui
-                    ? 0.55f + (float)Math.sin(glfwGetTime() * 8) * 0.2f : 0.45f;
-            int[] colors = {
-                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),       // Q dash: cyan
-                    ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),       // E blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f),      // F slash: amber
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.1f,  1.0f),      // G cannon: gold
-                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f,  1.0f),      // Z Kamui: purple
-                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f),      // K pillar: grey
-                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f,  1.0f),      // J swap: pink-magenta
-                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f),      // M quagmire: muddy green
-                    ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f),     // I stone: orange-grey
-                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f,  lightningA),// U lightning: ice-blue
-                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f,  0.5f)       // duplicate (placeholder)
-            };
-
-            for (int i = 0; i < labels.length; i++) {
-                float x = startX + i * (iconSize + spacing);
-                draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                float fillH = iconSize * fracs[i];
-                if (fillH > 0.5f) {
-                    draw.addRectFilled(x, startY + iconSize - fillH,
-                            x + iconSize, startY + iconSize, colors[i], 5f);
-                }
-                draw.addRect(x, startY, x + iconSize, startY + iconSize, black, 5f, 0, 1.5f);
-                draw.addText(x + 9f, startY + 7f, black, labels[i]);
-                draw.addText(x + 9f, startY + 7f,
-                        ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels[i]);
-                draw.addText(x, startY + iconSize + 2f,
-                        ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips[i]);
-            }
-        }
-
-        // Row 2 — X (Stand)  H (Seal place)  B (Seal teleport)  V (Substitute)  L (Heal)
-        {
-            float totalW = 5 * iconSize + 4 * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize - 14f;
-
-            // X: stand deploy — gold when deployed, blue-grey on cooldown
-            boolean standDeployed = player.stand.isDeployed();
-            float   standFrac     = player.stand.getRedeployCooldownFrac();
-            int     standColor    = standDeployed
-                    ? ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.15f, 1.0f)
-                    : ImGui.colorConvertFloat4ToU32(0.4f, 0.65f, 0.9f,  1.0f);
-
-            // H: seal place — cyan when ready
-            float sealPlaceFrac  = player.seals.getPlaceCooldownFrac();
-            int   sealPlaceColor = ImGui.colorConvertFloat4ToU32(0.2f, 0.92f, 0.92f, 1.0f);
-
-            // B: seal teleport — teal when ready
-            float sealTpFrac  = player.seals.getTeleportCooldownFrac();
-            int   sealTpColor = ImGui.colorConvertFloat4ToU32(0.1f, 0.75f, 0.65f, 1.0f);
-
-            // V: substitute — bright white when primed, dim when on cooldown
-            float subFrac  = (GameConfig.substituteCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, substituteCooldown / GameConfig.substituteCooldown))
-                    : 0f;
-            // When primed the icon is fully lit regardless of cooldown display
-            float subFracDisplay = substitutePrimed ? 1f : (1f - subFrac);
-            int   subColor = substitutePrimed
-                    ? ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1.0f) // bright white when primed
-                    : ImGui.colorConvertFloat4ToU32(0.85f, 0.87f, 0.95f, 1.0f);
-
-            // L: heal — green, pulses brighter when actively healing
-            float healFrac  = player.abilities.getHealCooldownFrac();
-            int   healColor = player.abilities.isHealing
-                    ? ImGui.colorConvertFloat4ToU32(0.1f, 1.0f, 0.35f, 1.0f) // bright green when healing
-                    : ImGui.colorConvertFloat4ToU32(0.15f, 0.75f, 0.30f, 1.0f);
-
-            String[] labels2   = { "X",     "H",    "B",    "V",   "L"    };
-            String[] tooltips2 = { "Stand", "Seal", "Warp", "Sub", "Heal" };
-            float[]  fracs2    = { standDeployed ? 1f : standFrac,
-                                   sealPlaceFrac, sealTpFrac, subFracDisplay, healFrac };
-            int[]    colors2   = { standColor, sealPlaceColor, sealTpColor, subColor, healColor };
-
-            for (int i = 0; i < labels2.length; i++) {
-                float x = startX + i * (iconSize + spacing);
-                draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                float fillH = iconSize * fracs2[i];
-                if (fillH > 0.5f) {
-                    draw.addRectFilled(x, startY + iconSize - fillH,
-                            x + iconSize, startY + iconSize, colors2[i], 5f);
-                }
-                // Stand icon: bright outline when deployed
-                // Substitute icon: bright pulsing outline when primed
-                boolean specialBorder = (i == 0 && standDeployed) || (i == 3 && substitutePrimed);
-                float outlineThick = specialBorder ? 2.5f : 1.5f;
-                int   outlineCol   = specialBorder ? colors2[i] : black;
-                draw.addRect(x, startY, x + iconSize, startY + iconSize,
-                        outlineCol, 5f, 0, outlineThick);
-                draw.addText(x + 9f, startY + 7f, black, labels2[i]);
-                draw.addText(x + 9f, startY + 7f,
-                        ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels2[i]);
-                draw.addText(x, startY + iconSize + 2f,
-                        ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips2[i]);
-            }
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    //  HELP SCREEN  (F1)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private void renderHelpScreen(float screenW, float screenH) {
-        float winW = Math.min(680f, screenW - 40f);
-        float winH = Math.min(680f, screenH - 40f);
-        ImGui.setNextWindowPos(screenW / 2f - winW / 2f, screenH / 2f - winH / 2f);
-        ImGui.setNextWindowSize(winW, winH);
-        ImGui.setNextWindowBgAlpha(0.94f);
-        ImGui.begin("Controls & Abilities",
-                imgui.flag.ImGuiWindowFlags.NoResize |
-                imgui.flag.ImGuiWindowFlags.NoMove);
-
-        ImGui.textDisabled("  [F1] or [ESC] to close.");
-        ImGui.separator();
-        ImGui.spacing();
-
-        // ── MOVEMENT ──────────────────────────────────────────────────────────
-        ImGui.textColored(0.5f, 0.9f, 1.0f, 1.0f, "MOVEMENT");
-        ImGui.separator();
-        helpRow("WASD",              "Move around.");
-        helpRow("Space",             "Jump.");
-        helpRow("Shift",             "Sprint.");
-        helpRow("Fall + Shift land", "Ground Smash — craters the terrain and hurts all enemies nearby. The higher you fall from, the bigger the crater.");
-        ImGui.spacing();
-
-        // ── COMBAT ABILITIES ──────────────────────────────────────────────────
-        ImGui.textColored(1.0f, 0.55f, 0.1f, 1.0f, "COMBAT ABILITIES");
-        ImGui.separator();
-        helpRow("[Q]   Dash",     "Instant burst in the direction you're moving. Short cooldown. Leaves a fading ghost trail behind you.");
-        helpRow("[E]   Blink",    "Teleport to where you're looking (up to ~22 blocks away). Short cooldown.");
-        helpRow("[F]   Slash",    "Wide swing that hits every enemy in a cone in front of you.");
-        helpRow("[K]   Pillar",   "A stone spire shoots up beneath you and launches you into the air.");
-        helpRow("[C]   Snipe",    "Hold [C] to charge up a crystal bolt, release to fire. Longer charge = bigger explosion on hit.");
-        helpRow("[G]   Cannonball","Hold [G] to charge, release to launch yourself like a cannonball. Explodes on impact. Dotted arc shows your trajectory while charging.");
-        ImGui.spacing();
-
-        // ── SPECIAL ABILITIES ─────────────────────────────────────────────────
-        ImGui.textColored(0.95f, 0.4f, 1.0f, 1.0f, "SPECIAL ABILITIES");
-        ImGui.separator();
-        helpRow("[J]   Position Swap",  "Instantly swap places with the nearest enemy in range. Good for getting out of a bad spot — or dropping them off a cliff.");
-        helpRow("[V]   Substitute",     "Hold [V] to get ready. The next hit you take is completely negated — you teleport backward and a paper dummy is left at your old spot. A second later it explodes, damaging nearby enemies.");
-        helpRow("[M]   Quagmire",       "Shoot a mud wave toward the enemy you're looking at. It travels along the ground and traps them on contact — they can't move for several seconds.");
-        helpRow("[I]   Stone Canon",    "Hold [I] while near stone blocks to charge up. Nearby stone is absorbed into a growing projectile. Release to fire. Bigger charge = more stone consumed = bigger explosion. You can't move while charging.");
-        ImGui.spacing();
-
-        // ── MANHATTAN TRANSFER ────────────────────────────────────────────────
-        ImGui.textColored(1.0f, 0.85f, 0.15f, 1.0f, "MANHATTAN TRANSFER  (Stand / Drone)");
-        ImGui.separator();
-        helpRow("[X]",                  "Deploy your drone above you. Press [X] again to recall it.");
-        helpRow("[TAB]",                "Swap into the drone's perspective (pilot it). Press [TAB] again to return to your body.");
-        helpRow("Piloting — WASD",      "Fly the drone. Space = up, Shift = down.");
-        helpRow("Piloting — click",     "Fire a shot in the direction the drone is facing.");
-        helpRow("Not piloting — click", "The drone auto-targets and shoots the nearest enemy it can see.");
-        helpRow("Two dots (top right)", "Show whether you and the drone both have a clear shot. Both must be green to fire.");
-        helpRow("Gold diamond",         "Marks your drone on screen. When it's out of view, an arrow points to it from the edge of the screen.");
-        ImGui.spacing();
-
-        // ── MINATO'S SEAL ─────────────────────────────────────────────────────
-        ImGui.textColored(0.2f, 0.95f, 0.95f, 1.0f, "MINATO'S SEAL  (Teleport Anchors)");
-        ImGui.separator();
-        helpRow("[H]",   "Throw a seal — it sticks to the first surface it hits.");
-        helpRow("[B]",   "Teleport instantly to the seal closest to your crosshair. The targeted seal glows bigger and brighter.");
-        helpRow("[N]",   "Pull the targeted seal back to you without teleporting.");
-        helpRow("Tip",   "You can place up to 5 seals at a time. Great for escape routes, high ground, and repositioning. Arrows on the screen edges point to seals that are out of view.");
-        ImGui.spacing();
-
-        // ── WORLD & UI ────────────────────────────────────────────────────────
-        ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & BUILDING");
-        ImGui.separator();
-        helpRow("Hold left click",  "Break the block you're looking at.");
-        helpRow("Right click",      "Place the block selected in your hotbar.");
-        helpRow("1 – 9",            "Switch hotbar slot.");
-        helpRow("[P]",              "Spawn a test enemy where you're looking. Enemies also spawn automatically in waves.");
-        helpRow("[ESC]",            "Pause menu.");
-        helpRow("[F1]",             "This screen.");
-        helpRow("[F3]",             "Debug info (your position, frame rate, render distance).");
-        ImGui.spacing();
-
-        // ── ENEMY TYPES ───────────────────────────────────────────────────────
-        ImGui.textColored(0.9f, 0.3f, 0.1f, 1.0f, "ENEMIES");
-        ImGui.separator();
-        helpRow("Red-orange",   "Grunt — standard enemy. Medium speed and health.");
-        helpRow("Yellow-green", "Stalker — very fast but fragile. Has a long detection range so it will spot you first.");
-        helpRow("Purple",       "Brute — slow but very tanky and hits hard up close.");
-        helpRow("Waves",        "Enemies keep spawning in waves. The wave counter is in the top-left corner.");
-        helpRow("Health bars",  "Float above each enemy. Green = healthy, red = almost dead.");
-
-        ImGui.end();
-    }
-
-    /**
-     * Single row in the help screen: yellow key label on the left,
-     * wrapped description on the right. Fixed column split at 230px.
-     */
-    private void helpRow(String key, String desc) {
-        ImGui.textColored(1.0f, 0.88f, 0.25f, 1.0f, "  " + key);
-        ImGui.sameLine(230f);
-        ImGui.pushTextWrapPos(0f);   // wrap at window right edge
-        ImGui.text(desc);
-        ImGui.popTextWrapPos();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    //  TUTORIAL BANNERS
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * "Press F1 for controls" banner shown for the first few seconds of play.
-     * Fades in over 0.4 s and out over 1 s.
-     */
-    private void renderWelcomeBanner(imgui.ImDrawList draw,
-                                     float screenW, float screenH, float timer) {
-        float alpha;
-        if      (timer > 5.6f) alpha = (6f - timer) / 0.4f;   // fade-in 0→0.4 s
-        else if (timer < 1.0f) alpha = timer;                   // fade-out last 1 s
-        else                   alpha = 1f;
-        alpha = Math.max(0f, Math.min(1f, alpha));
-
-        int bg     = ImGui.colorConvertFloat4ToU32(0.04f, 0.04f, 0.14f, 0.90f * alpha);
-        int border = ImGui.colorConvertFloat4ToU32(0.4f,  0.85f, 1.0f,  0.55f * alpha);
-        int white  = ImGui.colorConvertFloat4ToU32(1.0f,  1.0f,  1.0f,  alpha);
-        int cyan   = ImGui.colorConvertFloat4ToU32(0.4f,  0.9f,  1.0f,  alpha);
-        int black  = ImGui.colorConvertFloat4ToU32(0f,    0f,    0f,    alpha);
-
-        float bW = 400f, bH = 56f;
-        float bX = screenW / 2f - bW / 2f;
-        float bY = screenH * 0.19f;
-
-        draw.addRectFilled(bX, bY, bX + bW, bY + bH, bg, 8f);
-        draw.addRect(bX, bY, bX + bW, bY + bH, border, 8f, 0, 1.8f);
-
-        String line1 = "You have lots of abilities!";
-        String line2 = "Press  [F1]  for the full controls & ability guide.";
-
-        // Approximate centering (default font ~7 px/char)
-        draw.addText(bX + bW / 2f - line1.length() * 3.6f,     bY + 8f,  black, line1);
-        draw.addText(bX + bW / 2f - line1.length() * 3.6f - 1, bY + 7f,  white, line1);
-        draw.addText(bX + bW / 2f - line2.length() * 3.6f,     bY + 29f, black, line2);
-        draw.addText(bX + bW / 2f - line2.length() * 3.6f - 1, bY + 28f, cyan,  line2);
-    }
-
-    /**
-     * One-liner contextual hint (e.g. first stand deploy or first seal placed).
-     * Fades out over the last 0.6 s of its duration.
-     */
-    private void renderHintBanner(imgui.ImDrawList draw,
-                                   float screenW, float screenH,
-                                   float timer, String text) {
-        float alpha = (timer < 0.6f) ? timer / 0.6f : 1f;
-        alpha = Math.max(0f, Math.min(1f, alpha));
-
-        int bg    = ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f,  0.72f * alpha);
-        int fg    = ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.3f, alpha);
-        int black = ImGui.colorConvertFloat4ToU32(0f,   0f,   0f,    alpha);
-
-        // Rough text width: 7 px/char
-        float tw = text.length() * 7.0f;
-        float bX = screenW / 2f - tw / 2f - 12f;
-        float bY = 36f; // just below the wave counter line
-
-        draw.addRectFilled(bX, bY, bX + tw + 24f, bY + 22f, bg, 4f);
-        draw.addText(bX + 13f, bY + 5f, black, text);
-        draw.addText(bX + 12f, bY + 4f, fg,    text);
-    }
-
-    private void updateBreaking(float deltaTime) {
-        if (!breakingActive || lastTarget == null || !lastTarget.hit) {
-            breakProgress = 0.0f;
-            return;
-        }
-        int tx = lastTarget.hitX, ty = lastTarget.hitY, tz = lastTarget.hitZ;
-        if (tx != breakX || ty != breakY || tz != breakZ) {
-            breakProgress = 0.0f; breakX = tx; breakY = ty; breakZ = tz;
-        }
-        Block target = world.getBlock(tx, ty, tz);
-        if (!target.isSolid()) { breakProgress = 0.0f; return; }
-
-        breakProgress += deltaTime / target.hardness;
-
-        if (breakProgress >= 1.0f) {
-            droppedItems.add(new DroppedItem(tx, ty, tz, target));
-            world.setBlock(tx, ty, tz, Block.AIR);
-            world.rebuildChunkAt(tx, ty, tz);
-            if (network != null && network.connected) network.sendBreak(tx, ty, tz);
-            breakProgress = 0.0f;
-        }
-    }
-
-    private void renderDebugMenu() {
-        ImGui.begin("Debug");
-        ImGui.text(String.format("XYZ: %.3f / %.3f / %.3f",
-                player.position.x, player.position.y, player.position.z));
-        ImGui.text(String.format("FPS: %.1f",   ImGui.getIO().getFramerate()));
-        ImGui.text(String.format("Seed: %d", GameConfig.seed));
-        ImGui.text(String.format("DeltaTime: %.4fs", ImGui.getIO().getDeltaTime()));
-        ImGui.text(String.format("TimeScale: %.3f",  TimeController.getInstance().getScale()));
-        if (player.debugMode) {
-            ImGui.text("Flight mode: " + player.flightController.getMode().name());
-        }
-        ImGui.separator();
-        float[] fov = {GameConfig.fov};
-        if (ImGui.sliderFloat("FOV", fov, 30f, 120f)) GameConfig.fov = fov[0];
-        int[] rd = {GameConfig.renderDistance};
-        if (ImGui.sliderInt("Render Distance", rd, 2, 16)) GameConfig.renderDistance = rd[0];
-        ImGui.separator();
-        // ── Seed editor ───────────────────────────────────────────────────────
-        ImGui.text("World Seed:");
-        ImGui.setNextItemWidth(140);
-        // Pre-fill with current seed on first open
-        if (seedInput.get().isEmpty()) seedInput.set(String.valueOf(GameConfig.seed));
-        ImGui.inputText("##seedEdit", seedInput);
-        ImGui.sameLine();
-        if (ImGui.button("New World")) {
-            try {
-                long newSeed = Long.parseLong(seedInput.get().trim());
-                GameConfig.seed  = newSeed;
-                worldGen.resetSeed(newSeed);
-                world.clearAllChunks();
-                world.meshingQueue.clear();
-                player.position.set(2000f, 250f, 2000f);
-                isPreloading = true;
-                // Close debug menu so the preload screen shows
-                showDebug = false;
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            } catch (NumberFormatException ignored) {
-                // Bad input — do nothing
-            }
-        }
-        ImGui.end();
-    }
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Helpers
@@ -3529,7 +2458,7 @@ public class Window {
      * Maps a collected block to an empty hotbar slot.
      * Preserved from the original codebase.
      */
-    private void addBlockToHotbar(Block block) {
+    void addBlockToHotbar(Block block) {
         if (block == Block.AIR) return;
         for (Block b : hotbar) { if (b == block) return; }
         for (int i = 0; i < hotbar.length; i++) {

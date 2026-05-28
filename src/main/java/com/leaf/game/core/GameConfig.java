@@ -234,30 +234,7 @@ public class GameConfig {
     public static int sealLookMode = 1;
 
     // ── ENEMIES ───────────────────────────────────────────────────────────────
-    // GRUNT — standard pursuer.  Medium speed, medium health.
-    public static float gruntSpeed          = 1.5f;
-    public static float gruntHealth         = 50f;
-    public static float gruntDamagePerSec   = 2f;
-    public static float gruntAggroRange     = 24f;
-    public static float gruntAttackRange    = 1.5f;
-    /** Seconds between discrete attacks. Damage per hit = damagePerSec * interval. */
-    public static float gruntAttackInterval = 1.5f;
-
-    // BRUTE — slow tank.  High health, heavy damage.
-    public static float bruteSpeed          = 1.2f;
-    public static float bruteHealth         = 200f;
-    public static float bruteDamagePerSec   = 4f;
-    public static float bruteAggroRange     = 16f;
-    public static float bruteAttackRange    = 2.0f;
-    public static float bruteAttackInterval = 2.2f;
-
-    // STALKER — fast glass cannon.  Long aggro, fragile.
-    public static float stalkerSpeed          = 2.5f;
-    public static float stalkerHealth         = 25f;
-    public static float stalkerDamagePerSec   = 1f;
-    public static float stalkerAggroRange     = 36f;
-    public static float stalkerAttackRange    = 1.5f;
-    public static float stalkerAttackInterval = 0.9f;
+    // Three enemy types: GOLEM, THROWER, PREDATOR (see below for their stats).
 
     // ── ENEMY WAVE SPAWNING ───────────────────────────────────────────────────
     /** Seconds between automatic wave spawns. */
@@ -283,6 +260,8 @@ public class GameConfig {
     public static float quagmireTrapDuration = 4.0f; // seconds the enemy is frozen
     public static float quagmireSpreadSpeed  = 14f;  // blocks/sec the mud wave travels
     public static float quagmireCooldown     = 8.0f;
+    /** Radius (blocks) of the irregular mud pool stamped when the wave arrives. */
+    public static int   quagmirePoolRadius   = 3;
 
     // ── STONE CANON (I key) ───────────────────────────────────────────────────
     // Hold I to charge — nearby stone blocks are consumed and shaped into a
@@ -323,33 +302,40 @@ public class GameConfig {
 
     // ── KAMUI (Z toggle) ─────────────────────────────────────────────────────
     /** Seconds the player can stay phased before being forced out. */
-    public static float kamuiMaxDuration = 6.0f;
+    public static float kamuiMaxDuration    = 60.0f;
     /** Cooldown after exiting Kamui (whether voluntary or by timer). */
-    public static float kamuiCooldown    = 14.0f;
+    public static float kamuiCooldown       = 14.0f;
+    /** Seconds to hold look at a target to absorb it into the Kamui dimension. */
+    public static float kamuiAbsorptionTime = 2.0f;
 
     // ── LIGHTNING (U key) ────────────────────────────────────────────────────
     /** Seconds to reach full charge. */
-    public static float lightningMaxCharge   = 2.0f;
+    public static float lightningMaxCharge       = 2.0f;
     /** Aimed-strike damage at zero charge. */
-    public static float lightningBaseDamage  = 75f;
+    public static float lightningBaseDamage      = 75f;
     /** Aimed-strike damage at full charge (scales linearly between these). */
-    public static float lightningMaxDamage   = 280f;
-    /** AOE-burst damage per enemy (triggered by double-tap U). */
-    public static float lightningAoeDamage   = 50f;
-    /** AOE-burst radius (blocks). */
-    public static float lightningAoeRadius   = 14f;
+    public static float lightningMaxDamage       = 280f;
     /** Maximum range for aimed targeting (blocks). */
-    public static float lightningRange       = 100f;
+    public static float lightningRange           = 100f;
     /** Cooldown after a charged single-target strike. */
-    public static float lightningCooldown    = 4.5f;
-    /** Cooldown after an AOE burst. */
-    public static float lightningAoeCooldown = 9.0f;
-    /** Damage multiplier when the target stands on or in water. */
-    public static float lightningWaterMult   = 2.8f;
+    public static float lightningCooldown        = 4.5f;
+    /** AOE-burst damage per enemy (double-tap U). */
+    public static float lightningAoeDamage       = 60f;
+    /** AOE-burst radius (blocks). */
+    public static float lightningAoeRadius       = 16f;
+    /** Cooldown after an AOE burst (longer — it's powerful). */
+    public static float lightningAoeCooldown     = 10.0f;
+    /** Maximum seconds between two U presses to count as a double-tap. */
+    public static float lightningDoubleTapWindow = 0.38f;
+    /**
+     * When the primary target is standing in water, electrocution chains to all
+     * other enemies also standing in water within this horizontal radius (blocks).
+     */
+    public static float lightningWaterChainRadius = 22f;
+    /** Chain-strike damage (fixed, independent of primary charge level). */
+    public static float lightningWaterChainDamage = 90f;
     /** Seconds the lightning bolt visual remains on screen. */
-    public static float lightningBoltLife    = 0.5f;
-    /** Maximum window (seconds) between two U presses to count as a double-tap. */
-    public static float lightningDoubleTapWindow = 0.35f;
+    public static float lightningBoltLife         = 0.6f;
 
     // ── ENEMY: GOLEM ─────────────────────────────────────────────────────────
     public static float golemHealth          = 420f;
@@ -414,4 +400,54 @@ public class GameConfig {
     public static float projectileGravity  = 18f;
     /** Max seconds an enemy projectile travels before despawning. */
     public static float projectileLifetime = 6.0f;
+
+    // ── MANA SYSTEM ───────────────────────────────────────────────────────────
+    // Mana is a shared resource that limits how often abilities can be used.
+    // All values are tunable; regeneration is passive and always active.
+    /** Mana regenerated per second (passive). */
+    public static float manaRegenRate        = 10f;
+
+    // Lightning costs
+    /** Mana cost for a zero-charge single lightning strike. */
+    public static float manaLightningBase    = 12f;
+    /** Mana cost for a full-charge single lightning strike (interpolated). */
+    public static float manaLightningMax     = 35f;
+    /** Mana cost for the AOE lightning burst (double-tap). */
+    public static float manaLightningAoe     = 28f;
+
+    // Kamui costs
+    /** Mana drained per second while Kamui is active. */
+    public static float manaKamuiDrain       = 1.5f;
+    /** Mana cost on a successful Kamui absorption (kill enemy / erase blocks). */
+    public static float manaKamuiAbsorption  = 18f;
+
+    // Movement-ability costs
+    /** Mana cost per dash use. */
+    public static float manaDash             = 6f;
+    /** Mana cost per blink use. */
+    public static float manaBlink            = 10f;
+    /** Mana cost to fire the cannonball. */
+    public static float manaCannonball       = 18f;
+    /** Mana cost per ground-smash activation. */
+    public static float manaSmash            = 8f;
+
+    // Attack costs
+    /** Mana cost per Runic Cleave (F key). */
+    public static float manaCleave           = 5f;
+    /** Mana cost per Void Shard bolt (C key). */
+    public static float manaVoidShard        = 7f;
+    /** Mana cost when the earth pillar activates (one-time). */
+    public static float manaPillar           = 14f;
+    /** Mana drained per second while the pillar is actively rising (continuous). */
+    public static float manaPillarPerSec     = 4f;
+
+    // Utility costs
+    /** Mana cost for the Todo position-swap (one-time). */
+    public static float manaTodoSwap         = 10f;
+    /** Mana cost per Quagmire mud wave (one-time). */
+    public static float manaQuagmire         = 12f;
+    /** Mana drained per second while Stone Canon is charging (continuous). */
+    public static float manaStoneCanonBase   = 4f;
+    /** Mana consumed when Stone Canon fires, scaled by charge (0..1 × this). */
+    public static float manaStoneCanonMax    = 14f;
 }

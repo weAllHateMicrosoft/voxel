@@ -101,4 +101,9 @@ public class Shader {
     public void setUniform(String name, int value) {
         glUniform1i(glGetUniformLocation(programId, name), value);
     }
+
+    // Vec2 uniform (e.g. screen-space coordinates)
+    public void setUniform(String name, float x, float y) {
+        glUniform2f(glGetUniformLocation(programId, name), x, y);
+    }
 }

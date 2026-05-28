@@ -11,13 +11,9 @@ import java.util.List;
 /**
  * Enemy — an AI-driven combat target.
  *
- * ── Six types ─────────────────────────────────────────────────────────────────
- *   GRUNT    standard pursuer — medium speed, medium health
- *   BRUTE    slow tank        — low speed, very high health, hits hard
- *   STALKER  fast flanker     — high speed, fragile, long aggro range
+ * ── Two types ─────────────────────────────────────────────────────────────────
  *   GOLEM    stone colossus   — very slow, huge, slam + boulder throw
  *   THROWER  ranged attacker  — keeps distance, arc-throws rock projectiles
- *   PREDATOR feral animal     — very fast, pounces on the player
  *
  * ── State machine ─────────────────────────────────────────────────────────────
  *   IDLE → (in aggro range) → ALERTED → (alert timer) → CHASE
@@ -25,7 +21,6 @@ import java.util.List;
  *   ATTACK → (range lost) → CHASE
  *   RETREATING  [THROWER only]  — backs away when player is too close
  *   SLAMMING    [GOLEM only]    — brief delay before shockwave AoE
- *   POUNCING    [PREDATOR only] — airborne burst toward player
  */
 public class Enemy {
 
@@ -33,8 +28,8 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GRUNT, BRUTE, STALKER, GOLEM, THROWER, PREDATOR }
-    public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING, POUNCING }
+    public enum Type  { GOLEM, THROWER }
+    public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Static constants (default hitbox; per-type values override via instance)
@@ -109,9 +104,6 @@ public class Enemy {
     // ── THROWER special ───────────────────────────────────────────────────────
     // (wantsToThrow also used here; throwCooldown shared)
 
-    // ── PREDATOR special ──────────────────────────────────────────────────────
-    private float pounceCooldown  = 0f;
-    private float pounceTimer     = 0f;   // countdown while airborne in pounce
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Visual / output
@@ -135,23 +127,6 @@ public class Enemy {
         float health_, speed_, dps_, aggro_, atk_, atkI_;
 
         switch (type) {
-            case GRUNT -> {
-                health_ = GameConfig.gruntHealth;  speed_ = GameConfig.gruntSpeed;
-                dps_    = GameConfig.gruntDamagePerSec; aggro_ = GameConfig.gruntAggroRange;
-                atk_    = GameConfig.gruntAttackRange;  atkI_  = GameConfig.gruntAttackInterval;
-            }
-            case BRUTE -> {
-                health_ = GameConfig.bruteHealth;  speed_ = GameConfig.bruteSpeed;
-                dps_    = GameConfig.bruteDamagePerSec; aggro_ = GameConfig.bruteAggroRange;
-                atk_    = GameConfig.bruteAttackRange;  atkI_  = GameConfig.bruteAttackInterval;
-                cr = 0.7f; hh = 1.3f;
-            }
-            case STALKER -> {
-                health_ = GameConfig.stalkerHealth; speed_ = GameConfig.stalkerSpeed;
-                dps_    = GameConfig.stalkerDamagePerSec; aggro_ = GameConfig.stalkerAggroRange;
-                atk_    = GameConfig.stalkerAttackRange;  atkI_  = GameConfig.stalkerAttackInterval;
-                cr = 0.35f; hh = 0.8f;
-            }
             case GOLEM -> {
                 health_ = GameConfig.golemHealth;  speed_ = GameConfig.golemSpeed;
                 dps_    = GameConfig.golemDamagePerSec;  aggro_ = GameConfig.golemAggroRange;
@@ -164,15 +139,11 @@ public class Enemy {
                 atk_    = GameConfig.throwerAttackRange;  atkI_  = GameConfig.throwerAttackInterval;
                 cr = 0.5f; hh = 1.1f;
             }
-            case PREDATOR -> {
-                health_ = GameConfig.predatorHealth; speed_ = GameConfig.predatorSpeed;
-                dps_    = GameConfig.predatorDamagePerSec; aggro_ = GameConfig.predatorAggroRange;
-                atk_    = GameConfig.predatorAttackRange;  atkI_  = GameConfig.predatorAttackInterval;
-                cr = 0.6f; hh = 0.55f;  // low to the ground
-            }
-            default -> {
-                health_ = 50f; speed_ = 2f; dps_ = 2f;
-                aggro_  = 20f; atk_   = 1.5f; atkI_ = 1.5f;
+            default -> { // THROWER (fallback)
+                health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
+                dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
+                atk_    = GameConfig.throwerAttackRange;  atkI_  = GameConfig.throwerAttackInterval;
+                cr = 0.5f; hh = 1.1f;
             }
         }
 
@@ -187,7 +158,7 @@ public class Enemy {
         this.halfHeight      = hh;
     }
 
-    public Enemy(float x, float y, float z) { this(x, y, z, Type.GRUNT); }
+    public Enemy(float x, float y, float z) { this(x, y, z, Type.THROWER); }
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Damage / knockback API
@@ -256,9 +227,7 @@ public class Enemy {
     private void tickCooldowns(float dt) {
         if (slamCooldown  > 0f) slamCooldown  -= dt;
         if (throwCooldown > 0f) throwCooldown  -= dt;
-        if (pounceCooldown > 0f) pounceCooldown -= dt;
-        if (pounceTimer    > 0f) pounceTimer   -= dt;
-        if (mudTrapTimer   > 0f) mudTrapTimer   -= dt;
+        if (mudTrapTimer  > 0f) mudTrapTimer   -= dt;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -273,37 +242,11 @@ public class Enemy {
 
         switch (type) {
 
-            // ── GRUNT / BRUTE / STALKER — classic melee ───────────────────────
-            case GRUNT, BRUTE, STALKER -> tickMeleeAI(dt, distToPlayer, leash);
-
             // ── GOLEM — slam + ranged throw ───────────────────────────────────
             case GOLEM -> tickGolemAI(dt, distToPlayer, leash, playerCentre);
 
             // ── THROWER — ranged; retreats from close player ──────────────────
             case THROWER -> tickThrowerAI(dt, distToPlayer, leash);
-
-            // ── PREDATOR — fast; pounces ──────────────────────────────────────
-            case PREDATOR -> tickPredatorAI(dt, distToPlayer, leash, playerCentre, playerPos);
-        }
-    }
-
-    // ─── Melee (GRUNT / BRUTE / STALKER) ─────────────────────────────────────
-
-    private void tickMeleeAI(float dt, float dist, float leash) {
-        switch (state) {
-            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED;
-                                alertTimer = (type == Type.BRUTE) ? 1.1f : 0.55f; } }
-            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
-            case CHASE   -> { if (dist <= attackRange) state = State.ATTACK;
-                              else if (dist > leash) state = State.IDLE; }
-            case ATTACK  -> {
-                if (attackCooldown <= 0f) {
-                    framePlayerDamage = damagePerSec * attackInterval;
-                    attackCooldown    = attackInterval;
-                }
-                if (dist > attackRange * 1.25f) state = State.CHASE;
-            }
-            default -> state = State.IDLE;
         }
     }
 
@@ -395,60 +338,6 @@ public class Enemy {
         }
     }
 
-    // ─── PREDATOR ─────────────────────────────────────────────────────────────
-
-    private void tickPredatorAI(float dt, float dist, float leash,
-                                 Vector3f playerCentre, Vector3f playerPos) {
-        switch (state) {
-            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.3f; } }
-            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
-
-            case CHASE -> {
-                if (dist > leash) { state = State.IDLE; break; }
-                // Pounce trigger
-                if (dist <= GameConfig.predatorPounceDist && pounceCooldown <= 0f && onGround) {
-                    state       = State.POUNCING;
-                    pounceTimer = 0.55f;
-                    // Launch horizontally toward player + leap
-                    float dx = playerCentre.x - position.x;
-                    float dz = playerCentre.z - position.z;
-                    float hd = (float) Math.sqrt(dx * dx + dz * dz);
-                    if (hd > 0.01f) {
-                        knockbackVelX = (dx / hd) * GameConfig.predatorPounceSpeed;
-                        knockbackVelZ = (dz / hd) * GameConfig.predatorPounceSpeed;
-                    }
-                    velocityY     = GameConfig.predatorPounceLeap;
-                    pounceCooldown = GameConfig.predatorPounceCooldown;
-                    break;
-                }
-                if (dist <= attackRange) state = State.ATTACK;
-            }
-
-            case POUNCING -> {
-                // Deal pounce damage if we connect during the airborne window
-                if (dist <= attackRange * 1.2f) {
-                    framePlayerDamage = GameConfig.predatorPounceDamage;
-                    // End pounce on hit
-                    knockbackVelX = 0f;
-                    knockbackVelZ = 0f;
-                    state         = State.CHASE;
-                } else if (pounceTimer <= 0f || onGround) {
-                    // Missed or landed — back to chase
-                    state = State.CHASE;
-                }
-            }
-
-            case ATTACK -> {
-                if (attackCooldown <= 0f) {
-                    framePlayerDamage = damagePerSec * attackInterval;
-                    attackCooldown    = attackInterval;
-                }
-                if (dist > attackRange * 1.5f) state = State.CHASE;
-            }
-            default -> state = State.CHASE;
-        }
-    }
-
     // ═════════════════════════════════════════════════════════════════════════
     //  Horizontal movement
     // ═════════════════════════════════════════════════════════════════════════
@@ -460,7 +349,6 @@ public class Enemy {
         boolean shouldMove = switch (state) {
             case CHASE, ATTACK, SLAMMING -> true;
             case RETREATING -> true;   // Thrower moves away
-            case POUNCING   -> false;  // knockback handles pounce movement
             default         -> false;
         };
         if (!shouldMove) return;
@@ -504,7 +392,7 @@ public class Enemy {
             boolean clear1  = !world.getBlock(blockAheadX, footY + 1, blockAheadZ).isSolid();
             boolean clear2  = !world.getBlock(blockAheadX, footY + 2, blockAheadZ).isSolid();
             if (clear1 && clear2) {
-                velocityY = (type == Type.PREDATOR) ? 10f : 7.5f;
+                velocityY = 7.5f;
             } else {
                 strafeTimer += dt;
                 if (strafeTimer >= STRAFE_FLIP_SECS) { strafeSign = -strafeSign; strafeTimer = 0f; }
@@ -597,12 +485,8 @@ public class Enemy {
      */
     public float[] renderScaleVec() {
         return switch (type) {
-            case BRUTE   -> new float[]{ 0.80f, 0.80f, 0.80f };
-            case STALKER -> new float[]{ 0.38f, 0.38f, 0.38f };
             case GOLEM   -> new float[]{ 1.40f, 1.60f, 1.40f }; // wide and tall
             case THROWER -> new float[]{ 0.52f, 0.58f, 0.52f };
-            case PREDATOR-> new float[]{ 0.80f, 0.38f, 0.80f }; // wide, low
-            default      -> new float[]{ 0.50f, 0.50f, 0.50f }; // GRUNT
         };
     }
 

@@ -33,9 +33,9 @@ import java.util.Random;
  *   Every GameConfig.spawnWaveInterval seconds, a wave of enemies spawns
  *   around the player.  Wave size = spawnWaveBase + waveNumber / 2.
  *   Composition grows more varied as waves increase:
- *     Wave 1–2 : GRUNTs only
- *     Wave 3–5 : mostly GRUNTs, one STALKER
- *     Wave 6+  : mixed GRUNT / STALKER / BRUTE
+ *     Wave 1–2 : PREDATOR + THROWER
+ *     Wave 3–6 : PREDATOR + THROWER + rare GOLEM
+ *     Wave 7+  : all three, GOLEM frequency grows each wave
  *   Spawn points are chosen by picking a random angle at a random distance
  *   in [spawnMinDist, spawnMaxDist] from the player, then scanning downward
  *   from near sky-limit to find a solid surface to land on.
@@ -101,9 +101,9 @@ public class EnemyManager {
     //  Manual spawn (P key from Window)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Spawn a GRUNT at the given world position. */
+    /** Spawn a THROWER at the given world position. */
     public Enemy spawnAt(float x, float y, float z) {
-        return spawnAt(x, y, z, Enemy.Type.GRUNT);
+        return spawnAt(x, y, z, Enemy.Type.THROWER);
     }
 
     /** Spawn a typed enemy at the given world position. */
@@ -113,7 +113,7 @@ public class EnemyManager {
         return e;
     }
 
-    /** Convenience overload — spawns a GRUNT. */
+    /** Convenience overload — spawns a THROWER. */
     public Enemy spawnAt(Vector3f pos) {
         return spawnAt(pos.x, pos.y, pos.z);
     }
@@ -248,39 +248,21 @@ public class EnemyManager {
     }
 
     /**
-     * Choose an enemy type biased toward tougher / more varied enemies in later waves.
+     * Choose an enemy type biased toward tougher enemies in later waves.
      *
-     * Wave 1–2  : GRUNT only
-     * Wave 3–5  : GRUNT + STALKER
-     * Wave 6–9  : GRUNT + STALKER + BRUTE + THROWER
-     * Wave 10–14: all types incl. PREDATOR
-     * Wave 15+  : all types incl. GOLEM
+     * Wave 1–3  : THROWER only
+     * Wave 4–8  : THROWER + occasional GOLEM (20%)
+     * Wave 9+   : THROWER + GOLEM, GOLEM frequency rises to 40%
      */
     private Enemy.Type pickType() {
         float r = rng.nextFloat();
-        if (waveNumber <= 2) {
-            return Enemy.Type.GRUNT;
-        } else if (waveNumber <= 5) {
-            return r < 0.65f ? Enemy.Type.GRUNT : Enemy.Type.STALKER;
-        } else if (waveNumber <= 9) {
-            if (r < 0.40f) return Enemy.Type.GRUNT;
-            if (r < 0.65f) return Enemy.Type.STALKER;
-            if (r < 0.85f) return Enemy.Type.BRUTE;
+        if (waveNumber <= 3) {
             return Enemy.Type.THROWER;
-        } else if (waveNumber <= 14) {
-            if (r < 0.30f) return Enemy.Type.GRUNT;
-            if (r < 0.50f) return Enemy.Type.STALKER;
-            if (r < 0.65f) return Enemy.Type.BRUTE;
-            if (r < 0.80f) return Enemy.Type.THROWER;
-            return Enemy.Type.PREDATOR;
+        } else if (waveNumber <= 8) {
+            return r < 0.20f ? Enemy.Type.GOLEM : Enemy.Type.THROWER;
         } else {
-            // Wave 15+ — full roster including Golem
-            if (r < 0.20f) return Enemy.Type.GRUNT;
-            if (r < 0.38f) return Enemy.Type.STALKER;
-            if (r < 0.52f) return Enemy.Type.BRUTE;
-            if (r < 0.66f) return Enemy.Type.THROWER;
-            if (r < 0.84f) return Enemy.Type.PREDATOR;
-            return Enemy.Type.GOLEM;
+            float golemChance = Math.min(0.40f, 0.20f + (waveNumber - 9) * 0.02f);
+            return r < golemChance ? Enemy.Type.GOLEM : Enemy.Type.THROWER;
         }
     }
 
