@@ -28,7 +28,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER }
+    public enum Type  { GOLEM, THROWER, ZOMBIE }
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -114,6 +114,22 @@ public class Enemy {
     /** When > 0 the enemy is mud-trapped and cannot move or attack. */
     public float mudTrapTimer     = 0f;
 
+    // ── GRAB STATE (GrabController) ───────────────────────────────────────────
+    /** True while the player is holding this enemy (AI/movement frozen). */
+    public boolean isGrabbed    = false;
+    /** True while this enemy is flying after being thrown. */
+    public boolean isThrown     = false;
+    /** Velocity applied each frame while isThrown == true (blocks/sec). */
+    public float thrownVelX = 0f, thrownVelY = 0f, thrownVelZ = 0f;
+    /**
+     * Set by the thrown-flight update the frame this enemy hits a solid surface.
+     * Window reads this once per frame to spawn a crater + ejecta, then resets it.
+     */
+    public boolean pendingGrabImpact = false;
+    public int     grabImpactX = 0, grabImpactY = 0, grabImpactZ = 0;
+    /** true = hit the floor (ground slam), false = hit a wall/ceiling. */
+    public boolean grabImpactIsGround = false;
+
     // ═════════════════════════════════════════════════════════════════════════
     //  Construction
     // ═════════════════════════════════════════════════════════════════════════
@@ -138,6 +154,12 @@ public class Enemy {
                 dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
                 atk_    = GameConfig.throwerAttackRange;  atkI_  = GameConfig.throwerAttackInterval;
                 cr = 0.5f; hh = 1.1f;
+            }
+            case ZOMBIE -> {
+                health_ = GameConfig.zombieHealth;  speed_ = GameConfig.zombieSpeed;
+                dps_    = GameConfig.zombieDamagePerSec;  aggro_ = GameConfig.zombieAggroRange;
+                atk_    = GameConfig.zombieAttackRange;   atkI_  = GameConfig.zombieAttackInterval;
+                cr = 0.5f; hh = 1.0f;  // human-sized
             }
             default -> { // THROWER (fallback)
                 health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
@@ -192,13 +214,24 @@ public class Enemy {
     // ═════════════════════════════════════════════════════════════════════════
 
     public void update(float dt, World world, Vector3f playerPos, List<Enemy> allEnemies) {
-        framePlayerDamage = 0f;
-        wantsToThrow      = false;
+        framePlayerDamage    = 0f;
+        wantsToThrow         = false;
+        pendingGrabImpact    = false;
+
         if (!alive) {
             if (hitFlashTimer > 0f) hitFlashTimer = Math.max(0f, hitFlashTimer - dt);
             return;
         }
         if (hitFlashTimer > 0f) hitFlashTimer = Math.max(0f, hitFlashTimer - dt);
+
+        // ── GRABBED — completely frozen ────────────────────────────────────────
+        if (isGrabbed) return;
+
+        // ── THROWN — ballistic flight until wall/floor collision ───────────────
+        if (isThrown) {
+            tickThrownFlight(dt, world);
+            return;
+        }
 
         Vector3f playerCentre = new Vector3f(playerPos.x, playerPos.y + 0.9f, playerPos.z);
         float    distToPlayer = new Vector3f(playerCentre).sub(getCentre()).length();
@@ -245,8 +278,11 @@ public class Enemy {
             // ── GOLEM — slam + ranged throw ───────────────────────────────────
             case GOLEM -> tickGolemAI(dt, distToPlayer, leash, playerCentre);
 
-            // ── THROWER — ranged; retreats from close player ──────────────────
+            // ── THROWER (skeleton archer) — ranged; retreats from close ───────
             case THROWER -> tickThrowerAI(dt, distToPlayer, leash);
+
+            // ── ZOMBIE — slow shambling melee chaser ──────────────────────────
+            case ZOMBIE -> tickZombieAI(dt, distToPlayer, leash);
         }
     }
 
@@ -338,6 +374,28 @@ public class Enemy {
         }
     }
 
+    // ─── ZOMBIE ───────────────────────────────────────────────────────────────
+
+    private void tickZombieAI(float dt, float dist, float leash) {
+        switch (state) {
+            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.7f; } }
+            case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
+            case CHASE   -> {
+                if (dist > leash)        { state = State.IDLE;   break; }
+                if (dist <= attackRange)   state = State.ATTACK;
+            }
+            case ATTACK  -> {
+                if (attackCooldown <= 0f) {
+                    framePlayerDamage = damagePerSec * attackInterval;
+                    attackCooldown    = attackInterval;
+                }
+                if (dist > attackRange * 1.6f) state = State.CHASE;
+                if (dist > leash)              state = State.IDLE;
+            }
+            default -> state = State.CHASE;
+        }
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     //  Horizontal movement
     // ═════════════════════════════════════════════════════════════════════════
@@ -417,6 +475,79 @@ public class Enemy {
         }
     }
 
+    // ═════════════════════════════════════════════════════════════════════════
+    //  Thrown flight (grab slam / wall throw)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    private static final float THROW_GRAVITY = 32f;
+
+    private void tickThrownFlight(float dt, World world) {
+        // Apply gravity to downward velocity
+        thrownVelY -= THROW_GRAVITY * dt;
+
+        float newX = position.x + thrownVelX * dt;
+        float newY = position.y + thrownVelY * dt;
+        float newZ = position.z + thrownVelZ * dt;
+
+        // Clamp to world bounds
+        newY = Math.max(1f, Math.min(Chunk.HEIGHT - 2f, newY));
+
+        int bx = (int) Math.floor(newX);
+        int by = (int) Math.floor(newY);
+        int bz = (int) Math.floor(newZ);
+
+        // Check destination block AND intermediate axis blocks for clean wall detection
+        boolean destSolid  = world.getBlock(bx, by, bz).isSolid();
+        boolean axisHitX   = world.getBlock(bx, (int) Math.floor(position.y), (int) Math.floor(position.z)).isSolid();
+        boolean axisHitY   = world.getBlock((int) Math.floor(position.x), by,  (int) Math.floor(position.z)).isSolid();
+        boolean axisHitZ   = world.getBlock((int) Math.floor(position.x), (int) Math.floor(position.y),  bz).isSolid();
+
+        // Also trigger on floor: enemy fell to ground level
+        boolean atFloor = newY <= 1.1f;
+
+        if (destSolid || axisHitX || axisHitY || axisHitZ || atFloor) {
+            // Use destination block as the crater centre, or fall back to current position
+            int impX = bx;
+            int impY = atFloor ? 0 : by;
+            int impZ = bz;
+            if (!destSolid && !atFloor) {
+                impX = axisHitX ? bx : (int) Math.floor(position.x);
+                impY = axisHitY ? by : (int) Math.floor(position.y);
+                impZ = axisHitZ ? bz : (int) Math.floor(position.z);
+            }
+
+            // Ground slam = mostly downward, wall slam = mostly horizontal
+            boolean slamIsGround = (thrownVelY < 0f)
+                    && (Math.abs(thrownVelY) >= Math.abs(thrownVelX))
+                    && (Math.abs(thrownVelY) >= Math.abs(thrownVelZ));
+
+            grabImpactX        = impX;
+            grabImpactY        = impY;
+            grabImpactZ        = impZ;
+            grabImpactIsGround = slamIsGround || atFloor;
+            pendingGrabImpact  = true;
+
+            float impactDamage = grabImpactIsGround
+                    ? GameConfig.grabGroundDamage
+                    : GameConfig.grabWallDamage;
+            applyDamage(impactDamage);
+
+            isThrown   = false;
+            thrownVelX = 0f;
+            thrownVelY = 0f;
+            thrownVelZ = 0f;
+
+            // Place enemy just above the impact point
+            position.x = newX;
+            position.y = Math.max(1f, (float) impY + 1.01f);
+            position.z = newZ;
+        } else {
+            position.x = newX;
+            position.y = newY;
+            position.z = newZ;
+        }
+    }
+
     private boolean isSolidColumn(World world, float x, int footY, float z) {
         int bx = (int) Math.floor(x);
         int bz = (int) Math.floor(z);
@@ -485,8 +616,9 @@ public class Enemy {
      */
     public float[] renderScaleVec() {
         return switch (type) {
-            case GOLEM   -> new float[]{ 1.40f, 1.60f, 1.40f }; // wide and tall
-            case THROWER -> new float[]{ 0.52f, 0.58f, 0.52f };
+            case GOLEM   -> new float[]{ 1.40f, 1.60f, 1.40f }; // wide and tall — tank
+            case THROWER -> new float[]{ 0.48f, 0.92f, 0.48f }; // slim and tall — skeleton archer
+            case ZOMBIE  -> new float[]{ 0.75f, 0.88f, 0.75f }; // stocky, human-sized
         };
     }
 

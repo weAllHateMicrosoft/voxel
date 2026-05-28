@@ -69,6 +69,12 @@ public class Player {
     // ── LIGHTNING (U key) ─────────────────────────────────────────────────────
     public final LightningController lightning = new LightningController(this);
 
+    // ── GRAB SLAM (O key) ─────────────────────────────────────────────────────
+    public final GrabController grab = new GrabController(this);
+
+    // ── MO DAO THOUSAND SHARDS (' key) ───────────────────────────────────────
+    public final MoDaoController moDao = new MoDaoController(this);
+
     // ── GROUND SMASH ─────────────────────────────────────────────────────────
     private boolean isSmashing = false;
     private boolean lastShift  = false;   // edge detector for smash trigger
@@ -188,6 +194,12 @@ public class Player {
         // Attacks always tick — AbilityController auto-exits Kamui when an attack key
         // is pressed and re-enters once the attack completes.
         attacks.tick(window, camera, world, deltaTime);
+
+        // ── GRAB SLAM TICK (O key) ─────────────────────────────────────────────
+        grab.tick(window, camera, world, deltaTime);
+
+        // ── MO DAO TICK (' key) ────────────────────────────────────────────────
+        moDao.tick(window, camera, world, deltaTime);
 
         // ── SEAL TICK (Minato's Seal) ──────────────────────────────────────────
         seals.tick(window, camera, world, deltaTime);

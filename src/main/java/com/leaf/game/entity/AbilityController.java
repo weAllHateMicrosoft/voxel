@@ -159,6 +159,12 @@ public class AbilityController {
     public float getBlinkCooldownFrac()  { return blinkCooldown  <= 0 ? 1f : 1f - blinkCooldown  / GameConfig.blinkCooldown; }
     public float getPillarCooldownFrac() { return pillarCooldownTimer <= 0 ? 1f : 1f - pillarCooldownTimer / GameConfig.pillarCooldown; }
     public float getHealCooldownFrac()   { return healCooldownTimer  <= 0 ? 1f : 1f - healCooldownTimer  / GameConfig.healCooldown;  }
+    /** Called by Window when Kamui is force-exited due to mana exhaustion. */
+    public void forceKamuiCooldown(float secs) {
+        kamuiCooldown = secs;
+        kamuiTimer    = 0f;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Main tick — call from Player.update() every frame, before physics block
     // ─────────────────────────────────────────────────────────────────────────
@@ -196,19 +202,19 @@ public class AbilityController {
             // 1. MUST BE ON GROUND: player feet must be at most 1.2 blocks above surface
             boolean isGrounded = (player.position.y - sy) <= 1.2f;
 
-            // 2. MINIMAL FOUNDATION CHECK: just verify 3×3 directly below has some solid
-            //    mass. Rejects single-block pillar tops but allows natural terrain.
+            // 2. WIDE FOUNDATION CHECK: verify 7×7 directly below has massive solid
+            //    support. Prevents casting on thin ledges or small pillars.
             int denseCount = 0;
             if (isGrounded && sy >= 1) {
-                for (int ddx = -1; ddx <= 1; ddx++) {
-                    for (int ddz = -1; ddz <= 1; ddz++) {
+                for (int ddx = -3; ddx <= 3; ddx++) {
+                    for (int ddz = -3; ddz <= 3; ddz++) {
                         if (world.getBlock(cx + ddx, sy, cz + ddz).isSolid()) denseCount++;
                     }
                 }
             }
 
-            // Need at least 5/9 of the 3×3 surface to be solid (allows uneven terrain).
-            if (isGrounded && denseCount >= 5 && player.mana >= GameConfig.manaPillar) {
+            // Need at least 40/49 of the 7×7 surface to be solid (allows uneven terrain).
+            if (isGrounded && denseCount >= 35 && player.mana >= GameConfig.manaPillar) {
                 player.mana -= GameConfig.manaPillar;
                 isPillaring = true;
                 pillarCenterX = player.position.x;
@@ -373,7 +379,8 @@ public class AbilityController {
         if (kamuiCooldown > 0f) kamuiCooldown -= dt;
 
         if (zHeld && !lastZ) {
-            if (!isKamui && !kamuiAutoExited && kamuiCooldown <= 0f && !isAnyAbilityActive()) {
+            if (!isKamui && !kamuiAutoExited && kamuiCooldown <= 0f && !isAnyAbilityActive()
+                    && player.mana >= 10f) {    // need at least 10 mana to enter Kamui
                 isKamui          = true;
                 kamuiTimer       = GameConfig.kamuiMaxDuration;
                 kamuiAutoExited  = false;

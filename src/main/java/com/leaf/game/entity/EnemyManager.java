@@ -47,8 +47,8 @@ import java.util.Random;
 public class EnemyManager {
 
     // ── Damage constants ──────────────────────────────────────────────────────
-    public static final float EXPLOSION_DAMAGE = 35f;
-    public static final float MELEE_DAMAGE     = 60f;
+    public static final float EXPLOSION_DAMAGE = 10f;
+    public static final float MELEE_DAMAGE     = 5f;
     /** Half-angle (radians) of the melee cleave arc — ~60° each side. */
     public static final float ARC_HALF_ANGLE   = (float) Math.toRadians(60.0);
 
@@ -250,19 +250,26 @@ public class EnemyManager {
     /**
      * Choose an enemy type biased toward tougher enemies in later waves.
      *
-     * Wave 1–3  : THROWER only
-     * Wave 4–8  : THROWER + occasional GOLEM (20%)
-     * Wave 9+   : THROWER + GOLEM, GOLEM frequency rises to 40%
+     * Wave 1–2  : ZOMBIE (slow melee) + THROWER (skeleton archer)
+     * Wave 3–6  : All three — mostly ZOMBIE + THROWER, rare GOLEM (tank)
+     * Wave 7+   : GOLEM frequency climbs to ~35%, rest split zombie/thrower
      */
     private Enemy.Type pickType() {
         float r = rng.nextFloat();
-        if (waveNumber <= 3) {
-            return Enemy.Type.THROWER;
-        } else if (waveNumber <= 8) {
-            return r < 0.20f ? Enemy.Type.GOLEM : Enemy.Type.THROWER;
+        if (waveNumber <= 2) {
+            // Early waves: shambling zombies and a few skeleton archers
+            return r < 0.65f ? Enemy.Type.ZOMBIE : Enemy.Type.THROWER;
+        } else if (waveNumber <= 6) {
+            // Mid waves: all three; golems start appearing rarely
+            if (r < 0.08f)      return Enemy.Type.GOLEM;
+            else if (r < 0.55f) return Enemy.Type.ZOMBIE;
+            else                 return Enemy.Type.THROWER;
         } else {
-            float golemChance = Math.min(0.40f, 0.20f + (waveNumber - 9) * 0.02f);
-            return r < golemChance ? Enemy.Type.GOLEM : Enemy.Type.THROWER;
+            // Late waves: more golems each wave, rest split zombie/archer
+            float golemChance = Math.min(0.35f, 0.10f + (waveNumber - 7) * 0.025f);
+            if (r < golemChance)             return Enemy.Type.GOLEM;
+            else if (r < golemChance + 0.50f) return Enemy.Type.ZOMBIE;
+            else                              return Enemy.Type.THROWER;
         }
     }
 

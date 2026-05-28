@@ -302,6 +302,26 @@ class WindowHud {
                     ImGui.colorConvertFloat4ToU32(0.85f, 0.90f, 1.0f, flashA));
         }
 
+        // ── GRAB IMPACT / THROW FLASH ────────────────────────────────────────
+        // throwFlash > 0 on the frame an enemy is thrown/slammed, and on impact.
+        // Gives the hit a bright orange punch flash across the screen.
+        float grabFlash = win.player.grab.throwFlash;
+        if (grabFlash > 0.01f) {
+            // Edge burst: bright orange, very brief
+            float edgeA = grabFlash * 0.65f;
+            float innerA = grabFlash * 0.20f;
+            // Full-screen orange tint (very subtle — just a wash of colour)
+            draw.addRectFilled(0, 0, screenW, screenH,
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.45f, 0.05f, innerA));
+            // Strong orange flash on all four edges (like a punch frame)
+            float edgeW = 28f * grabFlash;
+            int   edgeCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.35f, 0.0f, edgeA);
+            draw.addRectFilled(0, 0, screenW, edgeW,               edgeCol);
+            draw.addRectFilled(0, screenH - edgeW, screenW, screenH, edgeCol);
+            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW,   edgeCol);
+            draw.addRectFilled(screenW - edgeW, edgeW, screenW, screenH - edgeW, edgeCol);
+        }
+
         // ── KAMUI PHASE BORDER EFFECT ─────────────────────────────────────────
         // Shimmering purple frame around the screen edges while Kamui is active.
         if (win.player.abilities.isKamui) {
@@ -1141,14 +1161,14 @@ class WindowHud {
         int   black    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
         int   grey     = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
 
-        // Row 1 — Q / E / F / G / Z / K / J / M / I
+        // Row 1 — Q / E / F / G / Z / K / J / M / I / U / O / ; / '
         {
-            float totalW = 11 * iconSize + 10 * spacing;
+            float totalW = 13 * iconSize + 12 * spacing;
             float startX = screenW - totalW - 14f;
             float startY = screenH - iconSize * 2f - spacing - 14f;
 
-            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I",     "U",         "Z•"  };
-            String[] tooltips = { "Dash","Blink","Slash","Cannon","Kamui","Pillar","Swap","Quagmire","Stone","Lightning","Kamui" };
+            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I",     "U",         "O",    ";",    "'"   };
+            String[] tooltips = { "Dash","Blink","Slash","Cannon","Kamui","Pillar","Swap","Quagmire","Stone","Lightning","Grab","Knife","MoDao" };
             float todoFrac = (GameConfig.todoCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, win.todoSwapCooldown / GameConfig.todoCooldown))
                     : 0f;
@@ -1166,6 +1186,11 @@ class WindowHud {
             float kamuiFrac = win.player.abilities.isKamui
                     ? win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration  // drain while active
                     : win.player.abilities.getKamuiCooldownFrac();
+            float grabFrac  = win.player.grab.getCooldownFrac();
+            float knifeFrac = win.player.attacks.knifeSwingPhase > 0f ? 1f : 1f;  // always full (no long CD)
+            float moDaoFrac = win.player.moDao.isActive()
+                    ? 1f                                    // always full while active
+                    : win.player.moDao.getCooldownFrac();   // cooldown fill
             float[]  fracs = {
                     win.player.abilities.getDashCooldownFrac(),
                     win.player.abilities.getBlinkCooldownFrac(),
@@ -1177,7 +1202,9 @@ class WindowHud {
                     quagFrac,
                     stoneFrac,
                     lightningFrac,
-                    kamuiFrac  // second slot reserved for future use; show same as kamui for now
+                    grabFrac,
+                    knifeFrac,
+                    moDaoFrac
             };
             // Stone canon color pulses orange while charging; lightning pulses white while charging
             float stoneR = win.isChargingStoneCanon
@@ -1187,6 +1214,17 @@ class WindowHud {
             // Kamui pulses purple when active
             float kamuiR = win.player.abilities.isKamui
                     ? 0.55f + (float)Math.sin(glfwGetTime() * 8) * 0.2f : 0.45f;
+            // Grab pulses red when active
+            float grabA = win.player.grab.isActive()
+                    ? 0.6f + (float)Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
+            // Knife flashes silver on swing
+            float knifeA = win.player.attacks.knifeSwingPhase > 0f
+                    ? 0.6f + win.player.attacks.knifeSwingPhase * 0.4f : 0.7f;
+            // Mo Dao pulses purple when dispersed/converging
+            float moDaoR = win.player.moDao.isDispersed()
+                    ? 0.55f + (float)Math.sin(glfwGetTime() * 7) * 0.25f : 0.40f;
+            float moDaoG = win.player.moDao.phase == com.leaf.game.entity.MoDaoController.Phase.CONVERGING
+                    ? 0.8f : 0.0f;
             int[] colors = {
                     ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),       // Q dash: cyan
                     ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),       // E blink: white
@@ -1198,7 +1236,9 @@ class WindowHud {
                     ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f),      // M quagmire: muddy green
                     ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f),     // I stone: orange-grey
                     ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f,  lightningA),// U lightning: ice-blue
-                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f,  0.5f)       // duplicate (placeholder)
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.20f, 0.15f, grabA),     // O grab: red
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.88f, 0.92f, knifeA),    // ; knife: silver
+                    ImGui.colorConvertFloat4ToU32(moDaoR, moDaoG, 1.0f,  1.0f)     // ' Mo Dao: purple→white
             };
 
             for (int i = 0; i < labels.length; i++) {
@@ -1330,6 +1370,9 @@ class WindowHud {
         helpRow("[V]   Substitute",     "Hold [V] to get ready. The next hit you take is completely negated — you teleport backward and a paper dummy is left at your old spot. A second later it explodes, damaging nearby enemies.");
         helpRow("[M]   Quagmire",       "Shoot a mud wave toward the enemy you're looking at. It travels along the ground and traps them on contact — they can't move for several seconds.");
         helpRow("[I]   Stone Canon",    "Hold [I] while near stone blocks to charge up. Nearby stone is absorbed into a growing projectile. Release to fire. Bigger charge = more stone consumed = bigger explosion. You can't move while charging.");
+        helpRow("[O]   Grab Throw",     "Grab the nearest enemy in your crosshair (up to ~4.5 blocks). Launches them in the direction you're looking — they crater anything they hit.");
+        helpRow("[Shift+O] Ground Slam","Grab the enemy, lift them dramatically, then smash them straight into the floor. Big crater, massive damage.");
+        helpRow("[;]   Knife Combo",    "Three rapid knife slashes in quick succession. Each slash deals damage to enemies in front of you. Fast, no terrain destruction, no mana cost.");
         ImGui.spacing();
 
         // ── MANHATTAN TRANSFER ────────────────────────────────────────────────

@@ -22,23 +22,23 @@ void main() {
         float absDist = length(toAbs);
         float absAng  = atan(toAbs.y, toAbs.x);
 
-        // Tight falloff — only pixels near the target are strongly distorted
-        float falloff = exp(-absDist * 3.5);
+        // Wide falloff — distortion spreads across the WHOLE screen, not just near target
+        float falloff = exp(-absDist * 0.85);
 
-        // Spin: vortex rotates faster near the centre and as charge increases
-        float spin = kamuiCharge * 6.5 * falloff
-                   * (1.0 + 0.35 * sin(time * 5.0 - absDist * 8.0));
+        // Spin: vortex rotates across the screen, strongest at centre, gradual at edges
+        float spin = kamuiCharge * 8.0 * falloff
+                   * (1.0 + 0.40 * sin(time * 5.0 - absDist * 5.0));
         absAng += spin;
 
-        // Pull: UV converges toward absorption point
-        float pull  = kamuiCharge * 0.28 * falloff;
+        // Pull: UV converges toward absorption point — stronger and wider now
+        float pull  = kamuiCharge * 0.40 * falloff;
         absDist     = max(0.0, absDist - pull);
 
         vec2 newDir = vec2(cos(absAng) / aspectRatio, sin(absAng)) * absDist;
         uv          = absPos + newDir;
 
-        // Dark void at the very centre — the Kamui dimension opening
-        float voidR    = kamuiCharge * 0.055;
+        // Dark void at the very centre — the Kamui dimension opening (larger, more dramatic)
+        float voidR    = kamuiCharge * 0.12;
         float voidDist = length((TexCoord - absPos) * vec2(aspectRatio, 1.0));
         if (voidDist < voidR) {
             float t = voidDist / voidR;

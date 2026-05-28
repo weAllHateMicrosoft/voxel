@@ -337,6 +337,16 @@ public class GameConfig {
     /** Seconds the lightning bolt visual remains on screen. */
     public static float lightningBoltLife         = 0.6f;
 
+    // ── ENEMY: ZOMBIE ────────────────────────────────────────────────────────
+    // Slow, shambling melee chaser.  No ranged attack.
+    public static float zombieHealth         = 80f;
+    public static float zombieSpeed          = 2.2f;
+    /** Damage per second dealt while in contact with the player. */
+    public static float zombieDamagePerSec   = 12f;
+    public static float zombieAggroRange     = 30f;
+    public static float zombieAttackRange    = 1.8f;
+    public static float zombieAttackInterval = 1.4f;
+
     // ── ENEMY: GOLEM ─────────────────────────────────────────────────────────
     public static float golemHealth          = 420f;
     public static float golemSpeed           = 1.6f;
@@ -401,11 +411,51 @@ public class GameConfig {
     /** Max seconds an enemy projectile travels before despawning. */
     public static float projectileLifetime = 6.0f;
 
+    // ── GRAB SLAM (O key) ─────────────────────────────────────────────────────
+    // Tap O to grab the nearest enemy in your crosshair within grabRange blocks.
+    //   Normal tap  → Wall Throw: launched in look direction; hits solid → crater.
+    //   Shift + O   → Ground Slam: enemy lifted then smashed straight down.
+    /** Max range to grab an enemy (blocks). */
+    public static float grabRange            = 4.5f;
+    /** Throw speed for wall-slam (blocks/sec). */
+    public static float grabThrowSpeed       = 50f;
+    /** Damage applied when thrown enemy hits a wall. */
+    public static float grabWallDamage       = 90f;
+    /** How high the enemy is lifted before a ground slam (blocks). */
+    public static float grabGroundLiftHeight = 3.0f;
+    /** Seconds it takes to complete the lift before slamming. */
+    public static float grabGroundLiftTime   = 0.22f;
+    /** Downward speed of the slam (blocks/sec). */
+    public static float grabGroundSlamSpeed  = 80f;
+    /** Damage applied when slammed into the floor. */
+    public static float grabGroundDamage     = 115f;
+    /** Crater radius (blocks) on any grab impact. */
+    public static int   grabCraterRadius     = 3;
+    /** Seconds between grab uses. */
+    public static float grabCooldown         = 2.5f;
+    /** Camera-shake duration on impact. */
+    public static float grabShakeDuration    = 0.55f;
+    /** Camera-shake amplitude on impact. */
+    public static float grabShakeAmplitude   = 0.22f;
+
+    // ── FAST ATTACK / KNIFE COMBO (;  key) ───────────────────────────────────
+    // Three rapid knife slashes — deals damage but destroys no terrain.
+    /** Damage per hit (3 hits per combo). */
+    public static float knifeDamage        = 18f;
+    /** Reach of each knife slash (blocks). */
+    public static float knifeRange         = 2.8f;
+    /** Seconds the combo window stays open between presses. */
+    public static float knifeComboWindow   = 0.50f;
+    /** Seconds of camera-punch animation per hit. */
+    public static float knifeHitDuration   = 0.13f;
+    /** Cooldown after completing a full 3-hit combo. */
+    public static float knifeCooldown      = 0.85f;
+
     // ── MANA SYSTEM ───────────────────────────────────────────────────────────
     // Mana is a shared resource that limits how often abilities can be used.
     // All values are tunable; regeneration is passive and always active.
     /** Mana regenerated per second (passive). */
-    public static float manaRegenRate        = 10f;
+    public static float manaRegenRate        = 5f;
 
     // Lightning costs
     /** Mana cost for a zero-charge single lightning strike. */
@@ -450,4 +500,45 @@ public class GameConfig {
     public static float manaStoneCanonBase   = 4f;
     /** Mana consumed when Stone Canon fires, scaled by charge (0..1 × this). */
     public static float manaStoneCanonMax    = 14f;
+    /** Mana cost per grab (wall throw or ground slam). */
+    public static float manaGrab             = 8f;
+    /** Mana cost per 3-hit knife combo (zero = free, feels snappy). */
+    public static float manaKnife            = 0f;
+
+    // ── 魔刀千刃 — Mo Dao Qian Ren  (' key) ──────────────────────────────────
+    // Demon Blade Thousand Shards.  Tap ' to disperse the blade into a
+    // floating formation of shards ahead of you.  LMB while dispersed =
+    // Converge (all shards lance the target simultaneously).  RMB while
+    // dispersed = Sweep (shards fan into a horizontal scythe arc).
+    // Tap ' again to recall the shards early.
+    /** Number of individual blade shards. */
+    public static int   moDaoShardCount      = 16;
+    /** Mana drained per second while shards are dispersed. */
+    public static float moDaoDrainPerSec     = 7f;
+    /** Time (s) for shards to fly out and reach formation. */
+    public static float moDaoDisperseTime    = 0.32f;
+    /** Time (s) for shards to fly back to player. */
+    public static float moDaoRecallTime      = 0.28f;
+    /** Max range for converge target raycast (blocks). */
+    public static float moDaoConvergeRange   = 60f;
+    /** Speed shards travel during converge (blocks/sec). */
+    public static float moDaoConvergeSpeed   = 70f;
+    /** Total damage applied at converge impact (sphere explosion). */
+    public static float moDaoConvergeDamage  = 200f;
+    /** Crater radius created at converge impact point (blocks). */
+    public static int   moDaoConvergeRadius  = 4;
+    /** Mana cost to fire a converge. */
+    public static float maDaoConvergeCost    = 28f;
+    /** How far the sweep travels (blocks). */
+    public static float moDaoSweepDist       = 9f;
+    /** Speed of shards during a sweep (blocks/sec). */
+    public static float moDaoSweepSpeed      = 32f;
+    /** Damage per shard per enemy contact during sweep. */
+    public static float moDaoSweepShardDmg   = 9f;
+    /** Mana cost to sweep. */
+    public static float moDaoSweepCost       = 18f;
+    /** Cooldown after recalling shards (seconds). */
+    public static float moDaoCooldown        = 3.0f;
+    /** Formation distance ahead of the player (blocks). */
+    public static float moDaoFormDist        = 3.0f;
 }

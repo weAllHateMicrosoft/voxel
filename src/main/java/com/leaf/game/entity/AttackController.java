@@ -110,6 +110,18 @@ public class AttackController {
     private EnemyManager enemyManager = null;
     public void setEnemyManager(EnemyManager em) { this.enemyManager = em; }
 
+    // ── Fast Knife Combo (; key) ──────────────────────────────────────────────
+    // Three rapid slashes: deals damage but never destroys terrain.
+    private int     knifeComboStep   = 0;    // 0 = idle, 1-3 = combo in progress
+    private float   knifeHitTimer    = 0f;   // countdown per swing animation
+    private float   knifeComboTimer  = 0f;   // window to continue the combo
+    private float   knifeCooldown_   = 0f;   // post-combo cooldown
+    private boolean lastSemicolon    = false;
+    /** 0=idle, 1=peak-of-swing, decays; used by Window for the knife view model. */
+    public  float   knifeSwingPhase  = 0f;
+    /** +1 = right slash, -1 = left slash; alternates each hit. */
+    public  float   knifeSwingDir    = 1f;
+
     // ── Camera effects ────────────────────────────────────────────────────────
     // pitchOffset:  target value set per-phase, smoothed into smoothPitch.
     // Window applies smoothPitch non-destructively around getViewMatrix().
@@ -152,6 +164,7 @@ public class AttackController {
         tickBolts(world, dt);
         tickMelee(window, camera, world, dt);
         tickRanged(window, camera, world, dt);
+        tickKnifeCombo(window, camera, dt);
 
         // Smooth pitch toward target
         float pitchLerp = (meleePhase == MeleePhase.IDLE && !isCharging) ? 10f : 20f;
@@ -595,6 +608,77 @@ public class AttackController {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  FAST KNIFE COMBO  (;  key)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void tickKnifeCombo(long window, Camera camera, float dt) {
+        boolean semiHeld = glfwGetKey(window, GLFW_KEY_SEMICOLON) == GLFW_PRESS;
+
+        // Decay swing phase every frame
+        if (knifeHitTimer <= 0f) {
+            knifeSwingPhase = Math.max(0f, knifeSwingPhase - dt * 7f);
+        }
+
+        // Cooldowns
+        if (knifeCooldown_  > 0f) { knifeCooldown_  -= dt; lastSemicolon = semiHeld; return; }
+        if (knifeComboTimer > 0f)   knifeComboTimer -= dt;
+        if (knifeHitTimer   > 0f) {
+            knifeHitTimer -= dt;
+            lastSemicolon  = semiHeld;
+            return;
+        }
+
+        // Combo window expired → reset
+        if (knifeComboStep > 0 && knifeComboTimer <= 0f) {
+            knifeComboStep  = 0;
+            knifeSwingPhase = 0f;
+        }
+
+        // Trigger next hit on leading edge of semicolon
+        if (semiHeld && !lastSemicolon && !player.abilities.isAnyAbilityActive()) {
+            knifeComboStep++;
+            knifeSwingDir   = (knifeComboStep % 2 == 1) ? 1f : -1f;  // alternate L/R
+            knifeSwingPhase = 1f;
+            knifeHitTimer   = GameConfig.knifeHitDuration;
+            knifeComboTimer = GameConfig.knifeComboWindow;
+
+            // ── Damage enemies in a forward cone ─────────────────────────────
+            if (enemyManager != null) {
+                Vector3f origin = new Vector3f(
+                        player.position.x,
+                        player.position.y + 1.0f,
+                        player.position.z);
+                Vector3f look = camera.getLookDirection();
+                for (Enemy e : enemyManager.getEnemies()) {
+                    if (!e.alive) continue;
+                    Vector3f toE = new Vector3f(e.getCentre()).sub(origin);
+                    float dist = toE.length();
+                    if (dist > GameConfig.knifeRange) continue;
+                    // ~66 degree half-angle cone (dot > 0.4)
+                    if (new Vector3f(toE).normalize().dot(look) > 0.4f) {
+                        e.applyDamage(GameConfig.knifeDamage);
+                        // Light stagger push
+                        e.applyKnockback(look.x * 2.5f, 0.8f, look.z * 2.5f);
+                    }
+                }
+            }
+
+            // Small camera punch each hit
+            pitchTarget = 0.10f * knifeSwingDir;
+            shakeRequest = Math.max(shakeRequest, 0.035f);
+
+            // After 3rd hit, go on cooldown and reset
+            if (knifeComboStep >= 3) {
+                knifeCooldown_ = GameConfig.knifeCooldown;
+                knifeComboStep = 0;
+                knifeComboTimer = 0f;
+            }
+        }
+
+        lastSemicolon = semiHeld;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  Helpers
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -619,8 +703,9 @@ public class AttackController {
 
     private void decayAll(float dt) {
         pitchTarget = 0f;
-        smoothPitch += (0f - smoothPitch)    * Math.min(1f, 10f * dt);
-        fovBoost    += (0f - fovBoost)       * Math.min(1f, 8f  * dt);
+        smoothPitch   += (0f - smoothPitch)   * Math.min(1f, 10f * dt);
+        fovBoost      += (0f - fovBoost)      * Math.min(1f, 8f  * dt);
+        knifeSwingPhase = Math.max(0f, knifeSwingPhase - dt * 7f);
         blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);
     }
 
