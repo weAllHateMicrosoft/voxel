@@ -758,6 +758,7 @@ public class Window {
                                     grabEnemy.grabImpactIsGround
                                             ? GameConfig.grabGroundDamage * 0.4f
                                             : GameConfig.grabWallDamage   * 0.4f);
+                            if (grabEnemy.grabImpactIsGround) AudioManager.play("ground_smash");
                             // Brutal impact shake — bigger than standard smash
                             activeShakeDuration  = grabEnemy.grabImpactIsGround ? 0.75f : 0.55f;
                             activeShakeAmplitude = grabEnemy.grabImpactIsGround ? 0.38f : 0.28f;
@@ -899,6 +900,8 @@ public class Window {
                                     player.abilities.isKamui       = false;
                                     player.abilities.kamuiAutoExited = false;
                                     player.abilities.absorptionCharge = 0f;
+                                    AudioManager.stopContinuous("kamui_duration");
+                                    AudioManager.stopContinuous("kamui_distortion");
                                 }
                             }
                         }
@@ -912,6 +915,9 @@ public class Window {
                                 player.abilities.isKamui          = false;
                                 player.abilities.kamuiAutoExited  = false;
                                 player.abilities.absorptionCharge = 0f;
+                                AudioManager.play("kamui_transition");
+                                AudioManager.stopContinuous("kamui_duration");
+                                AudioManager.stopContinuous("kamui_distortion");
                             }
                         }
 
@@ -930,6 +936,7 @@ public class Window {
 
                                 if (hasTarget) {
                                     player.abilities.isAbsorbing     = true;
+                                    AudioManager.playContinuous("kamui_distortion");
                                     player.abilities.absorptionCharge = Math.min(1f,
                                             player.abilities.absorptionCharge
                                             + deltaTime / GameConfig.kamuiAbsorptionTime);
@@ -982,12 +989,14 @@ public class Window {
                                     }
                                 } else {
                                     // No valid target — drain charge back
+                                    AudioManager.stopContinuous("kamui_distortion");
                                     player.abilities.absorptionCharge = Math.max(0f,
                                             player.abilities.absorptionCharge - deltaTime * 2f);
                                 }
                             } else {
                                 // LMB released — bleed charge away
                                 player.abilities.isAbsorbing     = false;
+                                AudioManager.stopContinuous("kamui_distortion");
                                 player.abilities.absorptionCharge = Math.max(0f,
                                         player.abilities.absorptionCharge - deltaTime * 3f);
                             }
@@ -2455,6 +2464,7 @@ public class Window {
         enemyManager.processSmashKnockback(ix, iy, iz, r);
 
         // 4. Dynamic Screen Shake scaling based on the radius size
+        AudioManager.play("fall_smash");
         float scaleFactor = (float) r / GameConfig.smashCraterRadius;
         activeShakeDuration  = GameConfig.smashShakeDuration * Math.min(2.5f, scaleFactor);
         activeShakeAmplitude = GameConfig.smashShakeAmplitude * Math.min(3.0f, scaleFactor);

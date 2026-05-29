@@ -351,7 +351,7 @@ public class AbilityController {
                 && player.health < player.maxHealth
                 && healChannelTimer < GameConfig.healMaxDuration) {
             isHealing = true;
-            com.leaf.game.core.AudioManager.play("healing");
+            com.leaf.game.core.AudioManager.playContinuous("healing");
             healChannelTimer += dt;
             float gain = GameConfig.healPerSecond * dt;
             player.health = Math.min(player.maxHealth, player.health + gain);
@@ -360,6 +360,9 @@ public class AbilityController {
             if (isHealing || (healChannelTimer >= GameConfig.healMaxDuration && lHeld)) {
                 // Start cooldown: either key released after healing, or channel exhausted
                 healCooldownTimer = GameConfig.healCooldown;
+            }
+            if (isHealing) {
+                com.leaf.game.core.AudioManager.stopContinuous("healing");
             }
             isHealing        = false;
             healChannelTimer = 0f;  // reset channel time whenever healing is inactive
@@ -412,6 +415,7 @@ public class AbilityController {
             if (kamuiResumeTimer <= 0f && !attackHeld && kamuiTimer > 0f) {
                 isKamui         = true;
                 kamuiAutoExited = false;
+                com.leaf.game.core.AudioManager.playContinuous("kamui_duration");
             } else if (kamuiTimer <= 0f) {
                 // Mana ran out during the exposure gap — full exit, no cooldown
                 kamuiAutoExited  = false;
@@ -421,17 +425,16 @@ public class AbilityController {
         if (isKamui) {
             kamuiTimer -= dt;
             if (kamuiTimer <= 0f) {
+                // Mana-drain timer ran out — exit Kamui automatically
                 isKamui         = false;
                 kamuiAutoExited = false;
                 kamuiTimer      = 0f;
+                com.leaf.game.core.AudioManager.play("kamui_transition");
+                com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
+                com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
             }
-            com.leaf.game.core.AudioManager.play("kamui_transition");
-            com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
-            com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
             // No blendOverlay here — the FBO distort shader is the sole source of
             // all Kamui visual effects (pulsing vignette + purple tint).
-            // Applying a 3-D shader overlay ON TOP of the FBO post-process would
-            // double-stack the colour, making the scene almost unreadable.
         }
         lastZ = zHeld;
 

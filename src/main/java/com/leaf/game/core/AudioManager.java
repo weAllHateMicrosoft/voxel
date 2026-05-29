@@ -92,7 +92,7 @@ public class AudioManager {
             InputStream is = AudioManager.class.getResourceAsStream("/audios/" + name + ".wav");
             if (is == null) return;
             AudioInputStream ais = AudioSystem.getAudioInputStream(new BufferedInputStream(is));
-            clip.open(ais);
+            clip.open(ais);  // open once only — calling it twice throws LineUnavailableException
 
             if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
                 FloatControl gainControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
@@ -100,7 +100,6 @@ public class AudioManager {
                 gainControl.setValue(Math.max(gainControl.getMinimum(), Math.min(gainControl.getMaximum(), dB)));
             }
 
-            clip.open(ais);
             clip.loop(Clip.LOOP_CONTINUOUSLY);
             continuousClips.put(name, clip);
         } catch (Exception ignored) {}
