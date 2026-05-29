@@ -261,6 +261,8 @@ public class AttackController {
     private void executeStrike(Camera camera, World world) {
         // 1. Establish the 3D basis vectors based on the configuration toggle
         com.leaf.game.core.AudioManager.play(Math.random() > 0.5 ? "slash1" : "slash2");
+        com.leaf.game.core.ScreenEffectManager.INSTANCE.hitStop(2);
+        com.leaf.game.core.ScreenEffectManager.INSTANCE.flashMeleeHit();
         Vector3f lookVec  = new Vector3f();
         Vector3f rightVec = new Vector3f(camera.getRight());
         Vector3f upVec    = new Vector3f();
@@ -600,9 +602,11 @@ public class AttackController {
         shakeRequest = Math.max(shakeRequest,
                 GameConfig.voidShardShakeStrength * (0.5f + bolt.chargeF * 0.5f));
 
-        // Purple impact flash
-        //overlayColor.set(0.65f, 0.25f, 1.0f);
-        //overlayStrength = 0.40f;
+        // Screen effects: hit-stop + desaturate flash for heavy shots
+        if (bolt.chargeF > 0.5f) {
+            com.leaf.game.core.ScreenEffectManager.INSTANCE.hitStop(2);
+            com.leaf.game.core.ScreenEffectManager.INSTANCE.flashSnipe();
+        }
     }
 
     private Block pickCrystalDebris() {

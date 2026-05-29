@@ -350,8 +350,12 @@ public class AbilityController {
         if (lHeld && healCooldownTimer <= 0f && !player.debugMode
                 && player.health < player.maxHealth
                 && healChannelTimer < GameConfig.healMaxDuration) {
+            if (!isHealing) {
+                // Leading edge: fire the sound once and let it play to completion —
+                // never stop it mid-way, so the full audio always plays.
+                com.leaf.game.core.AudioManager.play("healing");
+            }
             isHealing = true;
-            com.leaf.game.core.AudioManager.playContinuous("healing");
             healChannelTimer += dt;
             float gain = GameConfig.healPerSecond * dt;
             player.health = Math.min(player.maxHealth, player.health + gain);
@@ -360,9 +364,6 @@ public class AbilityController {
             if (isHealing || (healChannelTimer >= GameConfig.healMaxDuration && lHeld)) {
                 // Start cooldown: either key released after healing, or channel exhausted
                 healCooldownTimer = GameConfig.healCooldown;
-            }
-            if (isHealing) {
-                com.leaf.game.core.AudioManager.stopContinuous("healing");
             }
             isHealing        = false;
             healChannelTimer = 0f;  // reset channel time whenever healing is inactive
@@ -383,7 +384,7 @@ public class AbilityController {
                 isKamui          = true;
                 kamuiTimer       = GameConfig.kamuiMaxDuration;
                 kamuiAutoExited  = false;
-                com.leaf.game.core.AudioManager.play("kamui_transition");
+                com.leaf.game.core.AudioManager.play("kamui_enter");
                 com.leaf.game.core.AudioManager.playContinuous("kamui_duration");
             } else if (isKamui || kamuiAutoExited) {
                 // Voluntary full exit
@@ -391,7 +392,7 @@ public class AbilityController {
                 kamuiAutoExited  = false;
                 kamuiResumeTimer = 0f;
                 kamuiTimer       = 0f;
-                com.leaf.game.core.AudioManager.play("kamui_transition");
+                com.leaf.game.core.AudioManager.play("kamui_exit");
                 com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
                 com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
             }
@@ -404,7 +405,7 @@ public class AbilityController {
             kamuiAutoExited  = true;
             kamuiResumeTimer = GameConfig.kamuiExposureDuration;
 
-            com.leaf.game.core.AudioManager.play("kamui_transition");
+            com.leaf.game.core.AudioManager.play("kamui_exit");
             com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
             com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
         }
@@ -429,7 +430,7 @@ public class AbilityController {
                 isKamui         = false;
                 kamuiAutoExited = false;
                 kamuiTimer      = 0f;
-                com.leaf.game.core.AudioManager.play("kamui_transition");
+                com.leaf.game.core.AudioManager.play("kamui_exit");
                 com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
                 com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
             }

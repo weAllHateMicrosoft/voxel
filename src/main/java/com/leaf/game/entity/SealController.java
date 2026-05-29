@@ -255,6 +255,7 @@ public class SealController {
         // This is a deliberate design choice — seals are a scarce resource.
         if (placedSeals.size() >= GameConfig.sealMaxCount) return;
         placedSeals.add(new SealEntry(pos));
+        com.leaf.game.core.AudioManager.play("seal_place");
     }
 
     /**
@@ -271,6 +272,7 @@ public class SealController {
         Vector3f centre = enemy.getCentre();
         entry.attachOffset.set(hitPos.x - centre.x, hitPos.y - centre.y, hitPos.z - centre.z);
         placedSeals.add(entry);
+        com.leaf.game.core.AudioManager.play("seal_place");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -433,7 +435,7 @@ public class SealController {
             float dist = new Vector3f(target.position).sub(player.position).length();
             if (dist <= 8.0f) { // Must be within 8 blocks to reclaim
                 placedSeals.remove(target);
-                com.leaf.game.core.AudioManager.play("seal_collect"); // PLAY COLLECT SOUND
+                com.leaf.game.core.AudioManager.play("seal_place"); // same sound for place + pickup
             }
         }
     }

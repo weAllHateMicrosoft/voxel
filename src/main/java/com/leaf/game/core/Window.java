@@ -221,6 +221,8 @@ public class Window {
     private boolean wasSmashing      = false;
     private boolean wasCannonballing = false;
     private boolean wasCharging      = false;   // edge-detect for preload trigger
+    /** Last-frame mana, used to detect the moment mana hits zero. */
+    private float   lastMana         = -1f;
     float   pathReadiness    = 0f;      // 0..1 shown in HUD during charging
     private boolean clientSpawnedAtHost = false;
 
@@ -393,6 +395,14 @@ public class Window {
                 lastF6 = false; // edge detected in loop
             }
 
+            // F8 — toggle Animation Editor
+            if (key == GLFW_KEY_F8 && action == GLFW_RELEASE) {
+                hud.animEditor.visible = !hud.animEditor.visible;
+                boolean editorOpen = hud.animEditor.visible;
+                glfwSetInputMode(window, GLFW_CURSOR,
+                        editorOpen ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+            }
+
             // T opens chat (release event only, so holding T for time-dilation is safe
             // because time-dilation uses glfwGetKey in the game loop, not this callback)
             if (key == GLFW_KEY_T && action == GLFW_RELEASE && !showChat && !showDebug && !isPaused) {
@@ -440,6 +450,9 @@ public class Window {
                             world.rebuildChunkAt(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ);
                             if (network != null && network.connected)
                                 network.sendPlace(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ, selectedBlock);
+                            // Play a place sound based on block material
+                            String placeSnd = blockPlaceSound(selectedBlock);
+                            if (placeSnd != null) AudioManager.play(placeSnd);
                         }
                     }
                 }
@@ -550,6 +563,37 @@ public class Window {
         Camera camera = new Camera();
         setupMouseLook(camera);
         hud = new WindowHud(this);
+        hud.init();  // initialises AnimEditor FBO + ModelRenderer shader
+
+        // ── AUDIO PRELOAD ──────────────────────────────────────────────────────
+        // Warm up the JVM audio mixer so the very first play() call has no delay,
+        // then decode every sound file once into heap memory.  Playback from this
+        // point on is pure memory copy — no classpath IO, no thread-creation cost.
+        AudioManager.warmup();
+        for (String snd : new String[]{
+                // Kamui
+                "kamui_enter", "kamui_exit", "kamui_duration", "kamui_distortion",
+                "distortion_snap",
+                // Combat
+                "swing", "hit", "block", "charged_release", "blink",
+                "grab_start", "grab_slam", "ground_smash", "fall_smash",
+                // Abilities
+                "stone_canon", "charging",
+                "quagmire", "clap", "paper_explode",
+                "seal_place", "healing",
+                // Lightning
+                "lightning_charge", "lightning_strike",
+                // UI / feedback
+                "mana_empty",
+                // Environment
+                "wind_fly", "wind_fall",
+                // Blocks
+                "block_stone_place", "block_stone_break",
+                "block_dirt_place",  "block_dirt_break",
+                "block_wood_place",  "block_wood_break",
+                "block_sand_place",  "block_sand_break",
+                "block_crystal_place", "block_crystal_break",
+        }) { AudioManager.preload(snd); }
 
         // ── SPAWN POINT ────────────────────────────────────────────────────────
         // Spawn at (777, 250, 777): these coordinates produce non-integer noise
@@ -614,8 +658,9 @@ public class Window {
             tc.update(rawDeltaTime);
 
             // ── SCALED DELTA TIME for physics ─────────────────────────────────
-            // Every system that involves physics or animation uses this.
-            float deltaTime = rawDeltaTime * tc.getScale();
+            ScreenEffectManager.INSTANCE.tick(rawDeltaTime);
+            float deltaTime = rawDeltaTime * tc.getScale()
+                    * ScreenEffectManager.INSTANCE.getHitStopScale();
 
             glfwGetWindowSize(window, ww, wh);
             glfwGetFramebufferSize(window, fw, fh);
@@ -759,6 +804,8 @@ public class Window {
                                             ? GameConfig.grabGroundDamage * 0.4f
                                             : GameConfig.grabWallDamage   * 0.4f);
                             if (grabEnemy.grabImpactIsGround) AudioManager.play("ground_smash");
+                            ScreenEffectManager.INSTANCE.hitStop(3);
+                            ScreenEffectManager.INSTANCE.flashGrabSlam();
                             // Brutal impact shake — bigger than standard smash
                             activeShakeDuration  = grabEnemy.grabImpactIsGround ? 0.75f : 0.55f;
                             activeShakeAmplitude = grabEnemy.grabImpactIsGround ? 0.38f : 0.28f;
@@ -900,6 +947,7 @@ public class Window {
                                     player.abilities.isKamui       = false;
                                     player.abilities.kamuiAutoExited = false;
                                     player.abilities.absorptionCharge = 0f;
+                                    AudioManager.play("kamui_exit");
                                     AudioManager.stopContinuous("kamui_duration");
                                     AudioManager.stopContinuous("kamui_distortion");
                                 }
@@ -915,7 +963,7 @@ public class Window {
                                 player.abilities.isKamui          = false;
                                 player.abilities.kamuiAutoExited  = false;
                                 player.abilities.absorptionCharge = 0f;
-                                AudioManager.play("kamui_transition");
+                                AudioManager.play("kamui_exit");
                                 AudioManager.stopContinuous("kamui_duration");
                                 AudioManager.stopContinuous("kamui_distortion");
                             }
@@ -986,6 +1034,8 @@ public class Window {
                                         }
                                         player.abilities.absorptionCharge = 0f;
                                         player.abilities.isAbsorbing      = false;
+                                        AudioManager.stopContinuous("kamui_distortion");
+                                        AudioManager.play("distortion_snap", 2.0f); // boosted ~+6 dB
                                     }
                                 } else {
                                     // No valid target — drain charge back
@@ -1007,6 +1057,7 @@ public class Window {
                             float[] dm = substituteDummies.get(di);
                             dm[3] -= deltaTime;
                             if (dm[3] <= 0f) {
+                                AudioManager.play("paper_explode");
                                 float[] blastEv = { dm[0], dm[1], dm[2],
                                         GameConfig.substituteBlastRadius };
                                 enemyManager.processExplosion(blastEv,
@@ -1063,6 +1114,7 @@ public class Window {
                                 player.abilities.blinkDest       = new Vector3f(oldEnemyPos);
                                 swapTarget.hitFlashTimer = 0.35f;
                                 todoSwapCooldown = GameConfig.todoCooldown;
+                                AudioManager.play("clap");
                             }
                         }
                         lastJ = jHeld;
@@ -1099,6 +1151,7 @@ public class Window {
                                     });
                                     player.mana -= GameConfig.manaQuagmire;
                                     quagmireCooldown = GameConfig.quagmireCooldown;
+                                    AudioManager.play("quagmire");
                                 }
                             }
                         }
@@ -1188,6 +1241,7 @@ public class Window {
                                 && player.mana >= GameConfig.manaStoneCanonBase) {
                             // Start charging — lock position
                             isChargingStoneCanon     = true;
+                            AudioManager.playContinuous("charging");
                             stoneCanonCharge         = 0f;
                             stoneCanonBlocksConsumed = 0;
                             stoneCanonNextConsume    = GameConfig.stoneCanonConsumeRate;
@@ -1224,6 +1278,7 @@ public class Window {
                                     player.mana - GameConfig.manaStoneCanonBase * deltaTime);
                             if (player.mana <= 0f) {
                                 isChargingStoneCanon = false;
+                                AudioManager.stopContinuous("charging");
                                 stoneCanonCooldownTimer = GameConfig.stoneCanonCooldown * 0.5f;
                             }
 
@@ -1307,7 +1362,12 @@ public class Window {
                                     if (fireDirLen > 0.001f) fireDir.div(fireDirLen);
                                     Vector3f fireVel = new Vector3f(fireDir).mul(speed);
                                     stoneShotList.add(new ActiveStoneShot(firePos, fireVel, scale, chargeF));
+                                    AudioManager.stopContinuous("charging");
+                                    AudioManager.play("stone_canon");
                                     stoneCanonCooldownTimer = GameConfig.stoneCanonCooldown;
+                                } else {
+                                    // No blocks consumed — fizzle, just stop the charge sound
+                                    AudioManager.stopContinuous("charging");
                                 }
                                 stoneCanonLockedPos  = null;
                                 stoneCanonGroundPos  = null;
@@ -1348,6 +1408,40 @@ public class Window {
                                 smashShakeTimer      = Math.max(smashShakeTimer, activeShakeDuration);
                                 stoneShotList.remove(si);
                             }
+                        }
+
+
+                        // ── MANA DEPLETED (edge: just hit zero) ───────────────
+                        if (player.mana <= 0f && lastMana > 0f) {
+                            AudioManager.play("mana_empty");
+                        }
+                        lastMana = player.mana;
+
+                        // ── FLYING / WIND SOUNDS ──────────────────────────────
+                        // Detect air state: not on ground, not in a smash, no kamui
+                        float vy           = player.getVelocityY();
+                        boolean inAir      = !player.isOnGround();
+                        boolean isFalling  = inAir && vy < -8f;   // fast freefall
+                        boolean isAscending = inAir && vy > 4f;   // rocket / jump peak
+
+                        // Horizontal speed from camera look delta isn't available directly,
+                        // so use a simple proxy: air + vy magnitude + not kamui/smash
+                        float airSpeedProxy = Math.abs(vy);
+
+                        if (isFalling) {
+                            // Fast descent: rising whoosh volume the faster you fall
+                            float fallVol = Math.min(1.0f, (Math.abs(vy) - 8f) / 12f); // 0 at -8, 1 at -20
+                            AudioManager.setContinuousVolume("wind_fall", fallVol);
+                            AudioManager.stopContinuous("wind_fly");
+                        } else if (inAir && airSpeedProxy > 2f) {
+                            // General air movement (ascending or horizontal glide)
+                            float flyVol = Math.min(1.0f, (airSpeedProxy - 2f) / 8f);
+                            AudioManager.setContinuousVolume("wind_fly", flyVol * 0.6f);
+                            AudioManager.stopContinuous("wind_fall");
+                        } else {
+                            // Grounded or slow air — silence both
+                            AudioManager.stopContinuous("wind_fall");
+                            AudioManager.stopContinuous("wind_fly");
                         }
 
                         // ── CONTEXTUAL ABILITY HINTS ──────────────────────────
@@ -1699,6 +1793,7 @@ public class Window {
                         new Vector3f(GameConfig.sunDirX, GameConfig.sunDirY, GameConfig.sunDirZ));
                 shader.setUniform("sunStrength", GameConfig.sunStrength);
                 shader.setUniform("ambientStrength", GameConfig.ambientStrength);
+                shader.setUniform("desaturate", ScreenEffectManager.INSTANCE.getDesaturate());
 
                 boolean isCameraUnderwater = world.getBlock(
                         (int) Math.floor(camera.position.x),
@@ -1931,6 +2026,13 @@ public class Window {
                 // ── PORTAL FBO PRE-PASS ───────────────────────────────────────
                 if (!isPreloading && portalFbo != null) {
                     renderAllPortalFbos(shader, projection, view, camera);
+                    // renderAllPortalFbos always restores to FBO 0; if Kamui is
+                    // active we need to re-bind its off-screen FBO so the main
+                    // 3D passes render into it (not straight to the screen).
+                    if (doKamuiDistort) {
+                        org.lwjgl.opengl.GL30.glBindFramebuffer(
+                                org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, kamuiFbo);
+                    }
                 }
 
                 // ── PASS 1: OPAQUE ────────────────────────────────────────────
@@ -2410,6 +2512,10 @@ public class Window {
                     if (showChat || !chatHistory.isEmpty()) hud.renderChatBox(wh[0]);
                     if (isPaused)        hud.renderPauseMenu(ww[0], wh[0]);
                     if (showHelp)        hud.renderHelpScreen((float)ww[0], (float)wh[0]);
+                    // Screen flash overlay (snipe, explosion, melee hit, etc.)
+                    ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
+                    // Animation editor (F8)
+                    hud.animEditor.render(deltaTime);
                 }
             }
 
@@ -2427,6 +2533,8 @@ public class Window {
         }
         for (Mesh m : itemMeshes.values()) m.cleanup();
         shader.cleanup();
+        hud.cleanup();
+        com.leaf.game.anim.ModelRenderer.cleanup();
         imguiGl3.dispose();
         noiseVis.cleanup();
         imguiGlfw.dispose();
@@ -2465,6 +2573,8 @@ public class Window {
 
         // 4. Dynamic Screen Shake scaling based on the radius size
         AudioManager.play("fall_smash");
+        ScreenEffectManager.INSTANCE.hitStop(2);
+        ScreenEffectManager.INSTANCE.flashExplosion();
         float scaleFactor = (float) r / GameConfig.smashCraterRadius;
         activeShakeDuration  = GameConfig.smashShakeDuration * Math.min(2.5f, scaleFactor);
         activeShakeAmplitude = GameConfig.smashShakeAmplitude * Math.min(3.0f, scaleFactor);
@@ -3201,6 +3311,42 @@ public class Window {
                 }
             }
         }
+    }
+
+    // ── BLOCK SOUND HELPERS ───────────────────────────────────────────────────
+    // Returns the sound name to play when placing a block, or null for silence.
+    // Add more cases as you add sound files. Each name needs a matching .wav in /audios/.
+    static String blockPlaceSound(Block b) {
+        if (b == null) return null;
+        return switch (b) {
+            case STONE, ISLAND_STONE, FOSSIL_STONE, SCORCHED_STONE,
+                 MEGALITH, MEGALITH_CARVED, MOSSY_MEGALITH,
+                 CRYSTAL_BASE, STAR_IRON                         -> "block_stone_place";
+            case DIRT, GRASS, MUD, ANCIENT_SOIL                  -> "block_dirt_place";
+            case OAK_LOG, OAK_LEAVES, PETRIFIED_WOOD,
+                 PETRIFIED_BARK, HANGING_ROOT                    -> "block_wood_place";
+            case SAND, RED_SAND, GRAVEL, SNOW                    -> "block_sand_place";
+            case CRYSTAL_AMETHYST, CRYSTAL_QUARTZ,
+                 CRYSTAL_CITRINE, CRYSTAL_ROSE                   -> "block_crystal_place";
+            default                                              -> "block_stone_place";
+        };
+    }
+
+    // Returns the sound name to play when breaking a block, or null for silence.
+    static String blockBreakSound(Block b) {
+        if (b == null) return null;
+        return switch (b) {
+            case STONE, ISLAND_STONE, FOSSIL_STONE, SCORCHED_STONE,
+                 MEGALITH, MEGALITH_CARVED, MOSSY_MEGALITH,
+                 CRYSTAL_BASE, STAR_IRON                         -> "block_stone_break";
+            case DIRT, GRASS, MUD, ANCIENT_SOIL                  -> "block_dirt_break";
+            case OAK_LOG, OAK_LEAVES, PETRIFIED_WOOD,
+                 PETRIFIED_BARK, HANGING_ROOT                    -> "block_wood_break";
+            case SAND, RED_SAND, GRAVEL, SNOW                    -> "block_sand_break";
+            case CRYSTAL_AMETHYST, CRYSTAL_QUARTZ,
+                 CRYSTAL_CITRINE, CRYSTAL_ROSE                   -> "block_crystal_break";
+            default                                              -> "block_stone_break";
+        };
     }
 
     private void updateRotatingRoomsPortal() {

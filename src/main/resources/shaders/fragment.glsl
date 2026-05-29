@@ -27,6 +27,9 @@ uniform vec3  timeVignetteColor;
 uniform float overlayVignetteStrength;
 uniform vec3  overlayVignetteColor;
 
+// ── SCREEN DESATURATION (ScreenEffectManager) ─────────────────────────────────
+uniform float desaturate;   // 0=colour, 1=greyscale
+
 // ── GHOST TRAIL TRANSPARENCY ──────────────────────────────────────────────────
 // Multiplied into vertexColor.a when rendering ghost/trail meshes.
 // Window.java sets this per-draw-call (0.05–0.40) then resets to 1.0.
@@ -92,6 +95,12 @@ void main() {
     // Applied after time vignette so abilities visually "win" during activation.
     if (overlayVignetteStrength > 0.001) {
         gammaCorrected = mix(gammaCorrected, overlayVignetteColor, overlayVignetteStrength);
+    }
+
+    // ── IMPACT DESATURATION (explosions, slow-mo, near-death) ─────────────────
+    if (desaturate > 0.001) {
+        float lum = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
+        gammaCorrected = mix(gammaCorrected, vec3(lum), desaturate);
     }
 
     FragColor = vec4(gammaCorrected, baseColor.a * alphaMultiplier);

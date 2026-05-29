@@ -24,8 +24,15 @@ import static org.lwjgl.opengl.GL11.*;
 class WindowHud {
 
     final Window win;
+    final com.leaf.game.anim.AnimEditor animEditor = new com.leaf.game.anim.AnimEditor();
 
     WindowHud(Window win) { this.win = win; }
+
+    /** Call once after the OpenGL context is ready. */
+    void init() { animEditor.init(); }
+
+    /** Call on shutdown. */
+    void cleanup() { animEditor.cleanup(); }
 
     void renderConnectionMenu(float w, float h) {
         ImGui.setNextWindowPos(w / 2.0f - 150.0f, h / 2.0f - 180.0f);
@@ -1525,6 +1532,9 @@ class WindowHud {
             win.world.setBlock(tx, ty, tz, Block.AIR);
             win.world.rebuildChunkAt(tx, ty, tz);
             if (win.network != null && win.network.connected) win.network.sendBreak(tx, ty, tz);
+            // Play a break sound based on block material
+            String breakSnd = Window.blockBreakSound(target);
+            if (breakSnd != null) AudioManager.play(breakSnd);
             win.breakProgress = 0.0f;
         }
     }

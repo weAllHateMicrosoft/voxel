@@ -369,8 +369,9 @@ public class Player {
 
     // ── Package-private accessors for AbilityController ───────────────────────
     // AbilityController is in the same package so these stay package-visible.
-    public float getVelocityY()  { return velocityY; }
-    public void setVelocityY(float v) { this.velocityY = v; }
+    public float getVelocityY()   { return velocityY; }
+    public void  setVelocityY(float v) { this.velocityY = v; }
+    public boolean isOnGround()   { return onGround; }
 
     private boolean isBlockLiquid(World world, float x, float y, float z) {
         return world.getBlock(
