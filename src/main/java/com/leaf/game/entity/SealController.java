@@ -212,6 +212,7 @@ public class SealController {
 
                 int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
                 if (by < 0 || by >= Chunk.HEIGHT) { proj.alive = false; hit = true; break; }
+                com.leaf.game.core.AudioManager.play("seal_hit");
 
                 // ── Enemy hitbox check (before solid-block check so enemies
                 //    occluded behind walls don't steal the seal) ───────────────
@@ -354,6 +355,7 @@ public class SealController {
         Vector3f origin = new Vector3f(player.position); // capture before move
 
         player.position.set(target.position);
+        com.leaf.game.core.AudioManager.play("teleport");
         player.setVelocityY(0f);
         player.highestY  = target.position.y;  // suppress fall-damage at destination
         teleportCooldown = GameConfig.sealTeleportCooldown;
@@ -431,6 +433,7 @@ public class SealController {
             float dist = new Vector3f(target.position).sub(player.position).length();
             if (dist <= 8.0f) { // Must be within 8 blocks to reclaim
                 placedSeals.remove(target);
+                com.leaf.game.core.AudioManager.play("seal_collect"); // PLAY COLLECT SOUND
             }
         }
     }

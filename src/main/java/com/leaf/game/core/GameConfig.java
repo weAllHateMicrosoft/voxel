@@ -189,9 +189,9 @@ public class GameConfig {
     public static float voidShardLifetime     = 4.0f;   // seconds before despawn
     public static float voidShardMinRadius    = 1.5f;   // explosion radius (blocks) at 0 charge
     public static float voidShardMaxRadius    = 3.2f;   // explosion radius at full charge
-    public static float voidShardMinDamage    = 25f;    // HP at zero charge
-    public static float voidShardMaxDamage    = 80f;    // HP at full charge
-    public static float voidShardCooldown     = 1.6f;   // seconds
+    public static float voidShardMinDamage    = 50f;    // HP at zero charge
+    public static float voidShardMaxDamage    = 200f;    // HP at full charge
+    public static float voidShardCooldown     = 5.0f;   // seconds
     public static float voidShardShakeStrength = 0.18f; // base shake factor (scaled by chargeF)
     // ── SNIPING UPDATE ────────────────────────────────────────────────────────
     public static float standAimDot   = 0.993f; // cos(~6°) — how close crosshair must be to stand circle

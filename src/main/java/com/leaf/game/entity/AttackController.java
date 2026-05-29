@@ -260,6 +260,7 @@ public class AttackController {
      */
     private void executeStrike(Camera camera, World world) {
         // 1. Establish the 3D basis vectors based on the configuration toggle
+        com.leaf.game.core.AudioManager.play(Math.random() > 0.5 ? "slash1" : "slash2");
         Vector3f lookVec  = new Vector3f();
         Vector3f rightVec = new Vector3f(camera.getRight());
         Vector3f upVec    = new Vector3f();
@@ -375,6 +376,7 @@ public class AttackController {
             if (!isCharging && !player.abilities.isAnyAbilityActive()) {
                 isCharging = true;
                 chargeTime = 0f;
+                com.leaf.game.core.AudioManager.playContinuous("snipe_loadgun"); // START CHARGE SOUND
             }
             if (isCharging) {
                 chargeTime = Math.min(chargeTime + dt, GameConfig.voidShardMaxCharge);
@@ -384,6 +386,7 @@ public class AttackController {
             }
         } else if (isCharging) {
             // C released — fire (only if enough mana)
+            com.leaf.game.core.AudioManager.stopContinuous("snipe_loadgun");
             float cf = Math.min(1f, chargeTime / GameConfig.voidShardMaxCharge);
             if (player.mana >= GameConfig.manaVoidShard) {
                 player.mana -= GameConfig.manaVoidShard;
@@ -400,7 +403,7 @@ public class AttackController {
 
     private void fireBolt(Camera camera, World world, float chargeF) {
         float speed = GameConfig.voidShardMinSpeed + chargeF * (GameConfig.voidShardMaxSpeed - GameConfig.voidShardMinSpeed);
-
+        com.leaf.game.core.AudioManager.play(Math.random() > 0.5 ? "snipe1" : "snipe2");
         // 1. If piloting the drone -> Fire from the drone!
         if (player.stand.isInStandPerspective()) {
             Vector3f dir = camera.getLookDirection();
@@ -485,16 +488,13 @@ public class AttackController {
 
                 // ── MANHATTAN TRANSFER REDIRECT ──────────────────────────────────────
                 // When a bolt (fired toward the stand) reaches the drone, redirect it.
-                // Threshold 1.5 blocks — tight enough to only trigger for bolts that
-                // actually fly through the drone, not every bolt within 50 blocks.
-                // (The old threshold of 50.0f caused every shot to redirect regardless
-                // of direction, which was the root cause of the "redirects to random
-                // location" bug.)
                 if (!bolt.redirected && player.stand.isDeployed()) {
                     float distToStand = new Vector3f(bolt.pos).distance(player.stand.standPos);
                     if (distToStand < 1.5f) {
                         bolt.redirected = true;
                         bolt.pos.set(player.stand.standPos); // snap cleanly to drone centre
+
+                        com.leaf.game.core.AudioManager.play("snipe_redirect"); // PLAY REDIRECT PIN
 
                         Enemy targetEnemy = (enemyManager != null)
                                 ? enemyManager.findClosestVisible(world, player.stand.standPos,

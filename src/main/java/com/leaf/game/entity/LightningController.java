@@ -168,6 +168,7 @@ public class LightningController {
         // ── Charge buildup (hold U) ───────────────────────────────────────────
         if (uHeld && cooldown <= 0f) {
             if (!isCharging) isCharging = true;
+            com.leaf.game.core.AudioManager.playContinuous("lightening_charging");
             chargeTimer    = Math.min(GameConfig.lightningMaxCharge, chargeTimer + dt);
             stormIntensity = Math.min(1f, stormIntensity + dt * 0.8f);
         }
@@ -175,6 +176,7 @@ public class LightningController {
         // ── Release → queue single strike (don't fire immediately) ───────────
         // The brief hold lets a second tap cancel it in favour of AOE.
         if (!uHeld && lastU && isCharging) {
+            com.leaf.game.core.AudioManager.stopContinuous("lightening_charging");
             savedChargeFrac     = getChargeFrac();
             pendingSingleStrike = true;
             pendingStrikeDelay  = GameConfig.lightningDoubleTapWindow;
@@ -184,6 +186,7 @@ public class LightningController {
 
         // Cancel charge counter if key is not held
         if (!uHeld && !isCharging) chargeTimer = 0f;
+        com.leaf.game.core.AudioManager.stopContinuous("lightening_charging");
 
         lastU = uHeld;
     }
@@ -193,6 +196,7 @@ public class LightningController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void fireAimedStrike(Camera camera, World world, float chargeFrac) {
+        com.leaf.game.core.AudioManager.play(Math.random() > 0.5 ? "lightening1" : "lightening2");
         if (enemyManager == null) return;
 
         Vector3f eyePos = camera.position;
@@ -250,6 +254,7 @@ public class LightningController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void fireAoeBurst(World world) {
+        com.leaf.game.core.AudioManager.play("lightening_crowd");
         if (enemyManager == null) return;
         Vector3f origin = new Vector3f(player.position.x, player.position.y + 1f, player.position.z);
         boolean anyHit = false;

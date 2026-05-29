@@ -209,6 +209,7 @@ public class AbilityController {
             if (isGrounded && denseCount >= 35 && player.mana >= GameConfig.manaPillar) {
                 player.mana -= GameConfig.manaPillar;
                 isPillaring = true;
+                com.leaf.game.core.AudioManager.playContinuous("stone_pillar"); // START RUMBLE
                 pillarCenterX = player.position.x;
                 pillarCenterZ = player.position.z;
                 pillarStartPlayerY = player.position.y;
@@ -219,12 +220,12 @@ public class AbilityController {
         if (isPillaring) {
             // Continuous mana drain while rising — cancel early if mana runs out
             player.mana = Math.max(0f, player.mana - GameConfig.manaPillarPerSec * dt);
-            if (!kHeld || (player.position.y - pillarStartPlayerY) > GameConfig.pillarMaxHeight
-                    || player.mana <= 0f) {
-                // End ability
+            if (!kHeld || (player.position.y - pillarStartPlayerY) > GameConfig.pillarMaxHeight || player.mana <= 0f) {
                 isPillaring = false;
+                com.leaf.game.core.AudioManager.stopContinuous("stone_pillar"); // STOP RUMBLE
                 pillarCooldownTimer = GameConfig.pillarCooldown;
-            } else {
+            }
+            else {
                 // Ascend
                 player.setVelocityY(GameConfig.pillarRiseSpeed);
 
@@ -350,6 +351,7 @@ public class AbilityController {
                 && player.health < player.maxHealth
                 && healChannelTimer < GameConfig.healMaxDuration) {
             isHealing = true;
+            com.leaf.game.core.AudioManager.play("healing");
             healChannelTimer += dt;
             float gain = GameConfig.healPerSecond * dt;
             player.health = Math.min(player.maxHealth, player.health + gain);
@@ -378,12 +380,17 @@ public class AbilityController {
                 isKamui          = true;
                 kamuiTimer       = GameConfig.kamuiMaxDuration;
                 kamuiAutoExited  = false;
+                com.leaf.game.core.AudioManager.play("kamui_transition");
+                com.leaf.game.core.AudioManager.playContinuous("kamui_duration");
             } else if (isKamui || kamuiAutoExited) {
                 // Voluntary full exit
                 isKamui          = false;
                 kamuiAutoExited  = false;
                 kamuiResumeTimer = 0f;
                 kamuiTimer       = 0f;
+                com.leaf.game.core.AudioManager.play("kamui_transition");
+                com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
+                com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
             }
         }
 
@@ -393,6 +400,10 @@ public class AbilityController {
             isKamui          = false;
             kamuiAutoExited  = true;
             kamuiResumeTimer = GameConfig.kamuiExposureDuration;
+
+            com.leaf.game.core.AudioManager.play("kamui_transition");
+            com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
+            com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
         }
 
         // Auto re-enter after the exposure window closes (if mana remains)
@@ -414,6 +425,9 @@ public class AbilityController {
                 kamuiAutoExited = false;
                 kamuiTimer      = 0f;
             }
+            com.leaf.game.core.AudioManager.play("kamui_transition");
+            com.leaf.game.core.AudioManager.stopContinuous("kamui_duration");
+            com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion");
             // No blendOverlay here — the FBO distort shader is the sole source of
             // all Kamui visual effects (pulsing vignette + purple tint).
             // Applying a 3-D shader overlay ON TOP of the FBO post-process would
@@ -425,6 +439,7 @@ public class AbilityController {
         if (!isKamui) {
             isAbsorbing      = false;
             absorptionCharge = 0f;
+            com.leaf.game.core.AudioManager.stopContinuous("kamui_distortion"); // FAILSAFE
         }
 
         // Snapshot recording kept (not triggered by key, but buffer stays warm for future use)
@@ -459,6 +474,7 @@ public class AbilityController {
         dashCooldown = GameConfig.dashCooldown;
         dashTrail.clear();
 
+        com.leaf.game.core.AudioManager.play("dash");
         // Direction: WASD input, fallback to look direction
         Vector3f fwd   = camera.getForward();
         Vector3f right = camera.getRight();
@@ -612,6 +628,7 @@ public class AbilityController {
         justBlinked      = true;
         blinkFlashTimer  = GameConfig.blinkFlashDecay;
         blinkCooldown    = GameConfig.blinkCooldown;
+        com.leaf.game.core.AudioManager.play("teleport");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
