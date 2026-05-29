@@ -864,11 +864,16 @@ public class Window {
                         // Only spawns on rocky/hard ground — looks wrong on sand/beach.
                         boolean nowSmashing = player.isSmashing();
                         if (nowSmashing && !wasSmashing) {
-                            Block groundBlock = world.getBlock(
-                                    (int)Math.floor(player.position.x),
-                                    (int)Math.floor(player.position.y) - 1,
-                                    (int)Math.floor(player.position.z));
-                            // Spawn only on stone-like surfaces (hardness ≥ 2.5 or gravel)
+                            // Scan downward — at smash start the player is still airborne,
+                            // so position.y - 1 is AIR. Find the first solid block below.
+                            Block groundBlock = Block.AIR;
+                            int scanX = (int)Math.floor(player.position.x);
+                            int scanZ = (int)Math.floor(player.position.z);
+                            int scanYStart = (int)Math.floor(player.position.y);
+                            for (int sy = scanYStart; sy >= Math.max(0, scanYStart - 200); sy--) {
+                                Block b = world.getBlock(scanX, sy, scanZ);
+                                if (b.isSolid()) { groundBlock = b; break; }
+                            }
                             boolean isRockyGround = groundBlock.hardness >= 2.5f
                                     || groundBlock == Block.GRAVEL;
                             if (isRockyGround) {
@@ -1481,7 +1486,8 @@ public class Window {
                                             break;
                                         }
                                     }
-                                    Vector3f firePos = new Vector3f(fpx, (float) groundSpawnY, fpz);
+                                    // Raise spawn 1 block above the surface so the ball clears the ground
+                                    Vector3f firePos = new Vector3f(fpx, (float) groundSpawnY + 1.0f, fpz);
 
                                     // ── Aim from ground point toward player's look target ──
                                     Vector3f eyePos2 = new Vector3f(player.position.x,
@@ -1491,6 +1497,13 @@ public class Window {
                                     Vector3f fireDir = new Vector3f(aimTarget).sub(firePos);
                                     float fireDirLen = fireDir.length();
                                     if (fireDirLen > 0.001f) fireDir.div(fireDirLen);
+                                    // Guarantee a minimum loft so the ball never immediately hits the ground
+                                    if (fireDir.y < 0.12f) {
+                                        fireDir.y = 0.12f;
+                                        float hLen = (float)Math.sqrt(fireDir.x*fireDir.x + fireDir.z*fireDir.z);
+                                        if (hLen > 0f) { fireDir.x /= hLen; fireDir.z /= hLen; }
+                                        fireDir.normalize();
+                                    }
                                     Vector3f fireVel = new Vector3f(fireDir).mul(speed);
                                     stoneShotList.add(new ActiveStoneShot(firePos, fireVel, scale, chargeF));
                                     AudioManager.stopContinuous("charging");
@@ -1633,8 +1646,11 @@ public class Window {
 
                         float horizSpeed = (float) Math.sqrt(
                                 listenerVel.x * listenerVel.x + listenerVel.z * listenerVel.z);
-                        float totalAirSpeed = (float) Math.sqrt(
-                                horizSpeed * horizSpeed + vy * vy);
+                        // In flight mode use FlightController's velocity so terrain collisions
+                        // (which zero the position delta) don't kill wind volume on uphill skim.
+                        float totalAirSpeed = player.debugMode
+                                ? player.flightController.getFlightSpeed()
+                                : (float) Math.sqrt(horizSpeed * horizSpeed + vy * vy);
 
                         // ── TUNING KNOBS ───────────────────────────────────────
                         final float BLOW_START   = 3f;    // lower → wind starts earlier/gentler
@@ -2891,7 +2907,8 @@ public class Window {
     private void spawnCraterEjecta(int ix, int iy, int iz, int radius) {
         // Scale ejecta particle count with crater size
         int ejectedCount = Math.min(96, 6 * radius);
-        Block ejectBlock = world.getBlock(ix, iy, iz);
+        // smashImpactY is the player's feet level (first AIR block) — sample one block down for the actual ground material.
+        Block ejectBlock = world.getBlock(ix, iy - 1, iz);
         if (ejectBlock == Block.AIR || !ejectBlock.isSolid()) ejectBlock = Block.GRAVEL;
 
         for (int i = 0; i < ejectedCount; i++) {

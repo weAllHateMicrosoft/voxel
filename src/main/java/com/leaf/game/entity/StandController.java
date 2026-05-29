@@ -93,7 +93,6 @@ public class StandController {
     private boolean  lastX            = false;
 
     // ── LMB edge detector ─────────────────────────────────────────────────────
-    private boolean  lastLMB          = false;
 
     // ── Auto-aim flag ─────────────────────────────────────────────────────────
     /**
@@ -164,7 +163,7 @@ public class StandController {
             if (isDeployed) {
                 recall();
             } else if (redeployCooldown <= 0f) {
-                deploy(camera);
+                deploy(camera, world);
             }
         }
         lastX = xHeld;
@@ -204,33 +203,8 @@ public class StandController {
             return true;   // caller must skip physics
         }
 
-        // ── Auto-aim: stand deployed but player controlling their own body ────────
-        // LMB fires the stand at the nearest visible enemy; Window suppresses
-        // block-breaking for this frame via autoAimedThisFrame.
+        // LMB does nothing while the stand is deployed outside stand perspective.
         autoAimedThisFrame = false;
-        if (isDeployed && enemyManager != null) {
-            boolean lmbHeld = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-            if (lmbHeld && !lastLMB) {
-                Enemy target = enemyManager.findClosestVisible(
-                        world, standPos, GameConfig.standShotRange);
-                if (target != null) {
-                    Vector3f toEnemy = new Vector3f(target.getCentre())
-                            .sub(standPos).normalize();
-                    Vector3f startPos = new Vector3f(standPos)
-                            .add(new Vector3f(toEnemy).mul(1.2f));
-                    activeBolts.add(new StandBolt(startPos,
-                            new Vector3f(toEnemy).mul(GameConfig.standShotSpeed)));
-                    com.leaf.game.core.AudioManager.play("snipe_redirect");
-                    autoAimedThisFrame = true;
-                } else {
-                    // No visible target — flash blocked indicator so player knows
-                    blockedFlashTimer = GameConfig.standBlockedFlashTime;
-                }
-            }
-        }
-
-        // Advance lastLMB so we don't fire on the frame the player exits perspective.
-        lastLMB = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
         return false;
     }
 
@@ -238,14 +212,27 @@ public class StandController {
     //  Deploy / Recall / Destroy
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void deploy(Camera camera) {
+    private void deploy(Camera camera, com.leaf.game.world.World world) {
         isDeployed  = true;
         standHealth = GameConfig.standMaxHealth;
-        standPos.set(
-                player.position.x,
-                player.position.y + GameConfig.standDeployHeight,
-                player.position.z
-        );
+
+        float spawnX = player.position.x;
+        float spawnZ = player.position.z;
+        float wantY  = player.position.y + GameConfig.standDeployHeight;
+
+        // Scan upward from the desired spawn Y to find the first unobstructed block.
+        // This prevents the drone from materialising inside solid geometry.
+        int sx = (int)Math.floor(spawnX), sz = (int)Math.floor(spawnZ);
+        int startY = (int)Math.floor(wantY);
+        float clearY = wantY;
+        for (int sy = startY; sy < com.leaf.game.world.Chunk.HEIGHT - 1; sy++) {
+            if (!world.getBlock(sx, sy, sz).isSolid()) {
+                clearY = sy + 0.5f;
+                break;
+            }
+        }
+        standPos.set(spawnX, clearY, spawnZ);
+
         // Face the same direction as the player so the drone is immediately usable
         standCamera.yaw   = camera.yaw;
         standCamera.pitch = 0f;
@@ -295,25 +282,31 @@ public class StandController {
         if (len > 0.01f) {
             move.div(len).mul(GameConfig.standSpeed * dt);
 
-            // Per-axis collision — drone cannot enter solid blocks
+            // Per-axis collision — probe 0.4 blocks ahead so the camera never
+            // clips into a wall face and causes see-through rendering.
+            final float MARGIN = 0.4f;
             float nx = standPos.x + move.x;
-            if (!world.getBlock((int)Math.floor(nx),
+            float probeX = move.x != 0 ? nx + Math.signum(move.x) * MARGIN : nx;
+            if (!world.getBlock((int)Math.floor(probeX),
                                 (int)Math.floor(standPos.y),
                                 (int)Math.floor(standPos.z)).isSolid()) {
                 standPos.x = nx;
             }
             float ny = Math.max(1f, Math.min(Chunk.HEIGHT - 2f, standPos.y + move.y));
+            float probeY = move.y != 0 ? ny + Math.signum(move.y) * MARGIN : ny;
+            probeY = Math.max(1f, Math.min(Chunk.HEIGHT - 2f, probeY));
             if (!world.getBlock((int)Math.floor(standPos.x),
-                                (int)Math.floor(ny),
+                                (int)Math.floor(probeY),
                                 (int)Math.floor(standPos.z)).isSolid()) {
                 standPos.y = ny;
             } else {
                 standPos.y = Math.max(1f, Math.min(Chunk.HEIGHT - 2f, standPos.y));
             }
             float nz = standPos.z + move.z;
+            float probeZ = move.z != 0 ? nz + Math.signum(move.z) * MARGIN : nz;
             if (!world.getBlock((int)Math.floor(standPos.x),
                                 (int)Math.floor(standPos.y),
-                                (int)Math.floor(nz)).isSolid()) {
+                                (int)Math.floor(probeZ)).isSolid()) {
                 standPos.z = nz;
             }
         }
@@ -454,8 +447,14 @@ public class StandController {
                     Block b = world.getBlock(bx, by, bz);
                     if (!b.isSolid()) continue;
                     world.setBlock(bx, by, bz, Block.AIR);
-                    com.leaf.game.world.Chunk ic = world.getChunk(Math.floorDiv(bx, Chunk.SIZE), Math.floorDiv(by, Chunk.HEIGHT), Math.floorDiv(bz, Chunk.SIZE));
+                    int icx = Math.floorDiv(bx, Chunk.SIZE), icy = Math.floorDiv(by, com.leaf.game.world.Chunk.HEIGHT), icz = Math.floorDiv(bz, Chunk.SIZE);
+                    com.leaf.game.world.Chunk ic = world.getChunk(icx, icy, icz);
                     if (ic != null) impactChunks.add(ic);
+                    int ilx = Math.floorMod(bx, Chunk.SIZE), ilz = Math.floorMod(bz, Chunk.SIZE);
+                    if (ilx == 0)              { com.leaf.game.world.Chunk n = world.getChunk(icx-1,icy,icz); if(n!=null) impactChunks.add(n); }
+                    if (ilx == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(icx+1,icy,icz); if(n!=null) impactChunks.add(n); }
+                    if (ilz == 0)              { com.leaf.game.world.Chunk n = world.getChunk(icx,icy,icz-1); if(n!=null) impactChunks.add(n); }
+                    if (ilz == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(icx,icy,icz+1); if(n!=null) impactChunks.add(n); }
                     if (spawned < maxDeb) {
                         float speed = 5f + (float)Math.random() * 8f;
                         Vector3f ejVel = new Vector3f(

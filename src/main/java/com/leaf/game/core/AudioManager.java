@@ -68,6 +68,7 @@ public class AudioManager {
 
     private static int[] pool;                                  // one-shot voices
     private static final Map<String, Integer> buffers    = new HashMap<>(); // name → AL buffer
+    private static final Map<String, Integer> buffersM   = new HashMap<>(); // mono-downmixed buffers (for loop panning)
     private static final Map<String, Integer> loops       = new HashMap<>(); // name → looping source
     private static final Map<String, Float>   loopBase    = new HashMap<>(); // name → requested gain
     private static final java.util.Set<String> duckExempt = new java.util.HashSet<>(); // loops immune to ducking
@@ -253,6 +254,39 @@ public class AudioManager {
         return buffer;
     }
 
+    /** Mix a stereo 16-bit PCM down to mono by averaging L+R samples. */
+    private static Pcm downmixToMono(Pcm p) {
+        if (p.channels() == 1) return p;
+        byte[] src = p.data();
+        int frames = src.length / 4; // 2 channels × 2 bytes
+        byte[] dst = new byte[frames * 2];
+        for (int i = 0; i < frames; i++) {
+            int o = i * 4;
+            short l = (short)(((src[o+1] & 0xFF) << 8) | (src[o]   & 0xFF));
+            short r = (short)(((src[o+3] & 0xFF) << 8) | (src[o+2] & 0xFF));
+            int mono = (l + r) >> 1;
+            dst[i*2]   = (byte)(mono       & 0xFF);
+            dst[i*2+1] = (byte)((mono >> 8) & 0xFF);
+        }
+        return new Pcm(1, p.sampleRate(), dst);
+    }
+
+    /** Like ensureBuffer but always produces a mono AL buffer — required for loop panning. */
+    private static Integer ensureBufferMono(String name) {
+        Integer existing = buffersM.get(name);
+        if (existing != null) return existing;
+        Pcm raw = decode(name);
+        if (raw == null) return null;
+        Pcm mono = downmixToMono(raw);
+        ByteBuffer bb = MemoryUtil.memAlloc(mono.data().length);
+        bb.put(mono.data()).flip();
+        int buf = alGenBuffers();
+        alBufferData(buf, AL_FORMAT_MONO16, bb, mono.sampleRate());
+        MemoryUtil.memFree(bb);
+        buffersM.put(name, buf);
+        return buf;
+    }
+
     /** Decode a sound once at startup so the first play has no IO cost. */
     public static void preload(String name) {
         ensureInit();
@@ -435,7 +469,7 @@ public class AudioManager {
         final float vol = Math.max(0f, volume);
         AUDIO.submit(() -> {
             if (!ready || loops.containsKey(name)) return;
-            Integer buf = ensureBuffer(name);
+            Integer buf = ensureBufferMono(name); // mono so setLoopPan (AL_POSITION) actually pans
             if (buf == null) return;
             int s = alGenSources();                     // dedicated source (never stolen)
             alSourcei(s, AL_LOOPING, AL_TRUE);
@@ -469,7 +503,7 @@ public class AudioManager {
             loopBase.put(name, vol);
             if (!loops.containsKey(name)) {
                 // Not yet playing → start it at this volume (matches old behaviour).
-                Integer buf = ensureBuffer(name);
+                Integer buf = ensureBufferMono(name); // mono for panning
                 if (buf == null) return;
                 int src = alGenSources();
                 alSourcei(src, AL_LOOPING, AL_TRUE);
