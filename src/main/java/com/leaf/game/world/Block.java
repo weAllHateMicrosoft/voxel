@@ -5,7 +5,7 @@ public enum Block {
     GRASS     (0.30f, 0.70f, 0.20f, 1.0f,  0.8f),
     DIRT      (0.50f, 0.30f, 0.10f, 1.0f,  1.0f),
     MUD       (0.32f, 0.18f, 0.04f, 1.0f,  0.5f), // Quagmire — dark bog mud, slows enemies forever
-    STONE     (0.50f, 0.50f, 0.50f, 1.0f,  4.0f),
+    STONE     (1.00f, 1.00f, 1.00f, 1.0f,  4.0f,  "stone"),
     WATER     (0.10f, 0.42f, 0.80f, 0.65f, 0.0f), // 65% Opacity!
     SAND      (0.80f, 0.72f, 0.45f, 1.0f,  0.9f),
     SNOW      (0.88f, 0.93f, 0.96f, 1.0f,  0.5f),
@@ -51,9 +51,57 @@ public enum Block {
     public final float r, g, b, a;
     public final float hardness;
 
+    /**
+     * Name of the PNG file for this block (without extension).
+     * The file lives at:  src/main/resources/textures/blocks/<texName>.png
+     *
+     * TWO supported sizes:
+     *   48 × 64  — 6 unique faces in a cube-net (cross) layout:
+     *                   [ top  ]
+     *               [L ][front ][R ]
+     *                   [bottom]
+     *                   [ back ]
+     *   16 × 16  — single tile, same on all 6 faces.
+     *
+     * null = no texture → block renders as its flat vertex colour.
+     *
+     * Examples:
+     *   STONE (1,1,1, 1, hard, "stone")   ← stone.png (48×64 cross)
+     *   GRASS (1,1,1, 1, hard, "grass")   ← grass.png (48×64 cross)
+     *   DIRT  (r,g,b, a, hard)            ← no PNG, flat colour only
+     */
+    public final String texName;
+
+    /** No texture — renders as flat vertex colour. */
     Block(float r, float g, float b, float a, float hardness) {
         this.r = r; this.g = g; this.b = b; this.a = a;
         this.hardness = hardness;
+        this.texName  = null;
+    }
+
+    /** One PNG file with all 6 faces in a 48×64 cube-net layout (or 16×16 for same-on-all). */
+    Block(float r, float g, float b, float a, float hardness, String texName) {
+        this.r = r; this.g = g; this.b = b; this.a = a;
+        this.hardness = hardness;
+        this.texName  = texName;
+    }
+
+    /**
+     * Returns which face index (0–5) corresponds to normal (nx, ny, nz).
+     *   0 = top    (ny > 0)
+     *   1 = bottom (ny < 0)
+     *   2 = front  (nz > 0)   — cross row 1, col 1
+     *   3 = back   (nz < 0)   — cross row 3, col 1
+     *   4 = right  (nx > 0)   — cross row 1, col 2
+     *   5 = left   (nx < 0)   — cross row 1, col 0
+     */
+    public int getFaceIndex(float nx, float ny, float nz) {
+        if (ny >  0.5f) return 0;
+        if (ny < -0.5f) return 1;
+        if (nz >  0.5f) return 2;
+        if (nz < -0.5f) return 3;
+        if (nx >  0.5f) return 4;
+        return 5;
     }
 
     public boolean isSolid() {

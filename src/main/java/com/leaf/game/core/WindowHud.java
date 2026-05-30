@@ -25,7 +25,9 @@ class WindowHud {
 
     final Window win;
 
-    WindowHud(Window win) { this.win = win; }
+    WindowHud(Window win) {
+        this.win = win;
+    }
 
     void renderConnectionMenu(float w, float h) {
         ImGui.setNextWindowPos(w / 2.0f - 150.0f, h / 2.0f - 180.0f);
@@ -98,7 +100,7 @@ class WindowHud {
         ImGui.text("Please wait a moment while the spawn");
         ImGui.text("area finishes compiling...");
         ImGui.spacing();
-        float progress = (float)(glfwGetTime() % 2.0) / 2.0f;
+        float progress = (float) (glfwGetTime() % 2.0) / 2.0f;
         ImGui.progressBar(progress, 300, 24);
         ImGui.end();
     }
@@ -121,7 +123,7 @@ class WindowHud {
             win.showHelp = true;
         }
         ImGui.spacing();
-        if (ImGui.button("Save Game", 180, 30))  SaveManager.saveGame(win.world, win.player, win.inventory);
+        if (ImGui.button("Save Game", 180, 30)) SaveManager.saveGame(win.world, win.player, win.inventory);
         ImGui.spacing();
         if (ImGui.button("Save & Quit", 180, 30)) {
             SaveManager.saveGame(win.world, win.player, win.inventory);
@@ -161,15 +163,18 @@ class WindowHud {
         int bx = win.lastTarget.hitX, by = win.lastTarget.hitY, bz = win.lastTarget.hitZ;
         float e = 0.005f;
         Vector3f[] corners = {
-                new Vector3f(bx-e,   by-e,   bz-e),   new Vector3f(bx+1+e, by-e,   bz-e),
-                new Vector3f(bx+1+e, by+1+e, bz-e),   new Vector3f(bx-e,   by+1+e, bz-e),
-                new Vector3f(bx-e,   by-e,   bz+1+e), new Vector3f(bx+1+e, by-e,   bz+1+e),
-                new Vector3f(bx+1+e, by+1+e, bz+1+e), new Vector3f(bx-e,   by+1+e, bz+1+e)
+                new Vector3f(bx - e, by - e, bz - e), new Vector3f(bx + 1 + e, by - e, bz - e),
+                new Vector3f(bx + 1 + e, by + 1 + e, bz - e), new Vector3f(bx - e, by + 1 + e, bz - e),
+                new Vector3f(bx - e, by - e, bz + 1 + e), new Vector3f(bx + 1 + e, by - e, bz + 1 + e),
+                new Vector3f(bx + 1 + e, by + 1 + e, bz + 1 + e), new Vector3f(bx - e, by + 1 + e, bz + 1 + e)
         };
         org.joml.Vector4f[] proj = new org.joml.Vector4f[8];
         for (int i = 0; i < 8; i++) {
             proj[i] = new org.joml.Vector4f(corners[i].x, corners[i].y, corners[i].z, 1.0f).mul(viewProj);
-            if (proj[i].w > 0) { proj[i].x /= proj[i].w; proj[i].y /= proj[i].w; }
+            if (proj[i].w > 0) {
+                proj[i].x /= proj[i].w;
+                proj[i].y /= proj[i].w;
+            }
         }
         int finalColor = ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 0.5f + win.breakProgress * 0.4f);
         float finalThickness = 2.0f + win.breakProgress * 3.0f;
@@ -181,9 +186,18 @@ class WindowHud {
                 draw.addLine(x1, y1, x2, y2, finalColor, finalThickness);
             }
         };
-        if (win.breakProgress > 0.1f) { drawCrack.accept(0, 6); drawCrack.accept(3, 5); }
-        if (win.breakProgress > 0.4f) { drawCrack.accept(1, 7); drawCrack.accept(2, 4); }
-        if (win.breakProgress > 0.7f) { drawCrack.accept(0, 2); drawCrack.accept(5, 7); }
+        if (win.breakProgress > 0.1f) {
+            drawCrack.accept(0, 6);
+            drawCrack.accept(3, 5);
+        }
+        if (win.breakProgress > 0.4f) {
+            drawCrack.accept(1, 7);
+            drawCrack.accept(2, 4);
+        }
+        if (win.breakProgress > 0.7f) {
+            drawCrack.accept(0, 2);
+            drawCrack.accept(5, 7);
+        }
     }
 
     void renderHUD(Camera camera, float screenW, float screenH) {
@@ -216,7 +230,7 @@ class WindowHud {
                 int glowA = ImGui.colorConvertFloat4ToU32(
                         chain ? 0.3f : 0.8f, chain ? 0.6f : 0.85f, 1.0f, 0.06f * bright);
                 draw.addCircleFilled(tScrX, tScrY, 120f * bright, glowA);
-                draw.addCircleFilled(tScrX, tScrY, 60f  * bright, ImGui.colorConvertFloat4ToU32(
+                draw.addCircleFilled(tScrX, tScrY, 60f * bright, ImGui.colorConvertFloat4ToU32(
                         chain ? 0.4f : 0.9f, chain ? 0.7f : 0.90f, 1.0f, 0.12f * bright));
 
                 // ── Draw 5 parallel zigzag paths ─────────────────────────────
@@ -246,19 +260,19 @@ class WindowHud {
 
                     // Layer stack: wide outer glow → medium fill → thin bright core
                     float[][] layers = path == 0
-                        // Primary path: massive, juicy
-                        ? new float[][]{ {38f, 0.04f}, {22f, 0.12f}, {12f, 0.30f}, {5f, 0.70f}, {2f, 1.00f} }
-                        // Secondary paths: thinner, supporting glow
-                        : new float[][]{ {20f, 0.03f}, {10f, 0.09f}, {4f, 0.22f}, {1.5f, 0.60f} };
+                            // Primary path: massive, juicy
+                            ? new float[][]{{38f, 0.04f}, {22f, 0.12f}, {12f, 0.30f}, {5f, 0.70f}, {2f, 1.00f}}
+                            // Secondary paths: thinner, supporting glow
+                            : new float[][]{{20f, 0.03f}, {10f, 0.09f}, {4f, 0.22f}, {1.5f, 0.60f}};
 
                     for (float[] layer : layers) {
                         float th = layer[0];
-                        float a  = Math.min(1f, layer[1] * bright);
+                        float a = Math.min(1f, layer[1] * bright);
                         int col = chain
-                            ? ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, a)
-                            : ImGui.colorConvertFloat4ToU32(0.92f, 0.96f, 1.0f, a);
+                                ? ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, a)
+                                : ImGui.colorConvertFloat4ToU32(0.92f, 0.96f, 1.0f, a);
                         for (int s = 0; s < segments; s++) {
-                            draw.addLine(bx[s], by[s], bx[s+1], by[s+1], col, th);
+                            draw.addLine(bx[s], by[s], bx[s + 1], by[s + 1], col, th);
                         }
                     }
                 }
@@ -275,15 +289,15 @@ class WindowHud {
                     java.util.Random sparkRng = new java.util.Random(bolt.hashCode() ^ 0xdeadbeef);
                     int numSparks = chain ? 6 : 12;
                     for (int sk = 0; sk < numSparks; sk++) {
-                        float ang  = sparkRng.nextFloat() * (float)(2 * Math.PI);
-                        float len  = (20f + sparkRng.nextFloat() * 40f) * bright;
-                        float sa   = 0.6f * bright;
+                        float ang = sparkRng.nextFloat() * (float) (2 * Math.PI);
+                        float len = (20f + sparkRng.nextFloat() * 40f) * bright;
+                        float sa = 0.6f * bright;
                         int sparkCol = chain
-                            ? ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, sa)
-                            : ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.6f, sa);
+                                ? ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, sa)
+                                : ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.6f, sa);
                         draw.addLine(tScrX, tScrY,
-                                tScrX + (float)Math.cos(ang) * len,
-                                tScrY + (float)Math.sin(ang) * len,
+                                tScrX + (float) Math.cos(ang) * len,
+                                tScrY + (float) Math.sin(ang) * len,
                                 sparkCol, 2.5f * bright);
                     }
                 }
@@ -315,24 +329,24 @@ class WindowHud {
                     ImGui.colorConvertFloat4ToU32(1.0f, 0.45f, 0.05f, innerA));
             // Strong orange flash on all four edges (like a punch frame)
             float edgeW = 28f * grabFlash;
-            int   edgeCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.35f, 0.0f, edgeA);
-            draw.addRectFilled(0, 0, screenW, edgeW,               edgeCol);
+            int edgeCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.35f, 0.0f, edgeA);
+            draw.addRectFilled(0, 0, screenW, edgeW, edgeCol);
             draw.addRectFilled(0, screenH - edgeW, screenW, screenH, edgeCol);
-            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW,   edgeCol);
+            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW, edgeCol);
             draw.addRectFilled(screenW - edgeW, edgeW, screenW, screenH - edgeW, edgeCol);
         }
 
         // ── KAMUI PHASE BORDER EFFECT ─────────────────────────────────────────
         // Shimmering purple frame around the screen edges while Kamui is active.
         if (win.player.abilities.isKamui) {
-            float urgency   = 1f - win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration;
-            float pulse     = 0.5f + 0.5f * (float) Math.sin(glfwGetTime() * 6.0 + urgency * 4.0);
+            float urgency = 1f - win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration;
+            float pulse = 0.5f + 0.5f * (float) Math.sin(glfwGetTime() * 6.0 + urgency * 4.0);
             float edgeAlpha = 0.4f + urgency * 0.25f + pulse * 0.15f;
-            int   edgeColor = ImGui.colorConvertFloat4ToU32(0.6f, 0.0f, 1.0f, edgeAlpha);
+            int edgeColor = ImGui.colorConvertFloat4ToU32(0.6f, 0.0f, 1.0f, edgeAlpha);
             float edgeW = 18f + pulse * 8f;
-            draw.addRectFilled(0, 0, screenW, edgeW,         edgeColor);
+            draw.addRectFilled(0, 0, screenW, edgeW, edgeColor);
             draw.addRectFilled(0, screenH - edgeW, screenW, screenH, edgeColor);
-            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW,         edgeColor);
+            draw.addRectFilled(0, edgeW, edgeW, screenH - edgeW, edgeColor);
             draw.addRectFilled(screenW - edgeW, edgeW, screenW, screenH - edgeW, edgeColor);
 
             // ── KAMUI ABSORPTION VORTEX ──────────────────────────────────────
@@ -341,9 +355,9 @@ class WindowHud {
             // Kamui eye technique from Naruto.
             if (win.player.abilities.isAbsorbing || win.player.abilities.absorptionCharge > 0f) {
                 float charge = win.player.abilities.absorptionCharge;
-                float vx     = win.player.abilities.absorptionScrX;
-                float vy     = win.player.abilities.absorptionScrY;
-                double t     = glfwGetTime();
+                float vx = win.player.abilities.absorptionScrX;
+                float vy = win.player.abilities.absorptionScrY;
+                double t = glfwGetTime();
 
                 // Outer pulsing glow around the vortex origin
                 float glowR = 30f + charge * 90f;
@@ -353,40 +367,40 @@ class WindowHud {
                 // Spinning concentric rings that tighten as charge builds
                 int numRings = 4;
                 for (int ri = 0; ri < numRings; ri++) {
-                    float ringPhase  = (float)(t * (2.5f + ri * 0.8f)) + ri * (float)(Math.PI / numRings);
+                    float ringPhase = (float) (t * (2.5f + ri * 0.8f)) + ri * (float) (Math.PI / numRings);
                     float ringRadius = glowR * (0.3f + ri * 0.22f) * (1f - charge * 0.4f);
-                    float ringAlpha  = 0.5f * charge;
-                    int   ringCol    = ImGui.colorConvertFloat4ToU32(0.7f, 0.1f, 1.0f, ringAlpha);
+                    float ringAlpha = 0.5f * charge;
+                    int ringCol = ImGui.colorConvertFloat4ToU32(0.7f, 0.1f, 1.0f, ringAlpha);
                     draw.addCircle(vx, vy, ringRadius, ringCol, 48, 2.5f);
                 }
 
                 // Spiral arms — lines drawn from vortex outward along rotating angles
                 int numArms = 8;
                 for (int ai = 0; ai < numArms; ai++) {
-                    float baseAngle = (float)(t * 3.5 + ai * Math.PI * 2.0 / numArms);
-                    float armLen    = (50f + charge * 130f);
+                    float baseAngle = (float) (t * 3.5 + ai * Math.PI * 2.0 / numArms);
+                    float armLen = (50f + charge * 130f);
                     // Each arm has segments that taper inward (spiral toward centre)
                     int armSegs = 10;
                     for (int seg = 0; seg < armSegs; seg++) {
-                        float tSeg      = (float) seg / armSegs;
-                        float tSeg1     = (float)(seg + 1) / armSegs;
-                        float angle0    = baseAngle - tSeg  * 1.8f * charge;
-                        float angle1    = baseAngle - tSeg1 * 1.8f * charge;
-                        float r0        = armLen * (1f - tSeg);
-                        float r1a       = armLen * (1f - tSeg1);
-                        float sx0 = vx + (float)Math.cos(angle0) * r0;
-                        float sy0 = vy + (float)Math.sin(angle0) * r0;
-                        float sx1 = vx + (float)Math.cos(angle1) * r1a;
-                        float sy1 = vy + (float)Math.sin(angle1) * r1a;
-                        float aa  = (1f - tSeg) * charge * 0.80f;
+                        float tSeg = (float) seg / armSegs;
+                        float tSeg1 = (float) (seg + 1) / armSegs;
+                        float angle0 = baseAngle - tSeg * 1.8f * charge;
+                        float angle1 = baseAngle - tSeg1 * 1.8f * charge;
+                        float r0 = armLen * (1f - tSeg);
+                        float r1a = armLen * (1f - tSeg1);
+                        float sx0 = vx + (float) Math.cos(angle0) * r0;
+                        float sy0 = vy + (float) Math.sin(angle0) * r0;
+                        float sx1 = vx + (float) Math.cos(angle1) * r1a;
+                        float sy1 = vy + (float) Math.sin(angle1) * r1a;
+                        float aa = (1f - tSeg) * charge * 0.80f;
                         int armCol = ImGui.colorConvertFloat4ToU32(0.65f, 0.0f, 1.0f, aa);
                         draw.addLine(sx0, sy0, sx1, sy1, armCol, 2.5f + charge * 2.5f);
                     }
                 }
 
                 // Bright core that pulses faster as it approaches full charge
-                float corePulse  = 0.5f + 0.5f * (float) Math.sin(t * (8.0 + charge * 14.0));
-                float coreR      = 6f + corePulse * 10f * charge;
+                float corePulse = 0.5f + 0.5f * (float) Math.sin(t * (8.0 + charge * 14.0));
+                float coreR = 6f + corePulse * 10f * charge;
                 draw.addCircleFilled(vx, vy, coreR,
                         ImGui.colorConvertFloat4ToU32(0.9f, 0.5f, 1.0f, 0.85f * charge));
 
@@ -417,9 +431,9 @@ class WindowHud {
                 // To avoid matrix flipping bugs, we use simple Dot Products with
                 // the camera's local axes to find the true, stable direction.
                 Vector3f toDrone = new Vector3f(dronePos).sub(camera.position).normalize();
-                Vector3f right   = camera.getRight();
+                Vector3f right = camera.getRight();
                 // Cross product: Right x Forward = Local Up Vector
-                Vector3f up      = new Vector3f(right).cross(camera.getLookDirection()).normalize();
+                Vector3f up = new Vector3f(right).cross(camera.getLookDirection()).normalize();
 
                 // Screen X grows right. Screen Y grows DOWN (so we invert Y).
                 float dirX = toDrone.dot(right);
@@ -428,8 +442,8 @@ class WindowHud {
                 float angle = (float) Math.atan2(dirY, dirX);
                 float radius = Math.min(cx, cy) * 0.85f;
 
-                float indicatorX = cx + (float)Math.cos(angle) * radius;
-                float indicatorY = cy + (float)Math.sin(angle) * radius;
+                float indicatorX = cx + (float) Math.cos(angle) * radius;
+                float indicatorY = cy + (float) Math.sin(angle) * radius;
 
                 // 3. Draw Custom "Tag" Shape (Made slightly larger)
                 float L = 46f;      // Total length of the shape
@@ -437,17 +451,17 @@ class WindowHud {
                 float tipL = 16f;   // Length of the pointy triangle tip
 
                 float[][] pts = {
-                        { L/2, 0 },               // 0: Tip
-                        { L/2 - tipL, W/2 },      // 1: Top Right corner
-                        { -L/2, W/2 },            // 2: Top Left corner
-                        { -L/2, -W/2 },           // 3: Bottom Left corner
-                        { L/2 - tipL, -W/2 }      // 4: Bottom Right corner
+                        {L / 2, 0},               // 0: Tip
+                        {L / 2 - tipL, W / 2},      // 1: Top Right corner
+                        {-L / 2, W / 2},            // 2: Top Left corner
+                        {-L / 2, -W / 2},           // 3: Bottom Left corner
+                        {L / 2 - tipL, -W / 2}      // 4: Bottom Right corner
                 };
 
                 // Rotate and translate vertices to the edge of the screen
-                float cosA = (float)Math.cos(angle);
-                float sinA = (float)Math.sin(angle);
-                for(int i = 0; i < 5; i++) {
+                float cosA = (float) Math.cos(angle);
+                float sinA = (float) Math.sin(angle);
+                for (int i = 0; i < 5; i++) {
                     float px = pts[i][0];
                     float py = pts[i][1];
                     float rotX = px * cosA - py * sinA;
@@ -458,7 +472,7 @@ class WindowHud {
 
                 // Colors
                 int goldFill = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.15f, 0.95f);
-                int outline  = ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 1.0f);
+                int outline = ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 1.0f);
                 int redAlert = ImGui.colorConvertFloat4ToU32(1.0f, 0.15f, 0.15f, 1.0f);
 
                 // Fill the shape
@@ -501,13 +515,13 @@ class WindowHud {
 
                 boolean aimingAtDrone = win.player.attacks.isAimingAtStand(camera);
 
-                int yellow    = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
+                int yellow = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
                 int dimYellow = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 0.45f); // 45% opacity when idle
 
                 int brightRed = ImGui.colorConvertFloat4ToU32(1.0f, 0.0f, 0.0f, 1.0f); // 100% opacity bright red
-                int dimRed    = ImGui.colorConvertFloat4ToU32(1.0f, 0.0f, 0.0f, 0.45f); // 45% opacity dim red
+                int dimRed = ImGui.colorConvertFloat4ToU32(1.0f, 0.0f, 0.0f, 0.45f); // 45% opacity dim red
 
-                int color     = aimingAtDrone ? brightRed : dimRed;
+                int color = aimingAtDrone ? brightRed : dimRed;
                 float thick = aimingAtDrone ? 3.0f : 1.5f;
 
                 // Draw a 2D Diamond Outline exactly over the drone
@@ -541,15 +555,15 @@ class WindowHud {
 
             // Four radiating lines — sniper style
             float gap = ring + 2f, ext = gap + 9f;
-            draw.addLine(cx - ext, cy,  cx - gap, cy,  red, 1.5f);
-            draw.addLine(cx + gap, cy,  cx + ext, cy,  red, 1.5f);
-            draw.addLine(cx, cy - ext,  cx, cy - gap,  red, 1.5f);
-            draw.addLine(cx, cy + gap,  cx, cy + ext,  red, 1.5f);
+            draw.addLine(cx - ext, cy, cx - gap, cy, red, 1.5f);
+            draw.addLine(cx + gap, cy, cx + ext, cy, red, 1.5f);
+            draw.addLine(cx, cy - ext, cx, cy - gap, red, 1.5f);
+            draw.addLine(cx, cy + gap, cx, cy + ext, red, 1.5f);
 
             // Charge % below crosshair
             String pct = String.format("%.0f%%", chargeF * 100f);
             draw.addText(cx - 10f, cy + ring + 8f, black, pct);
-            draw.addText(cx - 11f, cy + ring + 7f, red,   pct);
+            draw.addText(cx - 11f, cy + ring + 7f, red, pct);
 
         } else {
             // ── NORMAL — plain white crosshair ────────────────────────────────────
@@ -560,8 +574,8 @@ class WindowHud {
 
             // ── KAMUI ABSORPTION RING — shows charge building around crosshair ──
             if (win.player.abilities.isKamui && win.player.abilities.absorptionCharge > 0f) {
-                float ch    = win.player.abilities.absorptionCharge;
-                double now  = glfwGetTime();
+                float ch = win.player.abilities.absorptionCharge;
+                double now = glfwGetTime();
                 float pulse = 0.7f + 0.3f * (float) Math.sin(now * 12.0);
                 int ringCol = ImGui.colorConvertFloat4ToU32(0.8f, 0.2f, 1.0f, 0.85f * ch * pulse);
                 // Clockwise fill arc — approximate with many small lines around the ring
@@ -583,12 +597,12 @@ class WindowHud {
         }
 
         // ── REDIRECT INDICATOR ──
-        boolean aimingAtDrone  = !win.player.stand.isInStandPerspective() && win.player.attacks.isAimingAtStand(camera);
-        boolean redirectReady  = aimingAtDrone && win.player.attacks.isRedirectAvailable(win.world);
+        boolean aimingAtDrone = !win.player.stand.isInStandPerspective() && win.player.attacks.isAimingAtStand(camera);
+        boolean redirectReady = aimingAtDrone && win.player.attacks.isRedirectAvailable(win.world);
 
         if (aimingAtDrone) {
             // Both states are now high-contrast Yellow/Gold
-            int yellow  = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
+            int yellow = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.10f, 1.0f);
             int grey = ImGui.colorConvertFloat4ToU32(0.5f, 0.5f, 0.5f, 1.0f);
 
             int blackBg = ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.85f);
@@ -635,14 +649,14 @@ class WindowHud {
 
             // Hotbar
             float slotSize = 40.0f, spacing = 5.0f;
-            int   numSlots = 9;
+            int numSlots = 9;
             float startX = cx - ((numSlots * slotSize + (numSlots - 1) * spacing) / 2.0f);
             float startY = screenH - slotSize - 10.0f;
             win.selectedBlock = win.hotbar[win.selectedSlot];
 
             for (int i = 0; i < numSlots; i++) {
                 float x = startX + i * (slotSize + spacing);
-                int bgCol  = (i == win.selectedSlot)
+                int bgCol = (i == win.selectedSlot)
                         ? ImGui.colorConvertFloat4ToU32(0.6f, 0.6f, 0.6f, 0.8f)
                         : ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
                 draw.addRectFilled(x, startY, x + slotSize, startY + slotSize, bgCol, 4.0f);
@@ -651,8 +665,8 @@ class WindowHud {
                         : ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.8f);
                 draw.addRect(x, startY, x + slotSize, startY + slotSize, outCol, 4.0f, 0,
                         (i == win.selectedSlot) ? 3.0f : 1.5f);
-                Block b     = win.hotbar[i];
-                int   count = win.inventory.getCount(b);
+                Block b = win.hotbar[i];
+                int count = win.inventory.getCount(b);
                 if (b != Block.AIR && count > 0) {
                     float shrink = 8.0f;
                     int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
@@ -662,7 +676,7 @@ class WindowHud {
                             x + slotSize - shrink, startY + slotSize - shrink, black, 2.0f, 0, 1.5f);
                     String countStr = String.valueOf(count);
                     draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
-                    draw.addText(x + slotSize - 15, startY + slotSize - 19, white , countStr);
+                    draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
                 }
             }
         } // end !isInStandPerspective (health bar + win.hotbar guard)
@@ -671,13 +685,13 @@ class WindowHud {
         if (win.player.debugMode) {
             FlightController.FlightMode mode = win.player.flightController.getMode();
             String modeLabel = switch (mode) {
-                case SKIM    -> "✦ SKIM";
-                case SOAR    -> "✦ SOAR";
+                case SKIM -> "✦ SKIM";
+                case SOAR -> "✦ SOAR";
                 case GRAPPLE -> "✦ GRAPPLE";
             };
             int modeColor = switch (mode) {
-                case SKIM    -> ImGui.colorConvertFloat4ToU32(0.4f, 0.9f, 0.4f, 0.9f);
-                case SOAR    -> ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, 0.9f);
+                case SKIM -> ImGui.colorConvertFloat4ToU32(0.4f, 0.9f, 0.4f, 0.9f);
+                case SOAR -> ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, 0.9f);
                 case GRAPPLE -> ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.2f, 0.9f);
             };
             draw.addText(cx - 30, cy - 60, black, modeLabel);
@@ -692,7 +706,7 @@ class WindowHud {
             if (mode == FlightController.FlightMode.GRAPPLE) {
                 FlightController fc = win.player.flightController;
                 int grappleGold = ImGui.colorConvertFloat4ToU32(1.0f, 0.78f, 0.1f, 1.0f);
-                int grappleRed  = ImGui.colorConvertFloat4ToU32(1.0f, 0.35f, 0.1f, 0.9f);
+                int grappleRed = ImGui.colorConvertFloat4ToU32(1.0f, 0.35f, 0.1f, 0.9f);
                 int grappleGrey = ImGui.colorConvertFloat4ToU32(0.75f, 0.75f, 0.75f, 0.7f);
 
                 if (fc.isHooked()) {
@@ -704,10 +718,10 @@ class WindowHud {
 
                     // Draw a small "anchor" diamond at crosshair center to distinguish state
                     float d = 7f;
-                    draw.addLine(cx,     cy - d, cx + d, cy,     grappleGold, 2.0f);
-                    draw.addLine(cx + d, cy,     cx,     cy + d, grappleGold, 2.0f);
-                    draw.addLine(cx,     cy + d, cx - d, cy,     grappleGold, 2.0f);
-                    draw.addLine(cx - d, cy,     cx,     cy - d, grappleGold, 2.0f);
+                    draw.addLine(cx, cy - d, cx + d, cy, grappleGold, 2.0f);
+                    draw.addLine(cx + d, cy, cx, cy + d, grappleGold, 2.0f);
+                    draw.addLine(cx, cy + d, cx - d, cy, grappleGold, 2.0f);
+                    draw.addLine(cx - d, cy, cx, cy - d, grappleGold, 2.0f);
                 } else {
                     // Unhooked: show targeting guide
                     String aimStr = "[ ] AIM + Hold [RIGHT-CLICK] or [F]";
@@ -791,18 +805,18 @@ class WindowHud {
         // When piloting the drone: replace most HUD with a clean drone cockpit view.
         if (win.player.stand.isInStandPerspective()) {
             // Dim border vignette to indicate we are in drone mode
-            int vigCol  = ImGui.colorConvertFloat4ToU32(0.05f, 0.1f, 0.35f, 0.55f);
+            int vigCol = ImGui.colorConvertFloat4ToU32(0.05f, 0.1f, 0.35f, 0.55f);
             float vEdge = 80f;
-            draw.addRectFilled(0f,                screenH - vEdge, screenW, screenH,          vigCol);
-            draw.addRectFilled(0f,                0f,               screenW, vEdge,            vigCol);
-            draw.addRectFilled(0f,                0f,               vEdge,   screenH,          vigCol);
-            draw.addRectFilled(screenW - vEdge,   0f,               screenW, screenH,          vigCol);
+            draw.addRectFilled(0f, screenH - vEdge, screenW, screenH, vigCol);
+            draw.addRectFilled(0f, 0f, screenW, vEdge, vigCol);
+            draw.addRectFilled(0f, 0f, vEdge, screenH, vigCol);
+            draw.addRectFilled(screenW - vEdge, 0f, screenW, screenH, vigCol);
 
             // ── Stand health bar ──────────────────────────────────────────────
             float shW = 160f, shH = 12f;
             float shX = cx - shW / 2f, shY = 18f;
-            int shBg  = ImGui.colorConvertFloat4ToU32(0.05f, 0.05f, 0.2f,  0.85f);
-            int shFg  = ImGui.colorConvertFloat4ToU32(0.25f, 0.65f, 1.0f,  1.0f);
+            int shBg = ImGui.colorConvertFloat4ToU32(0.05f, 0.05f, 0.2f, 0.85f);
+            int shFg = ImGui.colorConvertFloat4ToU32(0.25f, 0.65f, 1.0f, 1.0f);
             draw.addRectFilled(shX, shY, shX + shW, shY + shH, shBg, 4f);
             float shFill = (win.player.stand.standHealth / GameConfig.standMaxHealth) * shW;
             draw.addRectFilled(shX, shY, shX + shFill, shY + shH, shFg, 4f);
@@ -815,11 +829,11 @@ class WindowHud {
             // ── LOS status indicators ─────────────────────────────────────────
             // Two dots: owner→stand (left), stand→target (right).
             // Green = clear, red = blocked.
-            float dotY   = shY + shH + 26f;
-            float dotR   = 5f;
+            float dotY = shY + shH + 26f;
+            float dotR = 5f;
             int losGreen = ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.35f, 1.0f);
-            int losRed   = ImGui.colorConvertFloat4ToU32(1.0f, 0.2f, 0.15f, 1.0f);
-            int losDim   = ImGui.colorConvertFloat4ToU32(0.4f, 0.4f, 0.4f,  0.6f);
+            int losRed = ImGui.colorConvertFloat4ToU32(1.0f, 0.2f, 0.15f, 1.0f);
+            int losDim = ImGui.colorConvertFloat4ToU32(0.4f, 0.4f, 0.4f, 0.6f);
 
             // Owner→Stand
             float d1X = cx - 28f;
@@ -851,8 +865,8 @@ class WindowHud {
 
             // ── Master position marker (glowing dot + distance) ───────────────
             // Project win.player body position to screen so pilot can see where master is.
-            Camera sc      = win.player.stand.standCamera;
-            Matrix4f svp   = new Matrix4f(sc.getProjectionMatrix()).mul(sc.getViewMatrix());
+            Camera sc = win.player.stand.standCamera;
+            Matrix4f svp = new Matrix4f(sc.getProjectionMatrix()).mul(sc.getViewMatrix());
             org.joml.Vector4f masterClip = new org.joml.Vector4f(
                     win.player.position.x, win.player.position.y + 0.9f, win.player.position.z, 1f).mul(svp);
             boolean masterInFront = masterClip.w > 0f;
@@ -863,14 +877,14 @@ class WindowHud {
                 float mNdcX = masterClip.x / masterClip.w;
                 float mNdcY = masterClip.y / masterClip.w;
                 boolean mOnScreen = Math.abs(mNdcX) <= 0.92f && Math.abs(mNdcY) <= 0.92f;
-                float mScrX = (mNdcX  * 0.5f + 0.5f) * screenW;
+                float mScrX = (mNdcX * 0.5f + 0.5f) * screenW;
                 float mScrY = (1f - (mNdcY * 0.5f + 0.5f)) * screenH;
 
                 if (mOnScreen) {
                     // Pulsing gold ring — master is visible from drone camera
                     int masterGold = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.15f, 0.9f);
                     draw.addCircle(mScrX, mScrY, 11f, masterGold, 24, 2.5f);
-                    draw.addCircle(mScrX, mScrY, 7f,  masterGold, 24, 1.5f);
+                    draw.addCircle(mScrX, mScrY, 7f, masterGold, 24, 1.5f);
                     draw.addText(mScrX - 12f, mScrY + 14f, black, distLabel);
                     draw.addText(mScrX - 13f, mScrY + 13f, masterGold, distLabel);
                 }
@@ -886,47 +900,47 @@ class WindowHud {
         // ── SEAL COUNT DISPLAY ────────────────────────────────────────────────
         // Show placed seal count + place cooldown tick only when NOT in drone view.
         if (!win.player.stand.isInStandPerspective() && !win.player.debugMode) {
-            int placed  = win.player.seals.getSealCount();
+            int placed = win.player.seals.getSealCount();
             int maxSeals = GameConfig.sealMaxCount;
             // Pip row: filled diamond = placed, hollow = available slot
-            float pipY     = screenH - 120f;
-            float pipGap   = 14f;
+            float pipY = screenH - 120f;
+            float pipGap = 14f;
             float pipStartX = cx - (maxSeals - 1) * pipGap / 2f;
-            int sealCyan  = ImGui.colorConvertFloat4ToU32(0.2f, 0.95f, 0.95f, 1.0f);
-            int sealDim   = ImGui.colorConvertFloat4ToU32(0.3f, 0.3f, 0.3f,  0.55f);
+            int sealCyan = ImGui.colorConvertFloat4ToU32(0.2f, 0.95f, 0.95f, 1.0f);
+            int sealDim = ImGui.colorConvertFloat4ToU32(0.3f, 0.3f, 0.3f, 0.55f);
 
             for (int i = 0; i < maxSeals; i++) {
-                float px  = pipStartX + i * pipGap;
+                float px = pipStartX + i * pipGap;
                 float half = 5f;
                 if (i < placed) {
                     // Filled diamond
-                    draw.addQuadFilled(px,       pipY - half,
+                    draw.addQuadFilled(px, pipY - half,
                             px + half, pipY,
-                            px,        pipY + half,
+                            px, pipY + half,
                             px - half, pipY, sealCyan);
-                    draw.addQuad(px,       pipY - half,
+                    draw.addQuad(px, pipY - half,
                             px + half, pipY,
-                            px,        pipY + half,
+                            px, pipY + half,
                             px - half, pipY, black, 1.2f);
                 } else {
                     // Empty diamond outline
-                    draw.addQuad(px,       pipY - half,
+                    draw.addQuad(px, pipY - half,
                             px + half, pipY,
-                            px,        pipY + half,
+                            px, pipY + half,
                             px - half, pipY, sealDim, 1.2f);
                 }
             }
 
             // Label: seal key hints on first and last slot
-            float placeF    = win.player.seals.getPlaceCooldownFrac();
+            float placeF = win.player.seals.getPlaceCooldownFrac();
             float teleportF = win.player.seals.getTeleportCooldownFrac();
             String sealLabel = String.format("[H] Place  [B] Teleport  [N] Reclaim   %d/%d",
                     placed, maxSeals);
             int labelCol = (placeF >= 1f)
                     ? ImGui.colorConvertFloat4ToU32(0.6f, 0.95f, 0.95f, 0.75f)
-                    : ImGui.colorConvertFloat4ToU32(0.45f, 0.6f,  0.6f,  0.55f);
+                    : ImGui.colorConvertFloat4ToU32(0.45f, 0.6f, 0.6f, 0.55f);
             draw.addText(cx - 95f, pipY + 10f, black, sealLabel);
-            draw.addText(cx - 96f, pipY + 9f,  labelCol, sealLabel);
+            draw.addText(cx - 96f, pipY + 9f, labelCol, sealLabel);
         }
 
         // ── SEAL HUD MARKERS ─────────────────────────────────────────────────
@@ -961,11 +975,11 @@ class WindowHud {
 
                 if (onScreen) {
                     // Project to pixel coords
-                    float sx = (ndcX  * 0.5f + 0.5f) * screenW;
+                    float sx = (ndcX * 0.5f + 0.5f) * screenW;
                     float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
 
                     // Pulse: ring radius grows/shrinks slightly
-                    float pulse = 1f + 0.12f * (float)Math.sin(seal.pulsePhase * 2f);
+                    float pulse = 1f + 0.12f * (float) Math.sin(seal.pulsePhase * 2f);
                     float outerR = (seal.targeted ? 18f : 11f) * pulse;
                     float innerR = outerR * 0.55f;
 
@@ -979,27 +993,27 @@ class WindowHud {
                     // Distance label just below the ring
                     float labelY = sy + outerR + 3f;
                     draw.addText(sx - 12f, labelY + 1f, black, distLabel);
-                    draw.addText(sx - 13f, labelY,      sealDimText, distLabel);
+                    draw.addText(sx - 13f, labelY, sealDimText, distLabel);
 
                 } else {
                     // Off-screen arrow — same dot-product technique as the stand indicator
                     Vector3f toSeal = new Vector3f(seal.position)
                             .sub(camera.position).normalize();
                     Vector3f right = camera.getRight();
-                    Vector3f up    = new Vector3f(right)
+                    Vector3f up = new Vector3f(right)
                             .cross(camera.getLookDirection()).normalize();
 
-                    float dirX  = toSeal.dot(right);
-                    float dirY  = -toSeal.dot(up);
-                    float angle = (float)Math.atan2(dirY, dirX);
+                    float dirX = toSeal.dot(right);
+                    float dirY = -toSeal.dot(up);
+                    float angle = (float) Math.atan2(dirY, dirX);
                     float edgeR = Math.min(cx, cy) * 0.80f;
 
-                    float ax = cx + (float)Math.cos(angle) * edgeR;
-                    float ay = cy + (float)Math.sin(angle) * edgeR;
+                    float ax = cx + (float) Math.cos(angle) * edgeR;
+                    float ay = cy + (float) Math.sin(angle) * edgeR;
 
                     // Small triangle arrow
-                    float cosA = (float)Math.cos(angle);
-                    float sinA = (float)Math.sin(angle);
+                    float cosA = (float) Math.cos(angle);
+                    float sinA = (float) Math.sin(angle);
                     float tl = 12f, tw = 7f;
                     // tip, left-base, right-base
                     float t1x = ax + cosA * tl * 0.5f, t1y = ay + sinA * tl * 0.5f;
@@ -1012,9 +1026,9 @@ class WindowHud {
 
                     // Distance label beside arrow
                     draw.addText(ax + cosA * (tl + 3f) - 10f,
-                                 ay + sinA * (tl + 3f) - 6f, black, distLabel);
+                            ay + sinA * (tl + 3f) - 6f, black, distLabel);
                     draw.addText(ax + cosA * (tl + 3f) - 11f,
-                                 ay + sinA * (tl + 3f) - 7f, sealDimText, distLabel);
+                            ay + sinA * (tl + 3f) - 7f, sealDimText, distLabel);
                 }
             }
         }
@@ -1032,7 +1046,7 @@ class WindowHud {
             Matrix4f enemyVP = new Matrix4f(hpProj).mul(hpView);
 
             // Camera eye position and look direction for in-front culling
-            Vector3f eyePos  = new Vector3f(camera.position);
+            Vector3f eyePos = new Vector3f(camera.position);
             Vector3f lookDir = camera.getLookDirection();
 
             for (Enemy enemy : win.enemyManager.getEnemies()) {
@@ -1060,12 +1074,12 @@ class WindowHud {
                 // Tight cull — only show when enemy is well within screen bounds
                 if (ndcX < -1.05f || ndcX > 1.05f || ndcY < -1.05f || ndcY > 1.05f) continue;
 
-                float sx = (ndcX  * 0.5f + 0.5f) * screenW;
+                float sx = (ndcX * 0.5f + 0.5f) * screenW;
                 float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
 
                 float hpFrac = Math.max(0f, enemy.health / enemy.maxHealth);
-                float barW   = 44f, barH = 6f;
-                float barX   = sx - barW / 2f, barY = sy - barH;
+                float barW = 44f, barH = 6f;
+                float barX = sx - barW / 2f, barY = sy - barH;
 
                 // Background
                 draw.addRectFilled(barX, barY, barX + barW, barY + barH,
@@ -1106,13 +1120,13 @@ class WindowHud {
         // ── WAVE COUNTER ──────────────────────────────────────────────────────
         // Top-left: "WAVE N — next in Xs" or "MAX ENEMIES REACHED"
         if (!win.player.stand.isInStandPerspective() && !win.player.debugMode) {
-            int   waveNum   = win.enemyManager.getWaveNumber();
+            int waveNum = win.enemyManager.getWaveNumber();
             float waveTimer = win.enemyManager.getWaveTimer();
-            int   liveCount = (int) win.enemyManager.getEnemies().stream().filter(e -> e.alive).count();
-            int   maxCount  = GameConfig.spawnMaxEnemies;
+            int liveCount = (int) win.enemyManager.getEnemies().stream().filter(e -> e.alive).count();
+            int maxCount = GameConfig.spawnMaxEnemies;
 
             String waveLabel;
-            int    waveColor;
+            int waveColor;
             if (liveCount >= maxCount) {
                 waveLabel = String.format("WAVE %d  ■ MAX ENEMIES (%d/%d)", waveNum, liveCount, maxCount);
                 waveColor = ImGui.colorConvertFloat4ToU32(1.0f, 0.4f, 0.15f, 0.95f);
@@ -1130,8 +1144,8 @@ class WindowHud {
                         0.85f - 0.75f * urgency,
                         0.85f);
             }
-            draw.addText(12f, 13f, black,      waveLabel);
-            draw.addText(11f, 12f, waveColor,  waveLabel);
+            draw.addText(12f, 13f, black, waveLabel);
+            draw.addText(11f, 12f, waveColor, waveLabel);
         }
 
         // ── TIME SCALE INDICATOR ──────────────────────────────────────────────
@@ -1157,9 +1171,9 @@ class WindowHud {
         // Row 1 (top): Q  E  F  G  Z  K  J   — combat abilities + swap
         // Row 2 (bot): X  H  B  V             — Stand + Seal + Substitute
         float iconSize = 28f;
-        float spacing  = 6f;
-        int   black    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
-        int   grey     = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
+        float spacing = 6f;
+        int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
+        int grey = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
 
         // Row 1 — Q / E / F / G / Z / K / J / M / I / U / O
         {
@@ -1167,8 +1181,8 @@ class WindowHud {
             float startX = screenW - totalW - 14f;
             float startY = screenH - iconSize * 2f - spacing - 14f;
 
-            String[] labels   = { "Q",    "E",     "F",     "G",      "Z",      "K",      "J",    "M",        "I",     "U",         "O"  };
-            String[] tooltips = { "Dash","Blink","Slash","Cannon","Kamui","Pillar","Swap","Quagmire","Stone","Lightning","Grab" };
+            String[] labels = {"Q", "E", "F", "G", "Z", "K", "J", "M", "I", "U", "O"};
+            String[] tooltips = {"Dash", "Blink", "Slash", "Cannon", "Kamui", "Pillar", "Swap", "Quagmire", "Stone", "Lightning", "Grab"};
             float todoFrac = (GameConfig.todoCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, win.todoSwapCooldown / GameConfig.todoCooldown))
                     : 0f;
@@ -1178,16 +1192,16 @@ class WindowHud {
             float stoneFrac = win.isChargingStoneCanon
                     ? Math.min(1f, win.stoneCanonCharge / GameConfig.stoneCanonMaxCharge)
                     : ((GameConfig.stoneCanonCooldown > 0f)
-                        ? Math.max(0f, Math.min(1f, 1f - win.stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
-                        : 1f);
+                       ? Math.max(0f, Math.min(1f, 1f - win.stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
+                       : 1f);
             float lightningFrac = win.player.lightning.isCharging()
                     ? win.player.lightning.getChargeFrac()
                     : win.player.lightning.getCooldownFrac();
             float kamuiFrac = win.player.abilities.isKamui
                     ? win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration
                     : win.player.abilities.getKamuiCooldownFrac();
-            float grabFrac  = win.player.grab.getCooldownFrac();
-            float[]  fracs = {
+            float grabFrac = win.player.grab.getCooldownFrac();
+            float[] fracs = {
                     win.player.abilities.getDashCooldownFrac(),
                     win.player.abilities.getBlinkCooldownFrac(),
                     win.player.attacks.getMeleeCooldownFrac(),
@@ -1201,25 +1215,25 @@ class WindowHud {
                     grabFrac
             };
             float stoneR = win.isChargingStoneCanon
-                    ? 0.85f + (float)Math.sin(glfwGetTime() * 6) * 0.15f : 0.65f;
+                    ? 0.85f + (float) Math.sin(glfwGetTime() * 6) * 0.15f : 0.65f;
             float lightningA = win.player.lightning.isCharging()
-                    ? 0.6f + (float)Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
+                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
             float kamuiR = win.player.abilities.isKamui
-                    ? 0.55f + (float)Math.sin(glfwGetTime() * 8) * 0.2f : 0.45f;
+                    ? 0.55f + (float) Math.sin(glfwGetTime() * 8) * 0.2f : 0.45f;
             float grabA = win.player.grab.isActive()
-                    ? 0.6f + (float)Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
+                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
             int[] colors = {
                     ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),       // Q dash: cyan
                     ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),       // E blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f),      // F slash: amber
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.1f,  1.0f),      // G cannon: gold
-                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f,  1.0f),      // Z Kamui: purple
-                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f),      // K pillar: grey
-                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f,  1.0f),      // J swap: pink-magenta
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.55f, 0.06f, 1.0f),      // F slash: amber
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.1f, 1.0f),      // G cannon: gold
+                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f, 1.0f),      // Z Kamui: purple
+                    ImGui.colorConvertFloat4ToU32(0.6f, 0.6f, 0.65f, 1.0f),      // K pillar: grey
+                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f, 1.0f, 1.0f),      // J swap: pink-magenta
                     ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f),      // M quagmire: muddy green
                     ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f),     // I stone: orange-grey
-                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f,  lightningA),// U lightning: ice-blue
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.20f, 0.15f, grabA)      // O grab: red
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightningA),// U lightning: ice-blue
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.20f, 0.15f, grabA)      // O grab: red
             };
 
             for (int i = 0; i < labels.length; i++) {
@@ -1247,40 +1261,40 @@ class WindowHud {
 
             // X: stand deploy — gold when deployed, blue-grey on cooldown
             boolean standDeployed = win.player.stand.isDeployed();
-            float   standFrac     = win.player.stand.getRedeployCooldownFrac();
-            int     standColor    = standDeployed
+            float standFrac = win.player.stand.getRedeployCooldownFrac();
+            int standColor = standDeployed
                     ? ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.15f, 1.0f)
-                    : ImGui.colorConvertFloat4ToU32(0.4f, 0.65f, 0.9f,  1.0f);
+                    : ImGui.colorConvertFloat4ToU32(0.4f, 0.65f, 0.9f, 1.0f);
 
             // H: seal place — cyan when ready
-            float sealPlaceFrac  = win.player.seals.getPlaceCooldownFrac();
-            int   sealPlaceColor = ImGui.colorConvertFloat4ToU32(0.2f, 0.92f, 0.92f, 1.0f);
+            float sealPlaceFrac = win.player.seals.getPlaceCooldownFrac();
+            int sealPlaceColor = ImGui.colorConvertFloat4ToU32(0.2f, 0.92f, 0.92f, 1.0f);
 
             // B: seal teleport — teal when ready
-            float sealTpFrac  = win.player.seals.getTeleportCooldownFrac();
-            int   sealTpColor = ImGui.colorConvertFloat4ToU32(0.1f, 0.75f, 0.65f, 1.0f);
+            float sealTpFrac = win.player.seals.getTeleportCooldownFrac();
+            int sealTpColor = ImGui.colorConvertFloat4ToU32(0.1f, 0.75f, 0.65f, 1.0f);
 
             // V: substitute — bright white when primed, dim when on cooldown
-            float subFrac  = (GameConfig.substituteCooldown > 0f)
+            float subFrac = (GameConfig.substituteCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, win.substituteCooldown / GameConfig.substituteCooldown))
                     : 0f;
             // When primed the icon is fully lit regardless of cooldown display
             float subFracDisplay = win.substitutePrimed ? 1f : (1f - subFrac);
-            int   subColor = win.substitutePrimed
+            int subColor = win.substitutePrimed
                     ? ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1.0f) // bright white when primed
                     : ImGui.colorConvertFloat4ToU32(0.85f, 0.87f, 0.95f, 1.0f);
 
             // L: heal — green, pulses brighter when actively healing
-            float healFrac  = win.player.abilities.getHealCooldownFrac();
-            int   healColor = win.player.abilities.isHealing
+            float healFrac = win.player.abilities.getHealCooldownFrac();
+            int healColor = win.player.abilities.isHealing
                     ? ImGui.colorConvertFloat4ToU32(0.1f, 1.0f, 0.35f, 1.0f) // bright green when healing
                     : ImGui.colorConvertFloat4ToU32(0.15f, 0.75f, 0.30f, 1.0f);
 
-            String[] labels2   = { "X",     "H",    "B",    "V",   "L"    };
-            String[] tooltips2 = { "Stand", "Seal", "Warp", "Sub", "Heal" };
-            float[]  fracs2    = { standDeployed ? 1f : standFrac,
-                                   sealPlaceFrac, sealTpFrac, subFracDisplay, healFrac };
-            int[]    colors2   = { standColor, sealPlaceColor, sealTpColor, subColor, healColor };
+            String[] labels2 = {"X", "H", "B", "V", "L"};
+            String[] tooltips2 = {"Stand", "Seal", "Warp", "Sub", "Heal"};
+            float[] fracs2 = {standDeployed ? 1f : standFrac,
+                    sealPlaceFrac, sealTpFrac, subFracDisplay, healFrac};
+            int[] colors2 = {standColor, sealPlaceColor, sealTpColor, subColor, healColor};
 
             for (int i = 0; i < labels2.length; i++) {
                 float x = startX + i * (iconSize + spacing);
@@ -1294,7 +1308,7 @@ class WindowHud {
                 // Substitute icon: bright pulsing outline when primed
                 boolean specialBorder = (i == 0 && standDeployed) || (i == 3 && win.substitutePrimed);
                 float outlineThick = specialBorder ? 2.5f : 1.5f;
-                int   outlineCol   = specialBorder ? colors2[i] : black;
+                int outlineCol = specialBorder ? colors2[i] : black;
                 draw.addRect(x, startY, x + iconSize, startY + iconSize,
                         outlineCol, 5f, 0, outlineThick);
                 draw.addText(x + 9f, startY + 7f, black, labels2[i]);
@@ -1318,7 +1332,7 @@ class WindowHud {
         ImGui.setNextWindowBgAlpha(0.94f);
         ImGui.begin("Controls & Abilities",
                 imgui.flag.ImGuiWindowFlags.NoResize |
-                imgui.flag.ImGuiWindowFlags.NoMove);
+                        imgui.flag.ImGuiWindowFlags.NoMove);
 
         ImGui.textDisabled("  [F1] or [ESC] to close.   Scroll down for all sections.");
         ImGui.separator();
@@ -1327,106 +1341,106 @@ class WindowHud {
         // ── MOVEMENT ──────────────────────────────────────────────────────────
         ImGui.textColored(0.5f, 0.9f, 1.0f, 1.0f, "MOVEMENT");
         ImGui.separator();
-        helpRow("WASD",                 "Move. Double-tap W to sprint.");
-        helpRow("Space",                "Jump. Double-tap Space to toggle flight mode.");
-        helpRow("Shift (in air)",       "While falling from height: slam into the ground. Craters the terrain and damages nearby enemies. Bigger fall = bigger crater.");
+        helpRow("WASD", "Move. Double-tap W to sprint.");
+        helpRow("Space", "Jump. Double-tap Space to toggle flight mode.");
+        helpRow("Shift (in air)", "While falling from height: slam into the ground. Craters the terrain and damages nearby enemies. Bigger fall = bigger crater.");
         ImGui.spacing();
 
         // ── FLIGHT ────────────────────────────────────────────────────────────
         ImGui.textColored(0.4f, 0.75f, 1.0f, 1.0f, "FLIGHT  (double-tap Space to enter / exit)");
         ImGui.separator();
-        helpRow("[V]  Cycle mode",      "Switch between SKIM → SOAR → GRAPPLE flight modes.");
-        helpRow("SKIM",                 "Glide forward with gravity. Pitch your camera to angle up or down. Good for fast horizontal travel.");
-        helpRow("SOAR",                 "Full 3D free-flight. WASD moves relative to your look direction. Space = up, Shift = down. No gravity.");
-        helpRow("GRAPPLE",              "Swing on a grapple line attached to the block you're looking at.");
+        helpRow("[V]  Cycle mode", "Switch between SKIM → SOAR → GRAPPLE flight modes.");
+        helpRow("SKIM", "Glide forward with gravity. Pitch your camera to angle up or down. Good for fast horizontal travel.");
+        helpRow("SOAR", "Full 3D free-flight. WASD moves relative to your look direction. Space = up, Shift = down. No gravity.");
+        helpRow("GRAPPLE", "Swing on a grapple line attached to the block you're looking at.");
         ImGui.spacing();
 
         // ── COMBAT ────────────────────────────────────────────────────────────
         ImGui.textColored(1.0f, 0.35f, 0.2f, 1.0f, "COMBAT");
         ImGui.separator();
-        helpRow("[F]  Slash",           "Wide melee swing. Hits every enemy in a cone in front of you.");
-        helpRow("[C]  Snipe",           "Hold to charge a crystal bolt, release to fire. Longer charge = bigger explosion on impact.");
-        helpRow("[G]  Cannonball",      "Hold to charge, release to launch yourself as a cannonball. Explodes on landing. A dotted arc previews your trajectory while charging.");
-        helpRow("[U]  Lightning",       "Strike the enemy you're aiming at with a lightning bolt. Double-tap [U] quickly for an area burst that hits all nearby enemies.");
-        helpRow("[O]  Grab & Slam",     "Grab the enemy in your crosshair (up to ~4.5 blocks away), hoist them overhead, then smash them into the ground. Creates a crater. Big damage.");
+        helpRow("[F]  Slash", "Wide melee swing. Hits every enemy in a cone in front of you.");
+        helpRow("[C]  Snipe", "Hold to charge a crystal bolt, release to fire. Longer charge = bigger explosion on impact.");
+        helpRow("[G]  Cannonball", "Hold to charge, release to launch yourself as a cannonball. Explodes on landing. A dotted arc previews your trajectory while charging.");
+        helpRow("[U]  Lightning", "Strike the enemy you're aiming at with a lightning bolt. Double-tap [U] quickly for an area burst that hits all nearby enemies.");
+        helpRow("[O]  Grab & Slam", "Grab the enemy in your crosshair (up to ~4.5 blocks away), hoist them overhead, then smash them into the ground. Creates a crater. Big damage.");
         ImGui.spacing();
 
         // ── MOVEMENT ABILITIES ────────────────────────────────────────────────
         ImGui.textColored(1.0f, 0.78f, 0.15f, 1.0f, "MOVEMENT ABILITIES");
         ImGui.separator();
-        helpRow("[Q]  Dash",            "Instant burst in the direction you're moving. Very short cooldown. Leaves a ghost trail behind you.");
-        helpRow("[E]  Blink",           "Teleport to the point you're looking at (up to ~22 blocks). Short cooldown.");
-        helpRow("[K]  Pillar",          "A stone spire erupts beneath your feet and launches you into the air.");
+        helpRow("[Q]  Dash", "Instant burst in the direction you're moving. Very short cooldown. Leaves a ghost trail behind you.");
+        helpRow("[E]  Blink", "Teleport to the point you're looking at (up to ~22 blocks). Short cooldown.");
+        helpRow("[K]  Pillar", "A stone spire erupts beneath your feet and launches you into the air.");
         ImGui.spacing();
 
         // ── SPECIAL ABILITIES ─────────────────────────────────────────────────
         ImGui.textColored(0.85f, 0.35f, 1.0f, 1.0f, "SPECIAL ABILITIES");
         ImGui.separator();
-        helpRow("[Z]  Kamui",           "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously — ends when mana runs out or you press Z again. Cooldown after use.");
-        helpRow("[J]  Position Swap",   "Instantly teleport-swap with the nearest enemy in range. Great for escaping a bad spot or dropping enemies off cliffs.");
-        helpRow("[V]  Substitute",      "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed — you blink backward, a paper dummy appears at your old position, then explodes a moment later damaging nearby enemies.");
-        helpRow("[M]  Quagmire",        "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact — they cannot move for several seconds.");
-        helpRow("[I]  Stone Canon",     "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile (you can't move while charging). Release to fire. The longer you charge, the more stone consumed and the bigger the explosion.");
-        helpRow("[L]  Heal",            "Hold [L] to channel healing energy. Restores health over time while held. You cannot move while channeling.");
+        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously — ends when mana runs out or you press Z again. Cooldown after use.");
+        helpRow("[J]  Position Swap", "Instantly teleport-swap with the nearest enemy in range. Great for escaping a bad spot or dropping enemies off cliffs.");
+        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed — you blink backward, a paper dummy appears at your old position, then explodes a moment later damaging nearby enemies.");
+        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact — they cannot move for several seconds.");
+        helpRow("[I]  Stone Canon", "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile (you can't move while charging). Release to fire. The longer you charge, the more stone consumed and the bigger the explosion.");
+        helpRow("[L]  Heal", "Hold [L] to channel healing energy. Restores health over time while held. You cannot move while channeling.");
         ImGui.spacing();
 
         // ── MANHATTAN TRANSFER (Stand / Drone) ────────────────────────────────
         ImGui.textColored(1.0f, 0.85f, 0.15f, 1.0f, "MANHATTAN TRANSFER  (Stand / Drone)");
         ImGui.separator();
-        helpRow("[X]",                  "Deploy your drone directly above you. Press [X] again to recall it.");
-        helpRow("[TAB]",                "Enter the drone's perspective to pilot it manually. Press [TAB] again to return to your body.");
-        helpRow("Piloting — WASD",      "Fly the drone. Space = up, Shift = down.");
-        helpRow("Piloting — click",     "Fire a shot in whatever direction the drone is facing.");
+        helpRow("[X]", "Deploy your drone directly above you. Press [X] again to recall it.");
+        helpRow("[TAB]", "Enter the drone's perspective to pilot it manually. Press [TAB] again to return to your body.");
+        helpRow("Piloting — WASD", "Fly the drone. Space = up, Shift = down.");
+        helpRow("Piloting — click", "Fire a shot in whatever direction the drone is facing.");
         helpRow("Not piloting — click", "The drone auto-targets and fires at the nearest visible enemy.");
         helpRow("Two dots (top-right)", "Indicate line-of-sight: yours (left dot) and the drone's (right dot). Both green = clear shot.");
-        helpRow("Gold diamond",         "Shows your drone's position on screen. If it's off-screen, an arrow on the edge points toward it.");
+        helpRow("Gold diamond", "Shows your drone's position on screen. If it's off-screen, an arrow on the edge points toward it.");
         ImGui.spacing();
 
         // ── MINATO'S SEAL ─────────────────────────────────────────────────────
         ImGui.textColored(0.2f, 0.95f, 0.95f, 1.0f, "MINATO'S SEAL  (Teleport Anchors)");
         ImGui.separator();
-        helpRow("[H]",                  "Throw a seal marker. It sticks to the first surface it touches.");
-        helpRow("[B]",                  "Instantly teleport to the seal nearest your crosshair. The targeted seal glows to indicate the destination.");
-        helpRow("[N]",                  "Pull the targeted seal back to your hand without teleporting.");
-        helpRow("Tip",                  "Up to 5 seals active at once. Use them for escape routes, high-ground setup, and rapid repositioning. Off-screen seals show as arrows on the screen edge.");
+        helpRow("[H]", "Throw a seal marker. It sticks to the first surface it touches.");
+        helpRow("[B]", "Instantly teleport to the seal nearest your crosshair. The targeted seal glows to indicate the destination.");
+        helpRow("[N]", "Pull the targeted seal back to your hand without teleporting.");
+        helpRow("Tip", "Up to 5 seals active at once. Use them for escape routes, high-ground setup, and rapid repositioning. Off-screen seals show as arrows on the screen edge.");
         ImGui.spacing();
 
         // ── TIME CONTROL ──────────────────────────────────────────────────────
         ImGui.textColored(0.7f, 1.0f, 0.6f, 1.0f, "TIME DILATION");
         ImGui.separator();
-        helpRow("[R]  Slow time",       "Everything moves in slow motion (including enemies). Useful for dodging or lining up a shot.");
-        helpRow("[Y]  Fast time",       "Speeds up time — enemies and projectiles move faster. Use carefully.");
+        helpRow("[R]  Slow time", "Everything moves in slow motion (including enemies). Useful for dodging or lining up a shot.");
+        helpRow("[Y]  Fast time", "Speeds up time — enemies and projectiles move faster. Use carefully.");
         ImGui.spacing();
 
         // ── WORLD & UI ────────────────────────────────────────────────────────
         ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & BUILDING");
         ImGui.separator();
-        helpRow("LMB (hold)",           "Break the block you're looking at.");
-        helpRow("RMB",                  "Place the block selected in your hotbar.");
-        helpRow("1 – 9",                "Select hotbar slot.");
-        helpRow("[P]",                  "Spawn a test enemy at your crosshair. Enemies also spawn automatically in waves.");
-        helpRow("[ESC]",                "Open the pause menu.");
-        helpRow("[F1]",                 "This screen.");
-        helpRow("[F3]",                 "Debug overlay (position, FPS, time scale, render distance).");
-        helpRow("[F5]",                 "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel — impossible geometry via FBO portal rendering.");
-        helpRow("[F6]",                 "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways — two are hidden portals that loop you back to the start.");
+        helpRow("LMB (hold)", "Break the block you're looking at.");
+        helpRow("RMB", "Place the block selected in your hotbar.");
+        helpRow("1 – 9", "Select hotbar slot.");
+        helpRow("[P]", "Spawn a test enemy at your crosshair. Enemies also spawn automatically in waves.");
+        helpRow("[ESC]", "Open the pause menu.");
+        helpRow("[F1]", "This screen.");
+        helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
+        helpRow("[F5]", "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel — impossible geometry via FBO portal rendering.");
+        helpRow("[F6]", "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways — two are hidden portals that loop you back to the start.");
         ImGui.spacing();
 
         // ── MANA & COOLDOWNS ──────────────────────────────────────────────────
         ImGui.textColored(0.4f, 0.6f, 1.0f, 1.0f, "MANA & RESOURCES");
         ImGui.separator();
-        helpRow("Mana bar",             "Blue bar below your health. Most abilities cost mana. Regenerates slowly over time.");
-        helpRow("Cooldown icons",       "The ability bar at the bottom shows each ability's cooldown as a filling overlay. Grayed-out = on cooldown or not enough mana.");
+        helpRow("Mana bar", "Blue bar below your health. Most abilities cost mana. Regenerates slowly over time.");
+        helpRow("Cooldown icons", "The ability bar at the bottom shows each ability's cooldown as a filling overlay. Grayed-out = on cooldown or not enough mana.");
         ImGui.spacing();
 
         // ── ENEMY TYPES ───────────────────────────────────────────────────────
         ImGui.textColored(0.9f, 0.3f, 0.1f, 1.0f, "ENEMIES");
         ImGui.separator();
-        helpRow("Green tint",           "ZOMBIE — slow melee chaser. Closes in and bites. Low damage per hit but relentless. Appears in large numbers early on.");
-        helpRow("Bone-white",           "THROWER — skeleton archer. Keeps its distance and pelts you with projectiles. Kill it before it repositions.");
-        helpRow("Blue-grey (large)",    "GOLEM — heavily armored tank. Slow but extremely tanky. Slams the ground for AoE damage and throws boulders. Appears from wave 3.");
-        helpRow("Health bars",          "Float above every enemy. Green = healthy, yellow = damaged, red = near death.");
-        helpRow("Waves",                "Enemies spawn in escalating waves. The wave number shows in the top-left. Later waves bring more Golems.");
+        helpRow("Green tint", "ZOMBIE — slow melee chaser. Closes in and bites. Low damage per hit but relentless. Appears in large numbers early on.");
+        helpRow("Bone-white", "THROWER — skeleton archer. Keeps its distance and pelts you with projectiles. Kill it before it repositions.");
+        helpRow("Blue-grey (large)", "GOLEM — heavily armored tank. Slow but extremely tanky. Slams the ground for AoE damage and throws boulders. Appears from wave 3.");
+        helpRow("Health bars", "Float above every enemy. Green = healthy, yellow = damaged, red = near death.");
+        helpRow("Waves", "Enemies spawn in escalating waves. The wave number shows in the top-left. Later waves bring more Golems.");
 
         ImGui.end();
     }
@@ -1452,18 +1466,18 @@ class WindowHud {
      * Fades in over 0.4 s and out over 1 s.
      */
     void renderWelcomeBanner(imgui.ImDrawList draw,
-                                     float screenW, float screenH, float timer) {
+                             float screenW, float screenH, float timer) {
         float alpha;
-        if      (timer > 5.6f) alpha = (6f - timer) / 0.4f;   // fade-in 0→0.4 s
+        if (timer > 5.6f) alpha = (6f - timer) / 0.4f;   // fade-in 0→0.4 s
         else if (timer < 1.0f) alpha = timer;                   // fade-out last 1 s
-        else                   alpha = 1f;
+        else alpha = 1f;
         alpha = Math.max(0f, Math.min(1f, alpha));
 
-        int bg     = ImGui.colorConvertFloat4ToU32(0.04f, 0.04f, 0.14f, 0.90f * alpha);
-        int border = ImGui.colorConvertFloat4ToU32(0.4f,  0.85f, 1.0f,  0.55f * alpha);
-        int white  = ImGui.colorConvertFloat4ToU32(1.0f,  1.0f,  1.0f,  alpha);
-        int cyan   = ImGui.colorConvertFloat4ToU32(0.4f,  0.9f,  1.0f,  alpha);
-        int black  = ImGui.colorConvertFloat4ToU32(0f,    0f,    0f,    alpha);
+        int bg = ImGui.colorConvertFloat4ToU32(0.04f, 0.04f, 0.14f, 0.90f * alpha);
+        int border = ImGui.colorConvertFloat4ToU32(0.4f, 0.85f, 1.0f, 0.55f * alpha);
+        int white = ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, alpha);
+        int cyan = ImGui.colorConvertFloat4ToU32(0.4f, 0.9f, 1.0f, alpha);
+        int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, alpha);
 
         float bW = 400f, bH = 56f;
         float bX = screenW / 2f - bW / 2f;
@@ -1476,10 +1490,10 @@ class WindowHud {
         String line2 = "Press  [F1]  for the full controls & ability guide.";
 
         // Approximate centering (default font ~7 px/char)
-        draw.addText(bX + bW / 2f - line1.length() * 3.6f,     bY + 8f,  black, line1);
-        draw.addText(bX + bW / 2f - line1.length() * 3.6f - 1, bY + 7f,  white, line1);
-        draw.addText(bX + bW / 2f - line2.length() * 3.6f,     bY + 29f, black, line2);
-        draw.addText(bX + bW / 2f - line2.length() * 3.6f - 1, bY + 28f, cyan,  line2);
+        draw.addText(bX + bW / 2f - line1.length() * 3.6f, bY + 8f, black, line1);
+        draw.addText(bX + bW / 2f - line1.length() * 3.6f - 1, bY + 7f, white, line1);
+        draw.addText(bX + bW / 2f - line2.length() * 3.6f, bY + 29f, black, line2);
+        draw.addText(bX + bW / 2f - line2.length() * 3.6f - 1, bY + 28f, cyan, line2);
     }
 
     /**
@@ -1487,14 +1501,14 @@ class WindowHud {
      * Fades out over the last 0.6 s of its duration.
      */
     void renderHintBanner(imgui.ImDrawList draw,
-                                   float screenW, float screenH,
-                                   float timer, String text) {
+                          float screenW, float screenH,
+                          float timer, String text) {
         float alpha = (timer < 0.6f) ? timer / 0.6f : 1f;
         alpha = Math.max(0f, Math.min(1f, alpha));
 
-        int bg    = ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f,  0.72f * alpha);
-        int fg    = ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.3f, alpha);
-        int black = ImGui.colorConvertFloat4ToU32(0f,   0f,   0f,    alpha);
+        int bg = ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.72f * alpha);
+        int fg = ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.3f, alpha);
+        int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, alpha);
 
         // Rough text width: 7 px/char
         float tw = text.length() * 7.0f;
@@ -1503,64 +1517,18 @@ class WindowHud {
 
         draw.addRectFilled(bX, bY, bX + tw + 24f, bY + 22f, bg, 4f);
         draw.addText(bX + 13f, bY + 5f, black, text);
-        draw.addText(bX + 12f, bY + 4f, fg,    text);
+        draw.addText(bX + 12f, bY + 4f, fg, text);
     }
 
-    void updateBreaking(float deltaTime) {
-        if (!win.breakingActive || win.lastTarget == null || !win.lastTarget.hit) {
-            win.breakProgress = 0.0f;
-            return;
-        }
-        int tx = win.lastTarget.hitX, ty = win.lastTarget.hitY, tz = win.lastTarget.hitZ;
-        if (tx != win.breakX || ty != win.breakY || tz != win.breakZ) {
-            win.breakProgress = 0.0f; win.breakX = tx; win.breakY = ty; win.breakZ = tz;
-            win.digSoundTimer  = 0f;   // reset interval so dig fires promptly on new target
-            win.digPreDelay    = 0f;   // reset pre-hold delay on new target (prevents misclick sounds)
-        }
-        Block target = win.world.getBlock(tx, ty, tz);
-        if (!target.isSolid()) { win.breakProgress = 0.0f; return; }
-
-        win.breakProgress += deltaTime / target.hardness;
-
-        // ── DIG SOUND (fires periodically while holding break key) ──────────
-        // Brief pre-hold delay (0.18 s) prevents accidental sounds from quick misclicks.
-        // After the delay, sound fires periodically scaled by block hardness.
-        final float DIG_START_DELAY = 0.18f;
-        win.digPreDelay += deltaTime;
-        if (win.digPreDelay >= DIG_START_DELAY) {
-            win.digSoundTimer -= deltaTime;
-            if (win.digSoundTimer <= 0f) {
-                String digSnd = Window.blockDigSound(target);
-                if ("crystal_clank_seq".equals(digSnd)) {
-                    digSnd = win.nextCrystalClank();   // shuffled note sequence
-                }
-                if (digSnd != null) AudioManager.playVaried(digSnd, 0.65f, 0.08f);
-                // Harder blocks = slightly slower dig interval
-                win.digSoundTimer = 0.30f + Math.min(0.20f, target.hardness * 0.08f);
-            }
-        }
-
-        if (win.breakProgress >= 1.0f) {
-            win.droppedItems.add(new DroppedItem(tx, ty, tz, target));
-            win.world.setBlock(tx, ty, tz, Block.AIR);
-            win.world.rebuildChunkAt(tx, ty, tz);
-            if (win.network != null && win.network.connected) win.network.sendBreak(tx, ty, tz);
-            String breakSnd = Window.blockBreakSound(target);
-            if (breakSnd != null) AudioManager.playVaried(breakSnd, 0.85f, 0.07f);
-            win.breakProgress = 0.0f;
-            win.digSoundTimer  = 0f;
-            win.digPreDelay    = 0f;
-        }
-    }
 
     void renderDebugMenu() {
         ImGui.begin("Debug");
         ImGui.text(String.format("XYZ: %.3f / %.3f / %.3f",
                 win.player.position.x, win.player.position.y, win.player.position.z));
-        ImGui.text(String.format("FPS: %.1f",   ImGui.getIO().getFramerate()));
+        ImGui.text(String.format("FPS: %.1f", ImGui.getIO().getFramerate()));
         ImGui.text(String.format("Seed: %d", GameConfig.seed));
         ImGui.text(String.format("DeltaTime: %.4fs", ImGui.getIO().getDeltaTime()));
-        ImGui.text(String.format("TimeScale: %.3f",  TimeController.getInstance().getScale()));
+        ImGui.text(String.format("TimeScale: %.3f", TimeController.getInstance().getScale()));
         if (win.player.debugMode) {
             ImGui.text("Flight mode: " + win.player.flightController.getMode().name());
         }
@@ -1580,7 +1548,7 @@ class WindowHud {
         if (ImGui.button("New World")) {
             try {
                 long newSeed = Long.parseLong(win.seedInput.get().trim());
-                GameConfig.seed  = newSeed;
+                GameConfig.seed = newSeed;
                 win.worldGen.resetSeed(newSeed);
                 win.world.clearAllChunks();
                 win.world.meshingQueue.clear();
@@ -1594,5 +1562,82 @@ class WindowHud {
             }
         }
         ImGui.end();
+    }
+
+    // --- FILE: ./main/java/com/leaf/game/core/WindowHud.java ---
+// (Replace the updateBreaking method with this updated version)
+
+    void updateBreaking(float deltaTime) {
+        if (!win.breakingActive || win.lastTarget == null || !win.lastTarget.hit) {
+            win.breakProgress = 0.0f;
+            win.digParticleTimer = 0.0f; // Reset particle timer when not digging
+            return;
+        }
+        int tx = win.lastTarget.hitX, ty = win.lastTarget.hitY, tz = win.lastTarget.hitZ;
+        if (tx != win.breakX || ty != win.breakY || tz != win.breakZ) {
+            win.breakProgress = 0.0f;
+            win.breakX = tx;
+            win.breakY = ty;
+            win.breakZ = tz;
+            win.digSoundTimer = 0f;
+            win.digPreDelay = 0f;
+            win.digParticleTimer = 0.0f; // Reset particle timer on target change
+        }
+        Block target = win.world.getBlock(tx, ty, tz);
+        if (!target.isSolid()) {
+            win.breakProgress = 0.0f;
+            return;
+        }
+
+        win.breakProgress += deltaTime / target.hardness;
+
+        // ── CONTINUOUS DIG PARTICLES (Debris Spray) ──────────────────────────
+        // Spawns small block fragments flying out from the digging location
+        // to provide solid, responsive visual feedback without drawing textures.
+        final float DIG_START_DELAY = 0.18f;
+        win.digPreDelay += deltaTime;
+        if (win.digPreDelay >= DIG_START_DELAY) {
+            win.digParticleTimer -= deltaTime;
+            if (win.digParticleTimer <= 0f) {
+                // Spawn a particle at a random offset on the block's face
+                float px = tx + 0.5f + (win.shakeRng.nextFloat() - 0.5f) * 0.4f;
+                float py = ty + 0.5f + (win.shakeRng.nextFloat() - 0.5f) * 0.4f;
+                float pz = tz + 0.5f + (win.shakeRng.nextFloat() - 0.5f) * 0.4f;
+
+                // Launch velocity: fly upward and slightly outward
+                Vector3f vel = new Vector3f(
+                        (win.shakeRng.nextFloat() - 0.5f) * 2.5f,
+                        1.5f + win.shakeRng.nextFloat() * 2.5f,
+                        (win.shakeRng.nextFloat() - 0.5f) * 2.5f
+                );
+
+                win.droppedItems.add(new DroppedItem(tx, ty, tz, target, vel));
+                // Fire a new particle every 0.15 seconds
+                win.digParticleTimer = 0.15f;
+            }
+
+            // ── DIG SOUND ────────────────────────────────────────────────────
+            win.digSoundTimer -= deltaTime;
+            if (win.digSoundTimer <= 0f) {
+                String digSnd = Window.blockDigSound(target);
+                if ("crystal_clank_seq".equals(digSnd)) {
+                    digSnd = win.nextCrystalClank();
+                }
+                if (digSnd != null) AudioManager.playVaried(digSnd, 0.65f, 0.08f);
+                win.digSoundTimer = 0.30f + Math.min(0.20f, target.hardness * 0.08f);
+            }
+        }
+
+        if (win.breakProgress >= 1.0f) {
+            win.droppedItems.add(new DroppedItem(tx, ty, tz, target));
+            win.world.setBlock(tx, ty, tz, Block.AIR);
+            win.world.rebuildChunkAt(tx, ty, tz);
+            String breakSnd = Window.blockBreakSound(target);
+            if (breakSnd != null) AudioManager.playVaried(breakSnd, 0.85f, 0.07f);
+            win.breakProgress = 0.0f;
+            win.digSoundTimer = 0f;
+            win.digPreDelay = 0f;
+            win.digParticleTimer = 0.0f;
+        }
     }
 }

@@ -12,7 +12,16 @@ public class Mesh {
     private final int eboId;
     private final int vertexCount;
 
+    /** Standard mesh — 10 floats per vertex: x y z  r g b a  nx ny nz */
     public Mesh(float[] vertices, int[] indices) {
+        this(vertices, indices, false);
+    }
+
+    /**
+     * UV-aware mesh — 12 floats per vertex: x y z  r g b a  nx ny nz  u v
+     * Pass hasUV = true when building chunk meshes that reference the block atlas.
+     */
+    public Mesh(float[] vertices, int[] indices, boolean hasUV) {
         this.vertexCount = indices.length;
 
         vaoId = glGenVertexArrays();
@@ -32,20 +41,25 @@ public class Mesh {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indicesBuffer, GL_STATIC_DRAW);
         MemoryUtil.memFree(indicesBuffer);
 
-        // Vertex format: x, y, z, r, g, b, a, nx, ny, nz  —  10 floats per vertex
-        int stride = 10 * Float.BYTES;
+        int stride = (hasUV ? 12 : 10) * Float.BYTES;
 
-        // location 0 — position
+        // location 0 — position (3 floats)
         glVertexAttribPointer(0, 3, GL_FLOAT, false, stride, 0);
         glEnableVertexAttribArray(0);
 
-        // location 1 — color (Now 4 floats for RGBA!)
+        // location 1 — colour (4 floats, RGBA)
         glVertexAttribPointer(1, 4, GL_FLOAT, false, stride, 3 * Float.BYTES);
         glEnableVertexAttribArray(1);
 
-        // location 2 — normal
+        // location 2 — normal (3 floats)
         glVertexAttribPointer(2, 3, GL_FLOAT, false, stride, 7 * Float.BYTES);
         glEnableVertexAttribArray(2);
+
+        if (hasUV) {
+            // location 3 — UV (2 floats, atlas texture coordinates)
+            glVertexAttribPointer(3, 2, GL_FLOAT, false, stride, 10 * Float.BYTES);
+            glEnableVertexAttribArray(3);
+        }
 
         glBindVertexArray(0);
     }

@@ -107,8 +107,8 @@ public class GameConfig {
     public static float rollLerpSpeed      = 2.5f;   // roll lerp rate (reduced from 6.0 — was too fast/disorienting)
 
     // ── GROUND SMASH ─────────────────────────────────────────────────────────
-    public static float smashMinHeight        = 2.0f;   // blocks fallen before smash triggers
-    public static float smashTriggerVelocity  = -3.0f;  // must be falling at least this fast
+    public static float smashMinHeight        = 0.0f;   // blocks fallen before smash triggers 2
+    public static float smashTriggerVelocity  = -0.0f;  // must be falling at least this fast-3
     public static float smashDescentSpeed     = 65.0f;  // initial speed at smash start (legacy, kept for reference)
     public static float smashDescentAccel     = 200.0f; // acceleration during smash (blocks/s²)
     public static float smashDescentMaxSpeed  = 130.0f; // terminal smash speed (blocks/s)

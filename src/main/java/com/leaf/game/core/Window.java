@@ -87,6 +87,7 @@ public class Window {
     final Inventory inventory = new Inventory();
     int   selectedSlot  = 0;
     Block selectedBlock = Block.AIR;
+    float digParticleTimer = 0f;
 
     final Block[] hotbar = {
             Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
@@ -210,7 +211,7 @@ public class Window {
     // Window temporarily offsets camera.position before rendering, then restores
     // it so Player's position accounting is unaffected.
     private float smashShakeTimer = 0f;   // counts down from smashShakeDuration
-    private final Random shakeRng = new Random();
+    public final Random shakeRng = new Random();
     private float activeShakeAmplitude = GameConfig.smashShakeAmplitude; // Dynamic amplitude
     private float activeShakeDuration  = GameConfig.smashShakeDuration;  // Dynamic duration
 
@@ -601,6 +602,7 @@ public class Window {
         // then decode every sound file once into heap memory.  Playback from this
         // point on is pure memory copy — no classpath IO, no thread-creation cost.
         AudioManager.warmup();
+        com.leaf.game.render.BlockTextureAtlas.load();
         // Subtle Doppler — enough to feel projectiles/wind pass by without the
         // cartoonish over-pitch a factor of 1.0 produces.
         AudioManager.setDopplerFactor(0.7f);
@@ -2351,6 +2353,16 @@ public class Window {
                     }
                 }
 
+                // ── BIND BLOCK TEXTURE ATLAS (if the PNG has been placed) ────
+                boolean atlasActive = com.leaf.game.render.BlockTextureAtlas.isLoaded();
+                if (atlasActive) {
+                    org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+                    org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D,
+                            com.leaf.game.render.BlockTextureAtlas.getTextureId());
+                    shader.setUniform("texSampler", 0);
+                    shader.setUniform("useTexture", 1);
+                }
+
                 // ── PASS 1: OPAQUE ────────────────────────────────────────────
                 shader.setUniform("mvp", renderMvp);
                 for (int dx = -R; dx <= R; dx++) {
@@ -2386,6 +2398,12 @@ public class Window {
                     }
                 }
                 glDisable(GL_BLEND);
+
+                // ── UNBIND ATLAS so subsequent passes use vertex colour ────────
+                if (atlasActive) {
+                    shader.setUniform("useTexture", 0);
+                    org.lwjgl.opengl.GL11.glBindTexture(org.lwjgl.opengl.GL11.GL_TEXTURE_2D, 0);
+                }
 
                 // ── PASS 3: OVERLAYS, ENTITIES & PROJECTILES (Blend Enabled) ──
                 glEnable(GL_BLEND);

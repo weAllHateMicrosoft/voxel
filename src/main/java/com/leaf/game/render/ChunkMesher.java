@@ -23,7 +23,7 @@ public class ChunkMesher {
             buf[size++] = v;
         }
         void clear() { size = 0; }
-        int vertexCount() { return size / 10; } // 10 floats per vertex
+        int vertexCount() { return size / 12; } // 12 floats per vertex (pos+col+norm+uv)
     }
     private static final class GrowableInts {
         int[] buf;
@@ -42,23 +42,23 @@ public class ChunkMesher {
     private static final GrowableFloats tVertsBuf = new GrowableFloats(16384);
     private static final GrowableInts   tIdxBuf   = new GrowableInts(8192);
 
+    // --- FILE: ./main/java/com/leaf/game/render/ChunkMesher.java ---
+// (Replace buildChunkMeshes and addFace with these updated versions)
+
     public static void buildChunkMeshes(World world, Chunk chunk) {
         oVertsBuf.clear(); oIdxBuf.clear();
         tVertsBuf.clear(); tIdxBuf.clear();
 
         int worldXStart = chunk.cx * Chunk.SIZE;
         int worldZStart = chunk.cz * Chunk.SIZE;
-        // worldYStart offsets local y (0..HEIGHT-1) to absolute world coordinates.
-        // For surface chunks (cy=0) this is 0; for deep abyss chunks it is negative.
         int worldYStart = chunk.cy * Chunk.HEIGHT;
 
         // ── 1. POPULATE LOCAL BLOCKS & META CACHE (Eliminates HashMap Lookups) ──
         Block[][][] blockCache = new Block[18][Chunk.HEIGHT + 2][18];
         byte[][][]  metaCache  = new byte[18][Chunk.HEIGHT + 2][18];
 
-        // Fetch horizontal neighbour chunks (same cy)
         Chunk center = chunk;
-        int cy_ = chunk.cy;  // use a local alias to distinguish from loop var
+        int cy_ = chunk.cy;
         Chunk nX   = world.getChunk(chunk.cx + 1, cy_, chunk.cz);
         Chunk pX   = world.getChunk(chunk.cx - 1, cy_, chunk.cz);
         Chunk nZ   = world.getChunk(chunk.cx,     cy_, chunk.cz + 1);
@@ -67,7 +67,6 @@ public class ChunkMesher {
         Chunk pXpZ = world.getChunk(chunk.cx - 1, cy_, chunk.cz - 1);
         Chunk nXpZ = world.getChunk(chunk.cx + 1, cy_, chunk.cz - 1);
         Chunk pXnZ = world.getChunk(chunk.cx - 1, cy_, chunk.cz + 1);
-        // Vertical neighbours — needed for y-boundary face culling and AO
         Chunk chunkAbove = world.getChunk(chunk.cx, cy_ + 1, chunk.cz);
         Chunk chunkBelow = world.getChunk(chunk.cx, cy_ - 1, chunk.cz);
 
@@ -82,15 +81,11 @@ public class ChunkMesher {
                     byte  m = 0;
 
                     if (y < 0) {
-                        // Below this chunk — look at the chunk directly underneath.
-                        // Only valid for the main (non-padded) columns; corner/lateral
-                        // neighbour overhangs stay AIR (they render in their own chunk).
                         if (target == center && chunkBelow != null) {
                             b = chunkBelow.getBlock(lx, Chunk.HEIGHT - 1, lz);
                             m = chunkBelow.getMeta(lx, Chunk.HEIGHT - 1, lz);
                         }
                     } else if (y >= Chunk.HEIGHT) {
-                        // Above this chunk — look at the chunk directly above.
                         if (target == center && chunkAbove != null) {
                             b = chunkAbove.getBlock(lx, 0, lz);
                             m = chunkAbove.getMeta(lx, 0, lz);
@@ -107,14 +102,8 @@ public class ChunkMesher {
         }
 
         // ── 2. MESH GENERATION LOOP ──
-        // Clamp Y to the tight bounds tracked in Chunk.setBlock. For typical
-        // surface chunks (terrain up to ~Y=150 out of 512) this eliminates
-        // ~70 % of inner-loop iterations. Deep solid abyss chunks still run
-        // the full range but those are infrequent. +/- 1 padding ensures we
-        // don't miss faces right at the boundary.
         int yMin = Math.max(0,              chunk.minBlockY - 1);
         int yMax = Math.min(Chunk.HEIGHT-1, chunk.maxBlockY + 1);
-        // If the chunk is completely empty (minBlockY > maxBlockY) skip entirely
         if (chunk.minBlockY > chunk.maxBlockY) {
             if (chunk.opaqueMesh      != null) { chunk.opaqueMesh.cleanup();      chunk.opaqueMesh = null; }
             if (chunk.transparentMesh != null) { chunk.transparentMesh.cleanup(); chunk.transparentMesh = null; }
@@ -125,7 +114,7 @@ public class ChunkMesher {
             for (int y = yMin; y <= yMax; y++) {
                 for (int z = 0; z < Chunk.SIZE;  z++) {
 
-                    int cx = x + 1; // offset for the padded caches
+                    int cx = x + 1;
                     int cy = y + 1;
                     int cz = z + 1;
 
@@ -134,15 +123,12 @@ public class ChunkMesher {
 
                     int wx = worldXStart + x;
                     int wz = worldZStart + z;
-                    // wy is the absolute world Y of this block's base.
-                    // For deep abyss chunks (cy < 0) this is negative.
                     float wy = worldYStart + y;
 
                     boolean isTrans = !block.isOpaque();
                     GrowableFloats verts   = isTrans ? tVertsBuf : oVertsBuf;
                     GrowableInts   indices = isTrans ? tIdxBuf   : oIdxBuf;
 
-                    // Compute sloped liquid bounds
                     float h00 = block.isLiquid() ? getLiquidCornerHeight(blockCache, metaCache, x, y, z, 0, 0) : 1f;
                     float h10 = block.isLiquid() ? getLiquidCornerHeight(blockCache, metaCache, x, y, z, 1, 0) : 1f;
                     float h11 = block.isLiquid() ? getLiquidCornerHeight(blockCache, metaCache, x, y, z, 1, 1) : 1f;
@@ -162,7 +148,7 @@ public class ChunkMesher {
                                 computeAO(blockCache, cx+1, cy+1, cz, cx, cy+1, cz+1, cx+1, cy+1, cz+1),
                                 computeAO(blockCache, cx-1, cy+1, cz, cx, cy+1, cz+1, cx-1, cy+1, cz+1)
                         };
-                        addFace(verts, indices, top, block, ao,  0f, 1f, 0f);
+                        addFace(verts, indices, top, block, ao,  0f, 1f, 0f, wx, (int)wy, wz);
                     }
                     if (shouldDrawFace(block, blockCache[cx][cy - 1][cz])) {
                         float[] ao = {
@@ -171,7 +157,7 @@ public class ChunkMesher {
                                 computeAO(blockCache, cx+1, cy-1, cz, cx, cy-1, cz-1, cx+1, cy-1, cz-1),
                                 computeAO(blockCache, cx-1, cy-1, cz, cx, cy-1, cz-1, cx-1, cy-1, cz-1)
                         };
-                        addFace(verts, indices, bot, block, ao,  0f, -1f, 0f);
+                        addFace(verts, indices, bot, block, ao,  0f, -1f, 0f, wx, (int)wy, wz);
                     }
                     if (shouldDrawFace(block, blockCache[cx][cy][cz + 1])) {
                         float[] ao = {
@@ -180,7 +166,7 @@ public class ChunkMesher {
                                 computeAO(blockCache, cx+1, cy, cz+1, cx, cy+1, cz+1, cx+1, cy+1, cz+1),
                                 computeAO(blockCache, cx-1, cy, cz+1, cx, cy+1, cz+1, cx-1, cy+1, cz+1)
                         };
-                        addFace(verts, indices, front, block, ao,  0f, 0f, 1f);
+                        addFace(verts, indices, front, block, ao,  0f, 0f, 1f, wx, (int)wy, wz);
                     }
                     if (shouldDrawFace(block, blockCache[cx][cy][cz - 1])) {
                         float[] ao = {
@@ -189,7 +175,7 @@ public class ChunkMesher {
                                 computeAO(blockCache, cx-1, cy, cz-1, cx, cy+1, cz-1, cx-1, cy+1, cz-1),
                                 computeAO(blockCache, cx+1, cy, cz-1, cx, cy+1, cz-1, cx+1, cy+1, cz-1)
                         };
-                        addFace(verts, indices, back, block, ao,  0f, 0f, -1f);
+                        addFace(verts, indices, back, block, ao,  0f, 0f, -1f, wx, (int)wy, wz);
                     }
                     if (shouldDrawFace(block, blockCache[cx + 1][cy][cz])) {
                         float[] ao = {
@@ -198,7 +184,7 @@ public class ChunkMesher {
                                 computeAO(blockCache, cx+1, cy+1, cz, cx+1, cy, cz-1, cx+1, cy+1, cz-1),
                                 computeAO(blockCache, cx+1, cy+1, cz, cx+1, cy, cz+1, cx+1, cy+1, cz+1)
                         };
-                        addFace(verts, indices, right, block, ao,  1f, 0f, 0f);
+                        addFace(verts, indices, right, block, ao,  1f, 0f, 0f, wx, (int)wy, wz);
                     }
                     if (shouldDrawFace(block, blockCache[cx - 1][cy][cz])) {
                         float[] ao = {
@@ -207,7 +193,7 @@ public class ChunkMesher {
                                 computeAO(blockCache, cx-1, cy+1, cz, cx-1, cy, cz+1, cx-1, cy+1, cz+1),
                                 computeAO(blockCache, cx-1, cy+1, cz, cx-1, cy, cz-1, cx-1, cy+1, cz-1)
                         };
-                        addFace(verts, indices, left, block, ao,  -1f, 0f, 0f);
+                        addFace(verts, indices, left, block, ao,  -1f, 0f, 0f, wx, (int)wy, wz);
                     }
                 }
             }
@@ -219,7 +205,6 @@ public class ChunkMesher {
         chunk.transparentMesh = buildMesh(tVertsBuf, tIdxBuf);
         chunk.dirty = false;
 
-        // Neighbor mesh update triggers (horizontal + vertical)
         if (!chunk.meshBuilt) {
             chunk.meshBuilt = true;
             int cy_m = chunk.cy;
@@ -229,6 +214,65 @@ public class ChunkMesher {
             Chunk pZ_chunk = world.getChunk(chunk.cx, cy_m, chunk.cz - 1); if (pZ_chunk != null) pZ_chunk.dirty = true;
             Chunk uY_chunk = world.getChunk(chunk.cx, cy_m + 1, chunk.cz); if (uY_chunk != null) uY_chunk.dirty = true;
             Chunk dY_chunk = world.getChunk(chunk.cx, cy_m - 1, chunk.cz); if (dY_chunk != null) dY_chunk.dirty = true;
+        }
+    }
+
+    private static void addFace(GrowableFloats verts, GrowableInts indices,
+                                float[] faceVertices, Block block, float[] ao,
+                                float nx, float ny, float nz,
+                                int wx, int wy, int wz) {
+        int baseIndex = verts.vertexCount();
+
+        int faceIndex = block.getFaceIndex(nx, ny, nz);
+
+        // 1. SIDE SHUFFLING: If it's a side face (2=front, 3=back, 4=right, 5=left),
+        //    use a deterministic hash of the block's world coordinates to rotate
+        //    which face on your unwrap is shown.
+        if (faceIndex >= 2 && faceIndex <= 5) {
+            int offset = (wx * 23 + wy * 31 + wz * 13) & 3; // returns positive [0, 3]
+            faceIndex = 2 + ((faceIndex - 2 + offset) & 3);
+        }
+
+        float[] uv = BlockTextureAtlas.getUV(block.texName, faceIndex);
+        float uMin = uv[0], vMin = uv[1], uMax = uv[2], vMax = uv[3];
+
+        // 2. UV ROTATION: Deterministically rotate the UV corner assignments by
+        //    0, 90, 180, or 270 degrees on a per-block basis.
+        int rot = (wx * 11 + wy * 13 + wz * 17) & 3; // returns positive [0, 3]
+
+        float[] baseUs = { uMin, uMax, uMax, uMin };
+        float[] baseVs = { vMin, vMin, vMax, vMax };
+        if (Math.abs(ny) < 0.5f) {
+            // Vertical side face base Vs are flipped
+            baseVs = new float[]{ vMax, vMax, vMin, vMin };
+        }
+
+        float[] us = new float[4];
+        float[] vs = new float[4];
+        for (int i = 0; i < 4; i++) {
+            int srcIdx = (i + rot) & 3;
+            us[i] = baseUs[srcIdx];
+            vs[i] = baseVs[srcIdx];
+        }
+
+        for (int i = 0; i < 4; i++) {
+            verts.add(faceVertices[i * 3]);
+            verts.add(faceVertices[i * 3 + 1]);
+            verts.add(faceVertices[i * 3 + 2]);
+            verts.add(block.r * ao[i]);
+            verts.add(block.g * ao[i]);
+            verts.add(block.b * ao[i]);
+            verts.add(block.a);
+            verts.add(nx); verts.add(ny); verts.add(nz);
+            verts.add(us[i]);
+            verts.add(vs[i]);
+        }
+        if (ao[0] + ao[2] > ao[1] + ao[3]) {
+            indices.add(baseIndex);     indices.add(baseIndex + 1); indices.add(baseIndex + 2);
+            indices.add(baseIndex + 2); indices.add(baseIndex + 3); indices.add(baseIndex);
+        } else {
+            indices.add(baseIndex);     indices.add(baseIndex + 1); indices.add(baseIndex + 3);
+            indices.add(baseIndex + 1); indices.add(baseIndex + 2); indices.add(baseIndex + 3);
         }
     }
 
@@ -292,15 +336,40 @@ public class ChunkMesher {
 
     private static Mesh buildMesh(GrowableFloats verts, GrowableInts indices) {
         if (verts.size == 0) return null;
-        // Pass slices of the backing arrays — Mesh constructor copies what it needs
         return new Mesh(Arrays.copyOf(verts.buf, verts.size),
-                        Arrays.copyOf(indices.buf, indices.size));
+                        Arrays.copyOf(indices.buf, indices.size),
+                        true);  // 12-float UV layout
     }
 
     private static void addFace(GrowableFloats verts, GrowableInts indices,
                                  float[] faceVertices, Block block, float[] ao,
                                  float nx, float ny, float nz) {
         int baseIndex = verts.vertexCount();
+
+        // Look up UV for this block face.
+        // getFaceIndex maps the normal to one of 6 faces (top/bottom/front/back/right/left).
+        // getUV returns {uMin,vMin,uMax,vMax} from the stitched atlas.
+        // Falls back to a white tile so blocks with no PNG still show their flat colour.
+        float[] uv   = BlockTextureAtlas.getUV(block.texName, block.getFaceIndex(nx, ny, nz));
+        float uMin = uv[0], vMin = uv[1], uMax = uv[2], vMax = uv[3];
+
+        // UV orientation per face:
+        //   Top/bottom (ny != 0): tile laid flat — any corner assignment works.
+        //   Side faces: tiles are loaded without a vertical flip, so Aseprite's
+        //   row 0 (visual top) maps to small V in GL.  Assign vMin to top
+        //   vertices and vMax to bottom vertices so the image appears right-side
+        //   up on walls.  Vertex order in faceVertices: v0/v1 = bottom, v2/v3 = top.
+        float[] us, vs;
+        if (Math.abs(ny) > 0.5f) {
+            // Horizontal face: tile flat across XZ.
+            us = new float[]{ uMin, uMax, uMax, uMin };
+            vs = new float[]{ vMin, vMin, vMax, vMax };
+        } else {
+            // Vertical (side) face: v0/v1 at block bottom, v2/v3 at block top.
+            us = new float[]{ uMin, uMax, uMax, uMin };
+            vs = new float[]{ vMax, vMax, vMin, vMin };
+        }
+
         for (int i = 0; i < 4; i++) {
             verts.add(faceVertices[i * 3]);
             verts.add(faceVertices[i * 3 + 1]);
@@ -310,6 +379,8 @@ public class ChunkMesher {
             verts.add(block.b * ao[i]);
             verts.add(block.a);
             verts.add(nx); verts.add(ny); verts.add(nz);
+            verts.add(us[i]);
+            verts.add(vs[i]);
         }
         if (ao[0] + ao[2] > ao[1] + ao[3]) {
             indices.add(baseIndex);     indices.add(baseIndex + 1); indices.add(baseIndex + 2);
@@ -319,4 +390,6 @@ public class ChunkMesher {
             indices.add(baseIndex + 1); indices.add(baseIndex + 2); indices.add(baseIndex + 3);
         }
     }
+
+
 }
