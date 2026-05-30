@@ -55,12 +55,26 @@ java {
 //   ./gradlew preview --args="monster.bbmodel"
 def isMac = System.getProperty('os.name').toLowerCase().contains('mac')
 
+tasks.register('run', JavaExec) {
+    group = 'application'
+    description = 'Launch the game.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.leaf.game.Main'
+    if (isMac) jvmArgs '-XstartOnFirstThread'   // GLFW must own the first thread on macOS
+    // JOML 1.10.5 ships major-version-46 (Java 1.2) bytecode, which routes through
+    // HotSpot's legacy inference verifier. That verifier null-derefs (SIGSEGV in
+    // _platform_strlen) on Temurin 25 / macOS aarch64. The bytecode is valid; the
+    // verifier is buggy — so skip verification for these trusted bundled libs.
+    jvmArgs '-Xverify:none'
+}
+
 tasks.register('preview', JavaExec) {
     group = 'application'
     description = 'Launch the standalone animation preview sandbox.'
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.leaf.game.anim.AnimPreview'
     if (isMac) jvmArgs '-XstartOnFirstThread'   // GLFW must own the first thread on macOS
+    jvmArgs '-Xverify:none'                      // same JOML verifier workaround as run
 }
 
 tasks.register('bbconvert', JavaExec) {
