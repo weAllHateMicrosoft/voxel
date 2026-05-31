@@ -1640,4 +1640,88 @@ class WindowHud {
             win.digParticleTimer = 0.0f;
         }
     }
+
+    // ── SNOW PARTICLE OVERLAY ─────────────────────────────────────────────────
+    // Screen-space procedural snowfall drawn with ImGui foreground draw list.
+    // Uses a deterministic hash (no per-flake Java state) — N seeds produce N
+    // stable screen-position trajectories that drift downward + windward over time.
+    //
+    //  intensity  0..1  driven by altitude above snowAltitude
+    //  gustStrength 0..1  tilts snow sideways when wind gusts
+    //  gustAngle  radians  direction of horizontal tilt
+    // ─────────────────────────────────────────────────────────────────────────
+    public void renderSnowEffect(float screenW, float screenH,
+                                  float timeAccum, float intensity,
+                                  float gustStrength, float gustAngle) {
+        if (intensity < 0.02f) return;
+
+        var draw = ImGui.getForegroundDrawList();
+
+        // 3 depth layers: {sizeMin, sizeMax, fallSpeed px/s, timeScale, count}
+        // Far = tiny/slow (background haze), near = large/fast (immersive)
+        float[][] layers = {
+            { 0.8f, 1.4f,  22f, 0.60f, 60 },
+            { 1.3f, 2.2f,  42f, 1.00f, 55 },
+            { 2.0f, 3.5f,  72f, 1.55f, 35 }
+        };
+
+        // Wind drift: how far horizontally per second of accumulated time
+        float driftX = (float)Math.cos(gustAngle) * gustStrength * 55f;
+        float driftY = (float)Math.sin(gustAngle) * gustStrength * 18f;
+
+        for (int li = 0; li < layers.length; li++) {
+            float sMin  = layers[li][0];
+            float sMax  = layers[li][1];
+            float speed = layers[li][2];
+            float ts    = layers[li][3];
+            int   count = (int)(layers[li][4] * intensity);
+
+            float t = timeAccum * ts;
+
+            for (int i = 0; i < count; i++) {
+                int seed = i + li * 1000;
+
+                // Deterministic base position + motion parameters from seed
+                float bx    = fhash(seed * 7)     * screenW;
+                float by    = fhash(seed * 7 + 1) * screenH;
+                float spd   = speed  + fhash(seed * 7 + 2) * speed * 0.35f;
+                float phase = fhash(seed * 7 + 3) * 6.2832f;  // twinkle phase
+                float size  = sMin   + fhash(seed * 7 + 4) * (sMax - sMin);
+                float sway  = fhash(seed * 7 + 5) * 28f - 14f; // subtle horizontal sway
+
+                // Current screen position (wraps around both axes)
+                float cy = (by + spd * t) % (screenH + size * 4);
+                if (cy < 0) cy += screenH + size * 4;
+                float cx = bx + (driftX + sway) * t * 0.055f;
+                cx = ((cx % screenW) + screenW) % screenW;
+
+                // Slight shimmer
+                float twinkle = 0.72f + 0.28f * (float)Math.sin(timeAccum * 2.4f + phase);
+                // Near-edge fade so flakes don't pop in/out at screen border
+                float edgeFade = edgeFade(cx, cy, screenW, screenH, size * 6);
+                float a = intensity * twinkle * edgeFade;
+
+                int col = ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, a);
+                draw.addCircleFilled(cx, cy, size, col);
+            }
+        }
+    }
+
+    /** Deterministic float hash in [0,1] from an integer seed. */
+    private float fhash(int n) {
+        n = (n ^ 0xB5297A4D) ^ (n >> 14);
+        n *= 0x68E31DA4;
+        n ^= n >> 14;
+        n *= 0x1B56C4E9;
+        n ^= n >> 16;
+        return ((n >>> 8) & 0xFFFF) / 65535f;
+    }
+
+    /** Returns 0..1 fade that is 1 in the interior and 0 near the screen edge. */
+    private float edgeFade(float cx, float cy, float w, float h, float margin) {
+        float ex = Math.min(cx, w - cx) / margin;
+        float ey = Math.min(cy, h - cy) / margin;
+        float t  = Math.min(1f, Math.min(ex, ey));
+        return t * t * (3f - 2f * t); // smoothstep
+    }
 }

@@ -245,6 +245,16 @@ public class Window {
     // abruptly starting/stopping them (avoids pops and sudden silence on landing).
     private float windFade            = 0f;
 
+    // ── Snow weather + ambient wind gusts ─────────────────────────────────────
+    // Accumulated game-time drives snowflake animation (deterministic, no state).
+    private float snowTimeAccum    = 0f;
+    private float snowIntensity    = 0f;  // 0..1, updated each frame from altitude
+    // Gust system: fires randomly, audible even when standing still, tilts snow.
+    private float windGustStrength = 0f;   // smoothed 0..1 current strength
+    private float windGustAngle    = 0f;   // radians — which way the gust blows
+    private float windGustTimer    = 10f + (float)(Math.random() * 18f); // until next gust
+    private float windGustDuration = 0f;   // remaining seconds of current gust
+
     // ── Footstep state ───────────────────────────────────────────────────────
     // Walking/running files are long loops — we keep one looping continuously
     // rather than re-triggering them as one-shots.
@@ -1701,9 +1711,11 @@ public class Window {
                         float softVol  = SOFT_MAX_VOL * softFade
                                 * Math.min(1f, Math.max(0f, (totalAirSpeed - 1.5f) / 4f));
 
-                        AudioManager.setContinuousVolume("wind/wind_soft", softVol * windFade);
-                        AudioManager.setContinuousVolume("wind/wind_blow", blowVol * windFade);
-                        AudioManager.setContinuousVolume("wind/wind_big",  bigVol  * windFade);
+                        // Gust boost: Math.max so gusts NEVER reduce existing flight-wind.
+                        float gB = windGustStrength * 0.55f;
+                        AudioManager.setContinuousVolume("wind/wind_soft", Math.max(softVol * windFade, gB * 0.45f));
+                        AudioManager.setContinuousVolume("wind/wind_blow", Math.max(blowVol * windFade, gB * 0.60f));
+                        AudioManager.setContinuousVolume("wind/wind_big",  Math.max(bigVol  * windFade, gB * 0.28f));
 
                         // ── TILT PAN ───────────────────────────────────────────
                         // When flying and rolling, shift wind_blow left/right to match
@@ -1738,6 +1750,26 @@ public class Window {
                                 AudioManager.play("wind/wind_cemetery", 0.35f);
                                 caveWindCooldown = 10f + (float)Math.random() * 14f;
                             }
+                        }
+
+                        // ── AMBIENT WIND GUSTS ────────────────────────────────────
+                        // Fires randomly even when standing still — a sudden gust of
+                        // cold mountain wind. Boosts all wind beds, plays wind_harsh
+                        // as the gust arrives, and tilts snow particles sideways.
+                        // Independent of flight speed so it surprises the player.
+                        windGustTimer -= deltaTime;
+                        if (windGustTimer <= 0f && !camSubmerged) {
+                            windGustDuration = 3.5f + (float)Math.random() * 4.0f;
+                            windGustAngle    = (float)(Math.random() * Math.PI * 2);
+                            windGustTimer    = 18f + (float)Math.random() * 35f;
+                            AudioManager.playVaried("wind/wind_harsh",
+                                    0.45f + (float)Math.random() * 0.30f, 0.07f);
+                        }
+                        if (windGustDuration > 0f) {
+                            windGustDuration -= deltaTime;
+                            windGustStrength  = Math.min(1f, windGustStrength + deltaTime * 1.8f);
+                        } else {
+                            windGustStrength  = Math.max(0f, windGustStrength - deltaTime * 1.1f);
                         }
 
                         // ── MUFFLE (low-pass on the whole mix) ────────────────
@@ -2137,6 +2169,17 @@ public class Window {
                     snowAtmStr = Math.max(0f, Math.min(snowT, 1f)) * 0.18f;
                 }
                 shader.setUniform("snowAtmosphereStrength", snowAtmStr);
+
+                // ── SNOW WEATHER INTENSITY (for particle effect) ──────────────
+                // Starts fading in 70 blocks below snow altitude, full by 60 above.
+                snowIntensity = 0f;
+                if (!isCameraUnderwater && lastEnv != AudioManager.ENV_CAVE) {
+                    float sLow  = GameConfig.snowAltitude - 70f;
+                    float sHigh = GameConfig.snowAltitude + 60f;
+                    snowIntensity = Math.max(0f, Math.min(1f,
+                            (camera.position.y - sLow) / (sHigh - sLow)));
+                }
+                snowTimeAccum += deltaTime;
 
                 // ── TIME DILATION VIGNETTE ────────────────────────────────────
                 // Slow motion: subtle blue-grey wash
@@ -2866,6 +2909,9 @@ public class Window {
                     if (showHelp)        hud.renderHelpScreen((float)ww[0], (float)wh[0]);
                     // Screen flash overlay (snipe, explosion, melee hit, etc.)
                     ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
+                    // Snow particle overlay — drawn on top of world, under flash
+                    hud.renderSnowEffect(ww[0], wh[0], snowTimeAccum,
+                                         snowIntensity, windGustStrength, windGustAngle);
                 }
             }
 
