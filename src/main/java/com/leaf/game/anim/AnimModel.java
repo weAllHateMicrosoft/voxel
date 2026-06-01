@@ -120,6 +120,12 @@ public class AnimModel {
             o.addProperty("cr", p.cr);
             o.addProperty("cg", p.cg);
             o.addProperty("cb", p.cb);
+            if (p.tex != null) o.addProperty("tex", p.tex);
+            if (p.geo != null) {
+                JsonArray geoArr = new JsonArray();
+                for (float f : p.geo) geoArr.add(f);
+                o.add("geo", geoArr);
+            }
             partsArr.add(o);
         }
         root.add("parts", partsArr);
@@ -142,6 +148,9 @@ public class AnimModel {
                     if (kf.tx != null) kfObj.addProperty("tx", kf.tx);
                     if (kf.ty != null) kfObj.addProperty("ty", kf.ty);
                     if (kf.tz != null) kfObj.addProperty("tz", kf.tz);
+                    if (kf.sx != null) kfObj.addProperty("sx", kf.sx);
+                    if (kf.sy != null) kfObj.addProperty("sy", kf.sy);
+                    if (kf.sz != null) kfObj.addProperty("sz", kf.sz);
                     if (!"linear".equals(kf.easing)) kfObj.addProperty("easing", kf.easing);
                     trackArr.add(kfObj);
                 }
@@ -173,6 +182,12 @@ public class AnimModel {
                 p.defaultRz = getF(o, "defaultRz", 0f);
                 p.cr = getF(o, "cr", 0.7f); p.cg = getF(o, "cg", 0.7f); p.cb = getF(o, "cb", 0.7f);
                 p.ca = getF(o, "ca", 1f);
+                if (o.has("tex") && !o.get("tex").isJsonNull()) p.tex = o.get("tex").getAsString();
+                if (o.has("geo") && o.get("geo").isJsonArray()) {
+                    JsonArray g = o.getAsJsonArray("geo");
+                    p.geo = new float[g.size()];
+                    for (int i = 0; i < g.size(); i++) p.geo[i] = g.get(i).getAsFloat();
+                }
                 m.parts.add(p);
             }
         }
@@ -196,6 +211,9 @@ public class AnimModel {
                             if (ko.has("ty")) kf.ty = ko.get("ty").getAsFloat();
                             if (ko.has("tz")) kf.tz = ko.get("tz").getAsFloat();
                             if (ko.has("easing")) kf.easing = ko.get("easing").getAsString();
+                            if (ko.has("sx")) kf.sx = ko.get("sx").getAsFloat();
+                            if (ko.has("sy")) kf.sy = ko.get("sy").getAsFloat();
+                            if (ko.has("sz")) kf.sz = ko.get("sz").getAsFloat();
                             track.add(kf);
                         }
                     }

@@ -70,7 +70,10 @@ public class AnimClip {
         RZ { @Override public Float get(Keyframe kf) { return kf.rz; } },
         TX { @Override public Float get(Keyframe kf) { return kf.tx; } },
         TY { @Override public Float get(Keyframe kf) { return kf.ty; } },
-        TZ { @Override public Float get(Keyframe kf) { return kf.tz; } };
+        TZ { @Override public Float get(Keyframe kf) { return kf.tz; } },
+        SX { @Override public Float get(Keyframe kf) { return kf.sx; } },
+        SY { @Override public Float get(Keyframe kf) { return kf.sy; } },
+        SZ { @Override public Float get(Keyframe kf) { return kf.sz; } };
         public abstract Float get(Keyframe kf);
     }
 

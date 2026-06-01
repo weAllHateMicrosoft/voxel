@@ -34,5 +34,13 @@ public class PartDef {
     // Display color (RGBA 0..1)
     public float cr = 0.7f, cg = 0.7f, cb = 0.7f, ca = 1f;
 
+    // ── Textured geometry (from Blockbench .bbmodel import) ───────────────────
+    // When 'geo' is non-null the renderer draws this exact triangle mesh with the
+    // texture at classpath 'tex' instead of a solid-coloured box. Positions are
+    // already baked into bone-local world units (so ox/oy/oz/pivot are unused).
+    //   geo layout: 5 floats per vertex (x, y, z, u, v), 3 vertices per triangle.
+    public float[] geo = null;   // null = use the box (w/h/d + colour) path
+    public String  tex = null;   // classpath path to the PNG, e.g. "/models/slime/body.png"
+
     public PartDef() {}
 }

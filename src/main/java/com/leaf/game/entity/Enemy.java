@@ -42,6 +42,9 @@ public class Enemy {
     private static final float GRAVITY          = 28f;
     private static final float MAX_FALL_SPEED   = 30f;
 
+    /** Player's horizontal half-width (Player.WIDTH / 2); enemies won't overlap this. */
+    private static final float PLAYER_RADIUS     = 0.3f;
+
     // ═════════════════════════════════════════════════════════════════════════
     //  Identity
     // ═════════════════════════════════════════════════════════════════════════
@@ -265,6 +268,7 @@ public class Enemy {
     // ═════════════════════════════════════════════════════════════════════════
 
     private void tickCooldowns(float dt) {
+        if (attackCooldown > 0f) attackCooldown -= dt; // ← was never decremented: enemies hit once then went passive
         if (slamCooldown  > 0f) slamCooldown  -= dt;
         if (throwCooldown > 0f) throwCooldown  -= dt;
         if (mudTrapTimer  > 0f) mudTrapTimer   -= dt;
@@ -480,6 +484,20 @@ public class Enemy {
                 position.x += (sx / dist) * push * dt;
                 position.z += (sz / dist) * push * dt;
             }
+        }
+
+        // ── Keep out of the player's personal space ───────────────────────────
+        // Without this the enemy walks straight into the player and the camera
+        // ends up inside the model (you see the hollow interior / texture glitch).
+        // minPlayerDist stays below attackRange for every type, so melee still lands.
+        float minPlayerDist = collisionRadius + PLAYER_RADIUS;
+        float pdx = position.x - target.x;
+        float pdz = position.z - target.z;
+        float pd  = (float) Math.sqrt(pdx * pdx + pdz * pdz);
+        if (pd < minPlayerDist && pd > 0.001f) {
+            float push = minPlayerDist - pd;
+            position.x += (pdx / pd) * push;
+            position.z += (pdz / pd) * push;
         }
     }
 

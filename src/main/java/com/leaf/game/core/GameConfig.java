@@ -177,7 +177,7 @@ public class GameConfig {
     public static float meleeRecoilDuration  = 0.22f;  // seconds
     public static float meleeCooldown        = 0.80f;  // seconds between strikes
     public static float meleeShakeStrength   = 0.13f;  // shake timer length (s)
-    public static float meleeDamage          = 35f;    // HP per hit (cone arc)
+    public static float meleeDamage          = 100f;    // HP per hit (cone arc)
     public static boolean melee3DAiming = true;
 
     // ── RANGED ATTACK (Void Shard — C key) ───────────────────────────────────
@@ -479,9 +479,9 @@ public class GameConfig {
 
     // Kamui costs
     /** Mana drained per second while Kamui is active. */
-    public static float manaKamuiDrain       = 1.5f;
+    public static float manaKamuiDrain       = 3.0f;
     /** Mana cost on a successful Kamui absorption (kill enemy / erase blocks). */
-    public static float manaKamuiAbsorption  = 18f;
+    public static float manaKamuiAbsorption  = 20f;
 
     // Movement-ability costs
     /** Mana cost per dash use. */
@@ -491,15 +491,15 @@ public class GameConfig {
     /** Mana cost to fire the cannonball. */
     public static float manaCannonball       = 18f;
     /** Mana cost per ground-smash activation. */
-    public static float manaSmash            = 8f;
+    public static float manaSmash            = 10f;
 
     // Attack costs
     /** Mana cost per Runic Cleave (F key). */
-    public static float manaCleave           = 5f;
+    public static float manaCleave           = 30f;
     /** Mana cost per Void Shard bolt (C key). */
-    public static float manaVoidShard        = 7f;
+    public static float manaVoidShard        = 20f;
     /** Mana cost when the earth pillar activates (one-time). */
-    public static float manaPillar           = 14f;
+    public static float manaPillar           = 40f;
     /** Mana drained per second while the pillar is actively rising (continuous). */
     public static float manaPillarPerSec     = 4f;
 
@@ -507,7 +507,7 @@ public class GameConfig {
     /** Mana cost for the Todo position-swap (one-time). */
     public static float manaTodoSwap         = 10f;
     /** Mana cost per Quagmire mud wave (one-time). */
-    public static float manaQuagmire         = 12f;
+    public static float manaQuagmire         = 15f;
     /** Mana drained per second while Stone Canon is charging (continuous). */
     public static float manaStoneCanonBase   = 4f;
     /** Mana consumed when Stone Canon fires, scaled by charge (0..1 × this). */

@@ -1294,11 +1294,11 @@ public class Window {
                                 enemyManager.spawnAt(
                                         hit.placeX + 0.5f,
                                         hit.placeY,
-                                        hit.placeZ + 0.5f);
+                                        hit.placeZ + 0.5f,
+                                        Enemy.Type.SLIME); // <--- Add SLIME here!
                             }
                         }
                         lastP = pHeld;
-
                         // ── TODO'S TECHNIQUE (J key) ──────────────────────────
                         if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
                         boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS;
@@ -2751,10 +2751,12 @@ public class Window {
                             }
                             ap.tick(rawDeltaTime);
 
-                            // Face the player (Y-axis rotation only)
+                            // Face the player (Y-axis rotation only).
+                            // +PI because Blockbench authors a model's front on the -Z face
+                            // (where the slime's eyes are); without it the model faces away.
                             float faceDx = player.position.x - enemy.position.x;
                             float faceDz = player.position.z - enemy.position.z;
-                            float faceY  = (float) Math.atan2(faceDx, faceDz);
+                            float faceY  = (float) Math.atan2(faceDx, faceDz) + (float) Math.PI;
 
                             float[] sv = enemy.renderScaleVec();
                             Matrix4f worldMat = new Matrix4f()

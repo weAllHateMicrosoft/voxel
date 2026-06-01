@@ -2,6 +2,7 @@ package com.leaf.game.anim;
 
 import com.leaf.game.render.Mesh;
 import com.leaf.game.render.Shader;
+import com.leaf.game.render.Texture;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -9,6 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL13.*;   // glActiveTexture, GL_TEXTURE0
 
 /**
  * Renders a posed AnimModel into whatever framebuffer is currently bound.
@@ -28,6 +30,11 @@ public class ModelRenderer {
     // Cache: "modelName:partId" -> Mesh
     private static final Map<String, Mesh> meshCache = new HashMap<>();
 
+    // Cache: classpath texture path -> Texture (NONE sentinel marks a failed load)
+    private static final Map<String, Texture> textureCache = new HashMap<>();
+    private static final Texture NONE = null; // readability for "tried, missing"
+    private static final java.util.Set<String> texMisses = new java.util.HashSet<>();
+
     public static void init() {
         shader = new Shader(
                 "src/main/resources/shaders/model_vertex.glsl",
@@ -44,7 +51,7 @@ public class ModelRenderer {
      * @param projection camera projection matrix
      */
     public static void render(AnimModel model, Map<String, Matrix4f> pose,
-                               Matrix4f worldMat, Matrix4f view, Matrix4f projection) {
+                              Matrix4f worldMat, Matrix4f view, Matrix4f projection) {
         if (shader == null) return;
 
         shader.bind();
@@ -52,26 +59,100 @@ public class ModelRenderer {
         shader.setUniform("ambient", 0.35f);
 
         glEnable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE); // <── FORCE DISABLE CULLING FOR ANIMATED MODELS HERE!
+
+        shader.setUniform("tex", 0);        // sampler reads texture unit 0
+        shader.setUniform("useTexture", 0); // default: solid vertex colour
 
         for (PartDef part : model.parts) {
             Mesh mesh = getMesh(model, part);
+            if (mesh == null) continue; // transform-only bone (no geometry)
 
             // MVP = projection × view × world × partPose
             Matrix4f partPose = pose.getOrDefault(part.id, new Matrix4f());
             Matrix4f mvp = new Matrix4f(projection).mul(view).mul(worldMat).mul(partPose);
             Matrix4f normalMat = new Matrix4f(worldMat).mul(partPose).invert().transpose();
 
+            // Bind this part's texture (if any) and toggle the sampler path.
+            Texture tx = (part.geo != null && part.tex != null) ? getTexture(part.tex) : NONE;
+            if (tx != null) {
+                glActiveTexture(GL_TEXTURE0);
+                tx.bind();
+                shader.setUniform("useTexture", 1);
+            } else {
+                shader.setUniform("useTexture", 0);
+            }
+
             shader.setUniform("mvp", mvp);
             shader.setUniform("normalMat", normalMat);
             mesh.render();
         }
 
+        shader.setUniform("useTexture", 0);
         shader.unbind();
     }
 
     private static Mesh getMesh(AnimModel model, PartDef part) {
+        // Transform-only bone: no geometry to draw.
+        if (part.geo == null && part.w <= 0 && part.h <= 0 && part.d <= 0) return null;
         String key = model.name + ":" + part.id;
-        return meshCache.computeIfAbsent(key, k -> BoxMesh.build(part));
+        return meshCache.computeIfAbsent(key,
+                k -> part.geo != null ? buildTexturedMesh(part) : BoxMesh.build(part));
+    }
+
+    /** Build a UV-aware Mesh from a part's baked triangle list (15 floats / triangle). */
+    private static Mesh buildTexturedMesh(PartDef part) {
+        float[] geo = part.geo;
+        int triCount = geo.length / 15;
+        int vCount   = triCount * 3;
+        float[] verts = new float[vCount * 12]; // pos3 + colour4 + normal3 + uv2
+        int[]   idx   = new int[vCount];
+        int vi = 0, ii = 0;
+
+        // Untextured geo groups fall back to the part's solid colour; textured → white.
+        float cr = part.tex != null ? 1f : part.cr;
+        float cg = part.tex != null ? 1f : part.cg;
+        float cb = part.tex != null ? 1f : part.cb;
+
+        for (int t = 0; t < triCount; t++) {
+            int o = t * 15;
+            float ax = geo[o],    ay = geo[o+1],  az = geo[o+2];
+            float bx = geo[o+5],  by = geo[o+6],  bz = geo[o+7];
+            float cx = geo[o+10], cy = geo[o+11], cz = geo[o+12];
+            // Flat face normal = normalize((b-a) × (c-a)).
+            float ux = bx-ax, uy = by-ay, uz = bz-az;
+            float wx = cx-ax, wy = cy-ay, wz = cz-az;
+            float nx = uy*wz - uz*wy, ny = uz*wx - ux*wz, nz = ux*wy - uy*wx;
+            float len = (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
+            if (len < 1e-6f) len = 1f;
+            nx /= len; ny /= len; nz /= len;
+
+            for (int k = 0; k < 3; k++) {
+                int g = o + k * 5;
+                verts[vi++] = geo[g];   verts[vi++] = geo[g+1]; verts[vi++] = geo[g+2]; // position
+                verts[vi++] = cr; verts[vi++] = cg; verts[vi++] = cb; verts[vi++] = 1f; // colour
+                verts[vi++] = nx; verts[vi++] = ny; verts[vi++] = nz;                    // normal
+                verts[vi++] = geo[g+3]; verts[vi++] = geo[g+4];                          // uv
+                idx[ii] = ii; ii++;
+            }
+        }
+        return new Mesh(verts, idx, true);
+    }
+
+    /** Lazily load+cache a model texture from the classpath. Returns null if missing. */
+    private static Texture getTexture(String classpathPath) {
+        Texture t = textureCache.get(classpathPath);
+        if (t != null) return t;
+        if (texMisses.contains(classpathPath)) return null;
+        try {
+            t = Texture.load(classpathPath);
+            textureCache.put(classpathPath, t);
+            return t;
+        } catch (Exception e) {
+            System.err.println("[ModelRenderer] Texture not found: " + classpathPath + " (" + e.getMessage() + ")");
+            texMisses.add(classpathPath);
+            return null;
+        }
     }
 
     /** Call when a part's colour or geometry changes (e.g. after editor edit). */
@@ -89,6 +170,9 @@ public class ModelRenderer {
     public static void cleanup() {
         for (Mesh m : meshCache.values()) m.cleanup();
         meshCache.clear();
+        for (Texture t : textureCache.values()) if (t != null) t.cleanup();
+        textureCache.clear();
+        texMisses.clear();
         if (shader != null) { shader.cleanup(); shader = null; }
     }
 

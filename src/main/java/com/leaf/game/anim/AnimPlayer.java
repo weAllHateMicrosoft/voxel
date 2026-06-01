@@ -123,6 +123,10 @@ public class AnimPlayer {
         float tx = sampleOrDefault(part.id, AnimClip.FloatChannel.TX, 0f);
         float ty = sampleOrDefault(part.id, AnimClip.FloatChannel.TY, 0f);
         float tz = sampleOrDefault(part.id, AnimClip.FloatChannel.TZ, 0f);
+        float sx = sampleOrDefault(part.id, AnimClip.FloatChannel.SX, 1f);
+        float sy = sampleOrDefault(part.id, AnimClip.FloatChannel.SY, 1f);
+        float sz = sampleOrDefault(part.id, AnimClip.FloatChannel.SZ, 1f);
+
 
         // Blend if crossfading
         if (blendClip != null && blendDur > 0) {
@@ -134,6 +138,9 @@ public class AnimPlayer {
             tx = lerp(tx, sampleBlend(part.id, AnimClip.FloatChannel.TX, 0f), alpha);
             ty = lerp(ty, sampleBlend(part.id, AnimClip.FloatChannel.TY, 0f), alpha);
             tz = lerp(tz, sampleBlend(part.id, AnimClip.FloatChannel.TZ, 0f), alpha);
+            sx = lerp(sx, sampleBlend(part.id, AnimClip.FloatChannel.SX, 1f), alpha);
+            sy = lerp(sy, sampleBlend(part.id, AnimClip.FloatChannel.SY, 1f), alpha);
+            sz = lerp(sz, sampleBlend(part.id, AnimClip.FloatChannel.SZ, 1f), alpha);
         }
 
         // 2. Build local transform: translate to origin, rotate around pivot, translate back
@@ -145,6 +152,7 @@ public class AnimPlayer {
                 .rotateX((float) Math.toRadians(rx))
                 .rotateY((float) Math.toRadians(ry))
                 .rotateZ((float) Math.toRadians(rz))
+                .scale(sx, sy, sz)
                 .translate(-part.pivotX, -part.pivotY, -part.pivotZ);
 
         // 3. Concatenate with parent transform (if any)

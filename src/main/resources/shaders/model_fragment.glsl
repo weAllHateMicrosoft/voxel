@@ -2,13 +2,25 @@
 
 in  vec4 vColor;
 in  vec3 vNormal;
+in  vec2 vUV;
 out vec4 FragColor;
 
 uniform vec3  lightDir;   // normalized world-space light direction
 uniform float ambient;    // 0..1
 
+// Texture sampling: set useTexture = 1 and bind a texture to unit 0 to draw the
+// Blockbench texture; useTexture = 0 (default) keeps the solid vertex-colour path.
+uniform sampler2D tex;
+uniform int       useTexture;
+
 void main() {
     float diff  = max(dot(vNormal, lightDir), 0.0);
     float light = ambient + (1.0 - ambient) * diff;
-    FragColor   = vec4(vColor.rgb * light, vColor.a);
+
+    vec4 base = vColor;
+    if (useTexture == 1) {
+        base = texture(tex, vUV);
+        if (base.a < 0.5) discard;   // cutout: don't let transparent texels occlude
+    }
+    FragColor = vec4(base.rgb * light, base.a);
 }

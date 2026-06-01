@@ -231,8 +231,20 @@ public class AnimPreview {
         boolean any = false;
 
         for (PartDef p : model.parts) {
-            if (p.w <= 0 && p.h <= 0 && p.d <= 0) continue; // transform-only bone
             Matrix4f m = pose.getOrDefault(p.id, new Matrix4f());
+            if (p.geo != null) {
+                // Textured geometry: fold each baked triangle vertex into the bounds.
+                for (int i = 0; i < p.geo.length; i += 5) {
+                    Vector4f v = new Vector4f(p.geo[i], p.geo[i + 1], p.geo[i + 2], 1f);
+                    v.mul(m);
+                    minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
+                    minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
+                    minZ = Math.min(minZ, v.z); maxZ = Math.max(maxZ, v.z);
+                    any = true;
+                }
+                continue;
+            }
+            if (p.w <= 0 && p.h <= 0 && p.d <= 0) continue; // transform-only bone
             float hw = p.w * 0.5f, hh = p.h * 0.5f, hd = p.d * 0.5f;
             // BoxMesh centres geometry at (-pivot).
             float cx = -p.pivotX, cy = -p.pivotY, cz = -p.pivotZ;

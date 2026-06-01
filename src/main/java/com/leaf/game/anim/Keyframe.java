@@ -14,6 +14,8 @@ public class Keyframe {
     public float  t  = 0f;       // time in seconds
     public Float  rx = null, ry = null, rz = null;  // rotation degrees
     public Float  tx = null, ty = null, tz = null;  // translation offset
+    public Float  sx = null, sy = null, sz = null;  // scale multiplier
+
     public String easing = "linear";
 
     public Keyframe() {}
