@@ -237,7 +237,13 @@ public class GameConfig {
     public static int sealLookMode = 1;
 
     // ── ENEMIES ───────────────────────────────────────────────────────────────
-    // Three enemy types: GOLEM, THROWER, PREDATOR (see below for their stats).
+    // ── ENEMY: SLIME ─────────────────────────────────────────────────────────
+    public static float slimeHealth         = 45f;
+    public static float slimeSpeed          = 3.0f;
+    public static float slimeDamagePerSec   = 4f;
+    public static float slimeAggroRange     = 25f;
+    public static float slimeAttackRange    = 1.5f;
+    public static float slimeAttackInterval = 1.0f;
 
     // ── ENEMY WAVE SPAWNING ───────────────────────────────────────────────────
     /** Seconds between automatic wave spawns. */

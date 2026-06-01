@@ -104,6 +104,7 @@ public class Window {
     // Single shared model definition; each enemy has its own AnimPlayer instance
     // (independent animation time) stored by enemy ID.
     private com.leaf.game.anim.AnimModel enemyAnimModel = null;
+    private com.leaf.game.anim.AnimModel slimeAnimModel = null;
     private final java.util.Map<Integer, com.leaf.game.anim.AnimPlayer> enemyAnimPlayers
             = new java.util.HashMap<>();
     /** Edge-detect for P key to spawn enemies. */
@@ -592,6 +593,10 @@ public class Window {
                 com.leaf.game.anim.AnimModel.loadFromClasspath("enemy_basic");
         if (enemyAnimModelLoaded != null)
             this.enemyAnimModel = enemyAnimModelLoaded;
+        com.leaf.game.anim.AnimModel slimeAnimModelLoaded =
+                com.leaf.game.anim.AnimModel.loadFromClasspath("slime");
+        if (slimeAnimModelLoaded != null)
+            this.slimeAnimModel = slimeAnimModelLoaded;
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
@@ -2702,19 +2707,21 @@ public class Window {
                 if (!enemyManager.getEnemies().isEmpty()) {
                     if (enemyAnimModel != null) {
                         // ── Animated path: enemy_basic.json with walk/attack/death ──
+                        // ── Animated path ──
                         for (Enemy enemy : enemyManager.getEnemies()) {
-                            float flashF = enemy.hitFlashTimer > 0f
-                                    ? (enemy.hitFlashTimer / 0.18f) : 0f;
+                            float flashF = enemy.hitFlashTimer > 0f ? (enemy.hitFlashTimer / 0.18f) : 0f;
                             float alpha  = enemy.alive ? 1.0f : flashF;
                             if (alpha < 0.02f) {
                                 enemyAnimPlayers.remove(enemy.id); continue;
                             }
 
-                            // Get or create this enemy's AnimPlayer
+                            // Pick the right model for the enemy type
+                            com.leaf.game.anim.AnimModel targetModel = (enemy.type == Enemy.Type.SLIME && slimeAnimModel != null)
+                                    ? slimeAnimModel : enemyAnimModel;
+
                             com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
                                     enemy.id, id -> {
-                                        com.leaf.game.anim.AnimPlayer p =
-                                                new com.leaf.game.anim.AnimPlayer(enemyAnimModel);
+                                        com.leaf.game.anim.AnimPlayer p = new com.leaf.game.anim.AnimPlayer(targetModel);
                                         p.play("idle");
                                         return p;
                                     });
@@ -2723,27 +2730,26 @@ public class Window {
                             String want;
                             if (!enemy.alive) {
                                 want = "death";
-                            } else if (enemy.state == Enemy.State.CHASE
-                                    || enemy.state == Enemy.State.RETREATING) {
-                                want = "walk";
-                            } else if (enemy.state == Enemy.State.ATTACK
-                                    || enemy.state == Enemy.State.SLAMMING) {
+                            } else if (enemy.state == Enemy.State.CHASE || enemy.state == Enemy.State.RETREATING) {
+                                // ── USE "move" FOR SLIMES, "walk" FOR OTHERS ──
+                                want = (enemy.type == Enemy.Type.SLIME) ? "move" : "walk";
+                            } else if (enemy.state == Enemy.State.ATTACK || enemy.state == Enemy.State.SLAMMING) {
                                 want = "attack";
                             } else {
                                 want = "idle";
                             }
+
                             String cur = ap.getCurrentClip();
                             if (!want.equals(cur)) {
                                 if ("death".equals(want)) {
                                     ap.play("death", false);
-                                } else if (cur == null || "idle".equals(cur)
-                                        || "death".equals(cur)) {
+                                } else if (cur == null || "idle".equals(cur) || "death".equals(cur)) {
                                     ap.play(want);
                                 } else {
                                     ap.crossfade(want, 0.12f);
                                 }
                             }
-                            ap.tick(rawDeltaTime); // use real-time so death anim plays at true speed
+                            ap.tick(rawDeltaTime);
 
                             // Face the player (Y-axis rotation only)
                             float faceDx = player.position.x - enemy.position.x;
@@ -2752,15 +2758,13 @@ public class Window {
 
                             float[] sv = enemy.renderScaleVec();
                             Matrix4f worldMat = new Matrix4f()
-                                    .translate(enemy.position.x, enemy.position.y,
-                                               enemy.position.z)
+                                    .translate(enemy.position.x, enemy.position.y, enemy.position.z)
                                     .rotateY(faceY)
                                     .scale(sv[0], sv[1], sv[2]);
 
                             com.leaf.game.anim.ModelRenderer.render(
-                                    enemyAnimModel, ap.getPose(), worldMat, view, projection);
+                                    targetModel, ap.getPose(), worldMat, view, projection);
 
-                            // Re-bind main world shader (ModelRenderer swapped to its own)
                             shader.bind();
                         }
                     } else {

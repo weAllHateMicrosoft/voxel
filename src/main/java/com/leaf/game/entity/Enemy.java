@@ -28,7 +28,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER, ZOMBIE }
+    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME }
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -161,6 +161,13 @@ public class Enemy {
                 atk_    = GameConfig.zombieAttackRange;   atkI_  = GameConfig.zombieAttackInterval;
                 cr = 0.5f; hh = 1.0f;  // human-sized
             }
+            case SLIME -> {
+                health_ = GameConfig.slimeHealth;  speed_ = GameConfig.slimeSpeed;
+                dps_    = GameConfig.slimeDamagePerSec;  aggro_ = GameConfig.slimeAggroRange;
+                atk_    = GameConfig.slimeAttackRange;   atkI_  = GameConfig.slimeAttackInterval;
+                cr = 0.6f; hh = 0.5f;  // Slimes are short and wide
+            }
+
             default -> { // THROWER (fallback)
                 health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
                 dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
@@ -282,7 +289,8 @@ public class Enemy {
             case THROWER -> tickThrowerAI(dt, distToPlayer, leash);
 
             // ── ZOMBIE — slow shambling melee chaser ──────────────────────────
-            case ZOMBIE -> tickZombieAI(dt, distToPlayer, leash);
+            case ZOMBIE,SLIME -> tickZombieAI(dt, distToPlayer, leash);
+
         }
     }
 
@@ -618,7 +626,8 @@ public class Enemy {
         return switch (type) {
             case GOLEM   -> new float[]{ 1.40f, 1.60f, 1.40f }; // wide and tall — tank
             case THROWER -> new float[]{ 0.48f, 0.92f, 0.48f }; // slim and tall — skeleton archer
-            case ZOMBIE  -> new float[]{ 0.75f, 0.88f, 0.75f }; // stocky, human-sized
+            case ZOMBIE -> new float[]{ 0.75f, 0.88f, 0.75f }; // stocky, human-sized
+            case SLIME   -> new float[]{ 0.85f, 0.85f, 0.85f };
         };
     }
 

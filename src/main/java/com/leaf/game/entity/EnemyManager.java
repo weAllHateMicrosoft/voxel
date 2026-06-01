@@ -322,17 +322,17 @@ public class EnemyManager {
     private Enemy.Type pickType() {
         float r = rng.nextFloat();
         if (waveNumber <= 2) {
-            // Early waves: shambling zombies and a few skeleton archers
-            return r < 0.65f ? Enemy.Type.ZOMBIE : Enemy.Type.THROWER;
+            // Early waves: Zombies, Slimes, and a few Throwers
+            return r < 0.40f ? Enemy.Type.ZOMBIE : (r < 0.70f ? Enemy.Type.SLIME : Enemy.Type.THROWER);
         } else if (waveNumber <= 6) {
-            // Mid waves: all three; golems start appearing rarely
             if (r < 0.08f)      return Enemy.Type.GOLEM;
-            else if (r < 0.55f) return Enemy.Type.ZOMBIE;
-            else                 return Enemy.Type.THROWER;
+            else if (r < 0.40f) return Enemy.Type.SLIME;
+            else if (r < 0.70f) return Enemy.Type.ZOMBIE;
+            else                return Enemy.Type.THROWER;
         } else {
-            // Late waves: more golems each wave, rest split zombie/archer
             float golemChance = Math.min(0.35f, 0.10f + (waveNumber - 7) * 0.025f);
             if (r < golemChance)             return Enemy.Type.GOLEM;
+            else if (r < golemChance + 0.25f) return Enemy.Type.SLIME;
             else if (r < golemChance + 0.50f) return Enemy.Type.ZOMBIE;
             else                              return Enemy.Type.THROWER;
         }
