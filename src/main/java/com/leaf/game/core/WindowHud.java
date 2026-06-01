@@ -1177,64 +1177,35 @@ class WindowHud {
 
         // Row 1 — Q / E / F / G / Z / K / J / M / I / U / O
         {
-            float totalW = 11 * iconSize + 10 * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize * 2f - spacing - 14f;
-
-            String[] labels = {"Q", "E", "F", "G", "Z", "K", "J", "M", "I", "U", "O"};
-            String[] tooltips = {"Dash", "Blink", "Slash", "Cannon", "Kamui", "Pillar", "Swap", "Quagmire", "Stone", "Lightning", "Grab"};
-            float todoFrac = (GameConfig.todoCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, win.todoSwapCooldown / GameConfig.todoCooldown))
-                    : 0f;
-            float quagFrac = (GameConfig.quagmireCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, win.quagmireCooldown / GameConfig.quagmireCooldown))
-                    : 0f;
-            float stoneFrac = win.isChargingStoneCanon
-                    ? Math.min(1f, win.stoneCanonCharge / GameConfig.stoneCanonMaxCharge)
-                    : ((GameConfig.stoneCanonCooldown > 0f)
-                       ? Math.max(0f, Math.min(1f, 1f - win.stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
-                       : 1f);
+            // ── 5 CORE abilities ─────────────────────────────────────────────
+            // Kept to the essentials so the screen isn't overwhelming on first play.
+            // Every other ability (Kamui, Seals, Drone, etc.) still works — it just
+            // doesn't have a dedicated icon here. Press [F1] to see the full list.
+            String[] labels   = {"Q",   "E",     "F",     "U",         "G"    };
+            String[] tooltips = {"Dash","Blink",  "Slash", "Lightning", "Cannon"};
             float lightningFrac = win.player.lightning.isCharging()
                     ? win.player.lightning.getChargeFrac()
                     : win.player.lightning.getCooldownFrac();
-            float kamuiFrac = win.player.abilities.isKamui
-                    ? win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration
-                    : win.player.abilities.getKamuiCooldownFrac();
-            float grabFrac = win.player.grab.getCooldownFrac();
+            float lightningA = win.player.lightning.isCharging()
+                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
             float[] fracs = {
                     win.player.abilities.getDashCooldownFrac(),
                     win.player.abilities.getBlinkCooldownFrac(),
                     win.player.attacks.getMeleeCooldownFrac(),
-                    win.player.abilities.getCannonCooldownFrac(),
-                    kamuiFrac,
-                    win.player.abilities.getPillarCooldownFrac(),
-                    todoFrac,
-                    quagFrac,
-                    stoneFrac,
                     lightningFrac,
-                    grabFrac
+                    win.player.abilities.getCannonCooldownFrac(),
             };
-            float stoneR = win.isChargingStoneCanon
-                    ? 0.85f + (float) Math.sin(glfwGetTime() * 6) * 0.15f : 0.65f;
-            float lightningA = win.player.lightning.isCharging()
-                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
-            float kamuiR = win.player.abilities.isKamui
-                    ? 0.55f + (float) Math.sin(glfwGetTime() * 8) * 0.2f : 0.45f;
-            float grabA = win.player.grab.isActive()
-                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
             int[] colors = {
-                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),       // Q dash: cyan
-                    ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),       // E blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f, 0.55f, 0.06f, 1.0f),      // F slash: amber
-                    ImGui.colorConvertFloat4ToU32(1.0f, 0.75f, 0.1f, 1.0f),      // G cannon: gold
-                    ImGui.colorConvertFloat4ToU32(kamuiR, 0.0f, 0.9f, 1.0f),      // Z Kamui: purple
-                    ImGui.colorConvertFloat4ToU32(0.6f, 0.6f, 0.65f, 1.0f),      // K pillar: grey
-                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f, 1.0f, 1.0f),      // J swap: pink-magenta
-                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f),      // M quagmire: muddy green
-                    ImGui.colorConvertFloat4ToU32(stoneR, 0.60f, 0.30f, 1.0f),     // I stone: orange-grey
-                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightningA),// U lightning: ice-blue
-                    ImGui.colorConvertFloat4ToU32(1.0f, 0.20f, 0.15f, grabA)      // O grab: red
+                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),        // Q dash: cyan
+                    ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),        // E blink: white
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f),       // F slash: amber
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightningA),  // U lightning
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.10f, 1.0f),       // G cannon: gold
             };
+
+            float totalW = labels.length * iconSize + (labels.length - 1) * spacing;
+            float startX = screenW - totalW - 14f;
+            float startY = screenH - iconSize * 2f - spacing - 14f;
 
             for (int i = 0; i < labels.length; i++) {
                 float x = startX + i * (iconSize + spacing);

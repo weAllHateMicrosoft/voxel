@@ -117,6 +117,22 @@ public class EnemyManager {
         return spawnAt(pos.x, pos.y, pos.z);
     }
 
+    /**
+     * Spawns a small starter pack immediately when the game loads so there is
+     * always something to fight from the first second. Uses the same surface-scan
+     * logic as the wave system so enemies land on solid ground. The normal wave
+     * timer is reset so the first automatic wave still comes after spawnWaveInterval.
+     */
+    public void spawnInitialEnemies(com.leaf.game.world.World world,
+                                    org.joml.Vector3f playerPos) {
+        for (int i = 0; i < 3; i++) {
+            Vector3f sp = findSpawnPoint(world, playerPos);
+            if (sp != null) spawnAt(sp.x, sp.y, sp.z, Enemy.Type.ZOMBIE);
+        }
+        // Reset wave timer so the first auto-wave still arrives on schedule
+        waveTimer = GameConfig.spawnWaveInterval;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Per-frame update
     // ─────────────────────────────────────────────────────────────────────────

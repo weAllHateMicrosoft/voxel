@@ -99,6 +99,13 @@ public class Window {
 
     // ── ENEMY SYSTEM ──────────────────────────────────────────────────────────
     EnemyManager enemyManager;
+
+    // ── Animated enemy rendering ──────────────────────────────────────────────
+    // Single shared model definition; each enemy has its own AnimPlayer instance
+    // (independent animation time) stored by enemy ID.
+    private com.leaf.game.anim.AnimModel enemyAnimModel = null;
+    private final java.util.Map<Integer, com.leaf.game.anim.AnimPlayer> enemyAnimPlayers
+            = new java.util.HashMap<>();
     /** Edge-detect for P key to spawn enemies. */
     private boolean lastP = false;
 
@@ -566,6 +573,14 @@ public class Window {
         GL.createCapabilities();
         imguiGl3.init("#version 330");
 
+        // ── Animated enemy model ──────────────────────────────────────────────
+        // ModelRenderer has its own mini-shader; init once after GL context exists.
+        com.leaf.game.anim.ModelRenderer.init();
+        com.leaf.game.anim.AnimModel enemyAnimModelLoaded =
+                com.leaf.game.anim.AnimModel.loadFromClasspath("enemy_basic");
+        if (enemyAnimModelLoaded != null)
+            this.enemyAnimModel = enemyAnimModelLoaded;
+
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
 
@@ -799,6 +814,9 @@ public class Window {
                         // doesn't punch straight through the freshly-meshed ground.
                         player.setVelocityY(0f);
                         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                        // Spawn a small greeting pack immediately so there is always
+                        // something to fight the moment you load in.
+                        enemyManager.spawnInitialEnemies(world, player.position);
                         // Start welcome banner once per session
                         if (!welcomeStarted) {
                             welcomeTimer   = 6.0f;
@@ -2666,56 +2684,87 @@ public class Window {
 
                 // 6. Render Enemies
                 if (!enemyManager.getEnemies().isEmpty()) {
-                    com.leaf.game.render.ModelMesh enemyModel =
-                            com.leaf.game.render.AssetManager.get().getModel("player");
-                    for (Enemy enemy : enemyManager.getEnemies()) {
-                        float flashF = enemy.hitFlashTimer > 0f ? (enemy.hitFlashTimer / 0.18f) : 0f;
-                        float alpha  = enemy.alive ? 1.0f : flashF;
-                        if (alpha < 0.02f) continue;
-
-                        Vector3f typeColor;
-                        float    typeOverlayStr;
-                        // Grabbed — enemy lifted/held: bright pulsing orange
-                        if (enemy.isGrabbed) {
-                            float pulse = 0.7f + 0.3f * (float) Math.abs(Math.sin(glfwGetTime() * 18.0));
-                            typeColor      = new Vector3f(1.0f, 0.45f * pulse, 0.0f);
-                            typeOverlayStr = 0.75f;
-                        // Thrown — in flight after grab: hot red-orange, full brightness
-                        } else if (enemy.isThrown) {
-                            typeColor      = new Vector3f(1.0f, 0.25f, 0.0f);
-                            typeOverlayStr = 0.80f;
-                        // Mud-trapped overrides type colour with a brown tint
-                        } else if (enemy.mudTrapTimer > 0f) {
-                            typeColor      = new Vector3f(0.45f, 0.28f, 0.05f);
-                            typeOverlayStr = 0.45f;
-                        } else {
-                            switch (enemy.type) {
-                                // Stone tank — blue-grey
-                                case GOLEM   -> { typeColor = new Vector3f(0.55f, 0.60f, 0.72f); typeOverlayStr = 0.26f; }
-                                // Skeleton archer — pale bone white
-                                case THROWER -> { typeColor = new Vector3f(0.92f, 0.90f, 0.80f); typeOverlayStr = 0.30f; }
-                                // Zombie — sickly green
-                                case ZOMBIE  -> { typeColor = new Vector3f(0.22f, 0.62f, 0.18f); typeOverlayStr = 0.32f; }
-                                default      -> { typeColor = new Vector3f(0.90f, 0.30f, 0.05f); typeOverlayStr = 0.12f; }
+                    if (enemyAnimModel != null) {
+                        // ── Animated path: enemy_basic.json with walk/attack/death ──
+                        for (Enemy enemy : enemyManager.getEnemies()) {
+                            float flashF = enemy.hitFlashTimer > 0f
+                                    ? (enemy.hitFlashTimer / 0.18f) : 0f;
+                            float alpha  = enemy.alive ? 1.0f : flashF;
+                            if (alpha < 0.02f) {
+                                enemyAnimPlayers.remove(enemy.id); continue;
                             }
-                        }
 
-                        shader.setUniform("alphaMultiplier", alpha);
-                        if (flashF > 0f) {
-                            shader.setUniform("overlayVignetteStrength", flashF * 0.65f);
-                            shader.setUniform("overlayVignetteColor", new Vector3f(1.0f, 0.25f, 0.15f));
-                        } else {
-                            shader.setUniform("overlayVignetteStrength", typeOverlayStr);
-                            shader.setUniform("overlayVignetteColor", typeColor);
-                        }
+                            // Get or create this enemy's AnimPlayer
+                            com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
+                                    enemy.id, id -> {
+                                        com.leaf.game.anim.AnimPlayer p =
+                                                new com.leaf.game.anim.AnimPlayer(enemyAnimModel);
+                                        p.play("idle");
+                                        return p;
+                                    });
 
-                        // Non-uniform scale so types look visually distinct
-                        float[] sv = enemy.renderScaleVec();
-                        Matrix4f enemyMat = new Matrix4f()
-                                .translate(enemy.position.x, enemy.position.y, enemy.position.z)
-                                .scale(sv[0], sv[1], sv[2]);
-                        shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(enemyMat));
-                        enemyModel.render();
+                            // Decide target animation from AI state
+                            String want;
+                            if (!enemy.alive) {
+                                want = "death";
+                            } else if (enemy.state == Enemy.State.CHASE
+                                    || enemy.state == Enemy.State.RETREATING) {
+                                want = "walk";
+                            } else if (enemy.state == Enemy.State.ATTACK
+                                    || enemy.state == Enemy.State.SLAMMING) {
+                                want = "attack";
+                            } else {
+                                want = "idle";
+                            }
+                            String cur = ap.getCurrentClip();
+                            if (!want.equals(cur)) {
+                                if ("death".equals(want)) {
+                                    ap.play("death", false);
+                                } else if (cur == null || "idle".equals(cur)
+                                        || "death".equals(cur)) {
+                                    ap.play(want);
+                                } else {
+                                    ap.crossfade(want, 0.12f);
+                                }
+                            }
+                            ap.tick(rawDeltaTime); // use real-time so death anim plays at true speed
+
+                            // Face the player (Y-axis rotation only)
+                            float faceDx = player.position.x - enemy.position.x;
+                            float faceDz = player.position.z - enemy.position.z;
+                            float faceY  = (float) Math.atan2(faceDx, faceDz);
+
+                            float[] sv = enemy.renderScaleVec();
+                            Matrix4f worldMat = new Matrix4f()
+                                    .translate(enemy.position.x, enemy.position.y,
+                                               enemy.position.z)
+                                    .rotateY(faceY)
+                                    .scale(sv[0], sv[1], sv[2]);
+
+                            com.leaf.game.anim.ModelRenderer.render(
+                                    enemyAnimModel, ap.getPose(), worldMat, view, projection);
+
+                            // Re-bind main world shader (ModelRenderer swapped to its own)
+                            shader.bind();
+                        }
+                    } else {
+                        // ── Fallback: plain capsule (no model loaded) ──────────
+                        com.leaf.game.render.ModelMesh capsule =
+                                com.leaf.game.render.AssetManager.get().getModel("player");
+                        for (Enemy enemy : enemyManager.getEnemies()) {
+                            float flashF = enemy.hitFlashTimer > 0f
+                                    ? (enemy.hitFlashTimer / 0.18f) : 0f;
+                            float alpha  = enemy.alive ? 1.0f : flashF;
+                            if (alpha < 0.02f) continue;
+                            float[] sv = enemy.renderScaleVec();
+                            Matrix4f enemyMat = new Matrix4f()
+                                    .translate(enemy.position.x, enemy.position.y,
+                                               enemy.position.z)
+                                    .scale(sv[0], sv[1], sv[2]);
+                            shader.setUniform("alphaMultiplier", alpha);
+                            shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(enemyMat));
+                            capsule.render();
+                        }
                     }
                     // Reset overlay state
                     shader.setUniform("overlayVignetteStrength", 0f);
