@@ -61,6 +61,17 @@ public class EnemyManager {
     // ── Wave spawning state ───────────────────────────────────────────────────
     private float waveTimer  = GameConfig.spawnWaveInterval; // counts down to 0 → spawn
     private int   waveNumber = 0;
+
+    /** Total enemies the player has killed this session (drives the demo objective). */
+    public int totalKills = 0;
+
+    /**
+     * When false, the automatic infinite wave spawner is suppressed. The tutorial
+     * holds this false and spawns enemies by hand at controlled distances/counts,
+     * then Window flips it true on graduation so endless survival begins.
+     */
+    public boolean wavesEnabled = false;
+
     private final Random rng = new Random();
 
     // ── Enemy projectiles (boulders, thrown rocks) ────────────────────────────
@@ -123,14 +134,49 @@ public class EnemyManager {
      * logic as the wave system so enemies land on solid ground. The normal wave
      * timer is reset so the first automatic wave still comes after spawnWaveInterval.
      */
-    public void spawnInitialEnemies(com.leaf.game.world.World world,
-                                    org.joml.Vector3f playerPos) {
-        for (int i = 0; i < 3; i++) {
-            Vector3f sp = findSpawnPoint(world, playerPos);
-            if (sp != null) spawnAt(sp.x, sp.y, sp.z, Enemy.Type.ZOMBIE);
+    /** Number of enemies that are still alive (excludes those playing the death flash). */
+    public int aliveCount() {
+        int n = 0;
+        for (Enemy e : enemies) if (e.alive) n++;
+        return n;
+    }
+
+    /**
+     * Spawn {@code count} enemies of {@code type} for the tutorial at a roughly
+     * fixed distance from the player (so steps are predictable, not random
+     * waves). Falls back to the random surface scan, but biases toward the
+     * requested ring so dummies appear in front of a new player.
+     */
+    public void spawnTutorialEnemies(com.leaf.game.world.World world,
+                                     org.joml.Vector3f playerPos,
+                                     Enemy.Type type, int count, float distance) {
+        for (int i = 0; i < count; i++) {
+            // Even spread around the player at the requested ring.
+            float ang = (float) (Math.PI * 2 * i / Math.max(1, count))
+                      + rng.nextFloat() * 0.6f;
+            Vector3f sp = surfaceAt(world,
+                    playerPos.x + (float) Math.cos(ang) * distance,
+                    playerPos.z + (float) Math.sin(ang) * distance);
+            if (sp == null) sp = findSpawnPoint(world, playerPos); // fallback
+            if (sp != null) spawnAt(sp.x, sp.y, sp.z, type);
         }
-        // Reset wave timer so the first auto-wave still arrives on schedule
-        waveTimer = GameConfig.spawnWaveInterval;
+    }
+
+    /** Find the open-sky surface at a specific (x,z), or null if none. */
+    private Vector3f surfaceAt(World world, float sx, float sz) {
+        int bx = (int) Math.floor(sx), bz = (int) Math.floor(sz);
+        for (int by = Chunk.HEIGHT - 2; by >= 1; by--) {
+            if (world.getBlock(bx, by, bz).isSolid()
+                    && !world.getBlock(bx, by + 1, bz).isSolid()
+                    && !world.getBlock(bx, by + 2, bz).isSolid()) {
+                boolean openSky = true;
+                for (int sy = by + 3; sy < Chunk.HEIGHT; sy++) {
+                    if (world.getBlock(bx, sy, bz).isSolid()) { openSky = false; break; }
+                }
+                if (openSky) return new Vector3f(sx, by + 1f, sz);
+            }
+        }
+        return null;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -204,10 +250,14 @@ public class EnemyManager {
         projectiles.removeIf(p -> !p.alive);
 
         // ── Remove dead enemies once death flash is done ───────────────────────
-        enemies.removeIf(e -> !e.alive && e.hitFlashTimer <= 0f);
+        enemies.removeIf(e -> {
+            boolean cull = !e.alive && e.hitFlashTimer <= 0f;
+            if (cull) totalKills++;
+            return cull;
+        });
 
-        // ── Wave spawner ───────────────────────────────────────────────────────
-        if (enemies.size() < GameConfig.spawnMaxEnemies) {
+        // ── Wave spawner (suppressed during the tutorial) ──────────────────────
+        if (wavesEnabled && enemies.size() < GameConfig.spawnMaxEnemies) {
             waveTimer -= dt;
             if (waveTimer <= 0f) {
                 waveTimer = GameConfig.spawnWaveInterval;

@@ -1111,6 +1111,12 @@ class WindowHud {
             renderWelcomeBanner(draw, screenW, screenH, win.welcomeTimer);
         }
 
+        // Onboarding objective banner (top-centre) — guides new players.
+        // Waits for the welcome banner to fade so they don't overlap.
+        if (!win.showHelp && win.welcomeTimer <= 0f) {
+            renderObjectiveBanner(draw, screenW, screenH);
+        }
+
         // ── CONTEXTUAL HINT BANNER ────────────────────────────────────────────
         // One-liners that fire on first stand deploy / first seal placement.
         if (win.hintTimer > 0f && win.hintText != null && !win.showHelp) {
@@ -1181,31 +1187,30 @@ class WindowHud {
             // Kept to the essentials so the screen isn't overwhelming on first play.
             // Every other ability (Kamui, Seals, Drone, etc.) still works — it just
             // doesn't have a dedicated icon here. Press [F1] to see the full list.
-            String[] labels   = {"Q",   "E",     "F",     "U",         "G"    };
-            String[] tooltips = {"Dash","Blink",  "Slash", "Lightning", "Cannon"};
-            float lightningFrac = win.player.lightning.isCharging()
-                    ? win.player.lightning.getChargeFrac()
-                    : win.player.lightning.getCooldownFrac();
-            float lightningA = win.player.lightning.isCharging()
-                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
+            // ── ROW 1 (top): MELEE / SUSTAIN ─────────────────────────────────
+            String[] labels   = {"Q",    "F",     "M",        "O",    "L"   };
+            String[] tooltips = {"Dash", "Slash", "Quagmire", "Grab", "Heal"};
+            float quagFrac = (GameConfig.quagmireCooldown > 0f)
+                    ? Math.max(0f, Math.min(1f, 1f - win.quagmireCooldown / GameConfig.quagmireCooldown))
+                    : 1f;
             float[] fracs = {
                     win.player.abilities.getDashCooldownFrac(),
-                    win.player.abilities.getBlinkCooldownFrac(),
                     win.player.attacks.getMeleeCooldownFrac(),
-                    lightningFrac,
-                    win.player.abilities.getCannonCooldownFrac(),
+                    quagFrac,
+                    win.player.grab.getCooldownFrac(),
+                    win.player.abilities.getHealCooldownFrac(),
             };
             int[] colors = {
-                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),        // Q dash: cyan
-                    ImGui.colorConvertFloat4ToU32(0.93f, 0.95f, 1.0f, 1.0f),        // E blink: white
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f),       // F slash: amber
-                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightningA),  // U lightning
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.75f, 0.10f, 1.0f),       // G cannon: gold
+                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),  // Q dash: cyan
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f), // F slash: amber
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f), // M quagmire: muddy green
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.20f, 0.15f, 1.0f), // O grab: red
+                    ImGui.colorConvertFloat4ToU32(0.15f, 0.85f, 0.35f, 1.0f), // L heal: green
             };
 
             float totalW = labels.length * iconSize + (labels.length - 1) * spacing;
             float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize * 2f - spacing - 14f;
+            float startY = screenH - iconSize * 3f - spacing * 2f - 14f; // top row of 3
 
             for (int i = 0; i < labels.length; i++) {
                 float x = startX + i * (iconSize + spacing);
@@ -1224,70 +1229,102 @@ class WindowHud {
             }
         }
 
-        // Row 2 — X (Stand)  H (Seal place)  B (Seal teleport)  V (Substitute)  L (Heal)
+        // ── ROW 2 (middle): RANGED ATTACKS ───────────────────────────────────
         {
-            float totalW = 5 * iconSize + 4 * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize - 14f;
-
-            // X: stand deploy — gold when deployed, blue-grey on cooldown
             boolean standDeployed = win.player.stand.isDeployed();
-            float standFrac = win.player.stand.getRedeployCooldownFrac();
-            int standColor = standDeployed
-                    ? ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.15f, 1.0f)
-                    : ImGui.colorConvertFloat4ToU32(0.4f, 0.65f, 0.9f, 1.0f);
+            float stoneFrac = win.isChargingStoneCanon
+                    ? Math.min(1f, win.stoneCanonCharge / GameConfig.stoneCanonMaxCharge)
+                    : ((GameConfig.stoneCanonCooldown > 0f)
+                       ? Math.max(0f, Math.min(1f, 1f - win.stoneCanonCooldownTimer / GameConfig.stoneCanonCooldown))
+                       : 1f);
+            float lightFrac = win.player.lightning.isCharging()
+                    ? win.player.lightning.getChargeFrac()
+                    : win.player.lightning.getCooldownFrac();
+            float lightA = win.player.lightning.isCharging()
+                    ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
 
-            // H: seal place — cyan when ready
-            float sealPlaceFrac = win.player.seals.getPlaceCooldownFrac();
-            int sealPlaceColor = ImGui.colorConvertFloat4ToU32(0.2f, 0.92f, 0.92f, 1.0f);
+            String[] labelsR   = {"C",     "I",     "U",         "X"        };
+            String[] tooltipsR = {"Snipe", "Stone", "Lightning", "Drone"    };
+            float[]  fracsR    = {
+                    win.player.attacks.getSnipeIconFrac(),
+                    stoneFrac,
+                    lightFrac,
+                    standDeployed ? 1f : win.player.stand.getRedeployCooldownFrac(),
+            };
+            int[] colorsR = {
+                    ImGui.colorConvertFloat4ToU32(0.75f, 0.45f, 1.0f, 1.0f),  // C snipe: violet
+                    ImGui.colorConvertFloat4ToU32(0.70f, 0.55f, 0.35f, 1.0f), // I stone: tan
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightA),// U lightning
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.82f, 0.15f, 1.0f), // X drone: gold
+            };
+            boolean[] glowR = { false, win.isChargingStoneCanon, win.player.lightning.isCharging(), standDeployed };
 
-            // B: seal teleport — teal when ready
-            float sealTpFrac = win.player.seals.getTeleportCooldownFrac();
-            int sealTpColor = ImGui.colorConvertFloat4ToU32(0.1f, 0.75f, 0.65f, 1.0f);
+            float totalW = labelsR.length * iconSize + (labelsR.length - 1) * spacing;
+            float startX = screenW - totalW - 14f;
+            float startY = screenH - iconSize * 2f - spacing - 14f; // middle row of 3
+            drawIconRow(draw, labelsR, tooltipsR, fracsR, colorsR, glowR,
+                        startX, startY, iconSize, spacing, black, grey);
+        }
 
-            // V: substitute — bright white when primed, dim when on cooldown
+        // ── ROW 3 (bottom): SPATIAL / SPECIAL ────────────────────────────────
+        {
+            float kamuiFrac = win.player.abilities.isKamui
+                    ? win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration
+                    : win.player.abilities.getKamuiCooldownFrac();
             float subFrac = (GameConfig.substituteCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, win.substituteCooldown / GameConfig.substituteCooldown))
                     : 0f;
-            // When primed the icon is fully lit regardless of cooldown display
-            float subFracDisplay = win.substitutePrimed ? 1f : (1f - subFrac);
-            int subColor = win.substitutePrimed
-                    ? ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1.0f) // bright white when primed
-                    : ImGui.colorConvertFloat4ToU32(0.85f, 0.87f, 0.95f, 1.0f);
+            float swapFrac = (GameConfig.todoCooldown > 0f)
+                    ? Math.max(0f, Math.min(1f, 1f - win.todoSwapCooldown / GameConfig.todoCooldown))
+                    : 1f;
 
-            // L: heal — green, pulses brighter when actively healing
-            float healFrac = win.player.abilities.getHealCooldownFrac();
-            int healColor = win.player.abilities.isHealing
-                    ? ImGui.colorConvertFloat4ToU32(0.1f, 1.0f, 0.35f, 1.0f) // bright green when healing
-                    : ImGui.colorConvertFloat4ToU32(0.15f, 0.75f, 0.30f, 1.0f);
+            String[] labelsS   = {"Z",     "K",      "V",     "B",      "J"   };
+            String[] tooltipsS = {"Kamui", "Pillar", "Sub",   "Raijin", "Swap"};
+            float[]  fracsS    = {
+                    kamuiFrac,
+                    win.player.abilities.getPillarCooldownFrac(),
+                    win.substitutePrimed ? 1f : (1f - subFrac),
+                    win.player.seals.getTeleportCooldownFrac(),
+                    swapFrac,
+            };
+            int[] colorsS = {
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.0f,  0.9f,  1.0f),  // Z kamui: purple
+                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f),  // K pillar: grey
+                    ImGui.colorConvertFloat4ToU32(0.9f,  0.92f, 1.0f,  1.0f),  // V substitute: white
+                    ImGui.colorConvertFloat4ToU32(0.1f,  0.75f, 0.65f, 1.0f),  // B raijin: teal
+                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f,  1.0f),  // J swap: magenta
+            };
+            boolean[] glowS = { win.player.abilities.isKamui, false, win.substitutePrimed, false, false };
 
-            String[] labels2 = {"X", "H", "B", "V", "L"};
-            String[] tooltips2 = {"Stand", "Seal", "Warp", "Sub", "Heal"};
-            float[] fracs2 = {standDeployed ? 1f : standFrac,
-                    sealPlaceFrac, sealTpFrac, subFracDisplay, healFrac};
-            int[] colors2 = {standColor, sealPlaceColor, sealTpColor, subColor, healColor};
+            float totalW = labelsS.length * iconSize + (labelsS.length - 1) * spacing;
+            float startX = screenW - totalW - 14f;
+            float startY = screenH - iconSize - 14f; // bottom row of 3
+            drawIconRow(draw, labelsS, tooltipsS, fracsS, colorsS, glowS,
+                        startX, startY, iconSize, spacing, black, grey);
+        }
+    }
 
-            for (int i = 0; i < labels2.length; i++) {
-                float x = startX + i * (iconSize + spacing);
-                draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                float fillH = iconSize * fracs2[i];
-                if (fillH > 0.5f) {
-                    draw.addRectFilled(x, startY + iconSize - fillH,
-                            x + iconSize, startY + iconSize, colors2[i], 5f);
-                }
-                // Stand icon: bright outline when deployed
-                // Substitute icon: bright pulsing outline when primed
-                boolean specialBorder = (i == 0 && standDeployed) || (i == 3 && win.substitutePrimed);
-                float outlineThick = specialBorder ? 2.5f : 1.5f;
-                int outlineCol = specialBorder ? colors2[i] : black;
-                draw.addRect(x, startY, x + iconSize, startY + iconSize,
-                        outlineCol, 5f, 0, outlineThick);
-                draw.addText(x + 9f, startY + 7f, black, labels2[i]);
-                draw.addText(x + 9f, startY + 7f,
-                        ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels2[i]);
-                draw.addText(x, startY + iconSize + 2f,
-                        ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips2[i]);
+    /** Draws one horizontal row of ability cooldown icons. glow[i] = bright outline (active state). */
+    private void drawIconRow(imgui.ImDrawList draw, String[] labels, String[] tooltips,
+                             float[] fracs, int[] colors, boolean[] glow,
+                             float startX, float startY, float iconSize, float spacing,
+                             int black, int grey) {
+        for (int i = 0; i < labels.length; i++) {
+            float x = startX + i * (iconSize + spacing);
+            draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
+            float fillH = iconSize * Math.max(0f, Math.min(1f, fracs[i]));
+            if (fillH > 0.5f) {
+                draw.addRectFilled(x, startY + iconSize - fillH,
+                        x + iconSize, startY + iconSize, colors[i], 5f);
             }
+            boolean g = glow != null && i < glow.length && glow[i];
+            draw.addRect(x, startY, x + iconSize, startY + iconSize,
+                    g ? colors[i] : black, 5f, 0, g ? 2.5f : 1.5f);
+            draw.addText(x + 9f, startY + 7f, black, labels[i]);
+            draw.addText(x + 9f, startY + 7f,
+                    ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels[i]);
+            draw.addText(x, startY + iconSize + 2f,
+                    ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips[i]);
         }
     }
 
@@ -1436,6 +1473,81 @@ class WindowHud {
      * "Press F1 for controls" banner shown for the first few seconds of play.
      * Fades in over 0.4 s and out over 1 s.
      */
+    // ── Onboarding objective banner (top-centre) ──────────────────────────────
+    void renderObjectiveBanner(imgui.ImDrawList draw, float screenW, float screenH) {
+        com.leaf.game.core.TutorialManager t = win.tutorial;
+
+        float cx = screenW * 0.5f;
+        float y  = 50f;
+        int shadow   = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f);
+        int titleCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.4f, 1.0f);
+        int bodyCol  = ImGui.colorConvertFloat4ToU32(0.92f, 0.95f, 1.0f, 0.97f);
+        int dimCol   = ImGui.colorConvertFloat4ToU32(0.7f, 0.75f, 0.85f, 0.8f);
+        int keyCol   = ImGui.colorConvertFloat4ToU32(0.45f, 0.9f, 1.0f, 1.0f);
+        int panelBg  = ImGui.colorConvertFloat4ToU32(0.05f, 0.07f, 0.12f, 0.62f);
+
+        // ── TUTORIAL ACTIVE: staged lesson banner ────────────────────────────
+        if (t != null && t.isActive()) {
+            String prog  = "STEP " + t.stepNumber() + " / " + t.stepCount();
+            String title = t.title();
+            String instr = t.instruction();
+            String key   = t.keyHint();
+
+            // Measure the widest line so the panel fits all of them.
+            imgui.ImVec2 ps = ImGui.calcTextSize(prog);
+            imgui.ImVec2 ts = ImGui.calcTextSize(title);
+            imgui.ImVec2 is = ImGui.calcTextSize(instr);
+            float keyW = (key != null) ? ImGui.calcTextSize("[ " + key + " ]").x : 0f;
+            float maxW = Math.max(Math.max(ps.x, ts.x), Math.max(is.x, keyW));
+            float pad  = 18f;
+            float top  = y - 8f;
+            float lineH = ts.y;
+            int   lines = 3 + (key != null ? 1 : 0);
+            float bot  = top + lines * (lineH + 4f) + 12f;
+            draw.addRectFilled(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, bot, panelBg, 8f);
+
+            // progress line
+            draw.addText(cx - ps.x / 2 + 1, y + 1, shadow, prog);
+            draw.addText(cx - ps.x / 2,     y,     dimCol, prog);
+            y += lineH + 4f;
+            // title
+            draw.addText(cx - ts.x / 2 + 1, y + 1, shadow, title);
+            draw.addText(cx - ts.x / 2,     y,     titleCol, title);
+            y += lineH + 4f;
+            // instruction
+            draw.addText(cx - is.x / 2 + 1, y + 1, shadow, instr);
+            draw.addText(cx - is.x / 2,     y,     bodyCol, instr);
+            y += lineH + 4f;
+            // key hint
+            if (key != null) {
+                String kk = "[ " + key + " ]";
+                imgui.ImVec2 ks = ImGui.calcTextSize(kk);
+                draw.addText(cx - ks.x / 2 + 1, y + 1, shadow, kk);
+                draw.addText(cx - ks.x / 2,     y,     keyCol, kk);
+            }
+
+            // skip hint (bottom-centre, unobtrusive)
+            String skip = "[F2] skip tutorial";
+            imgui.ImVec2 ss = ImGui.calcTextSize(skip);
+            draw.addText(cx - ss.x / 2 + 1, bot + 5f, shadow, skip);
+            draw.addText(cx - ss.x / 2,     bot + 4f,
+                    ImGui.colorConvertFloat4ToU32(0.6f, 0.62f, 0.7f, 0.6f), skip);
+            return;
+        }
+
+        // ── TUTORIAL DONE: minimal survival banner ───────────────────────────
+        int km = win.enemyManager != null ? win.enemyManager.totalKills : 0;
+        String hint = "Survive the waves    -    [F1] for all controls";
+        imgui.ImVec2 hs = ImGui.calcTextSize(hint);
+        draw.addText(cx - hs.x / 2 + 1, y + 1, shadow, hint);
+        draw.addText(cx - hs.x / 2,     y,     bodyCol, hint);
+        String kills = "Defeated: " + km;
+        imgui.ImVec2 ks = ImGui.calcTextSize(kills);
+        draw.addText(cx - ks.x / 2 + 1, y + hs.y + 7f, shadow, kills);
+        draw.addText(cx - ks.x / 2,     y + hs.y + 6f,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.6f, 0.5f, 0.9f), kills);
+    }
+
     void renderWelcomeBanner(imgui.ImDrawList draw,
                              float screenW, float screenH, float timer) {
         float alpha;

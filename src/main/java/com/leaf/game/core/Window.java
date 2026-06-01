@@ -169,6 +169,12 @@ public class Window {
     /** Auto-dismiss welcome banner shown when the game first loads. */
     float   welcomeTimer   = 0f;
     private boolean welcomeStarted = false;
+
+    // ── Onboarding tutorial ────────────────────────────────────────────────────
+    // A designed, staged tutorial (see TutorialManager). Spawns enemies by hand at
+    // controlled difficulty and only turns on infinite waves once the player
+    // graduates. Created when the world finishes preloading.
+    TutorialManager tutorial = null;
     /** One-liner contextual hint (e.g. first stand deploy, first seal placed). */
     String  hintText       = null;
     float   hintTimer      = 0f;
@@ -421,6 +427,12 @@ public class Window {
                 glfwSetInputMode(window, GLFW_CURSOR,
                         overlay1 ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
                 if (!overlay1) firstMouse[0] = true;
+            }
+
+            // Skip the onboarding tutorial → jump straight to endless waves.
+            if (key == GLFW_KEY_F2 && action == GLFW_RELEASE && !showChat
+                    && tutorial != null && tutorial.isActive()) {
+                tutorial.skip();
             }
 
             if (key == GLFW_KEY_F3 && action == GLFW_RELEASE && !showChat) {
@@ -814,9 +826,12 @@ public class Window {
                         // doesn't punch straight through the freshly-meshed ground.
                         player.setVelocityY(0f);
                         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                        // Spawn a small greeting pack immediately so there is always
-                        // something to fight the moment you load in.
-                        enemyManager.spawnInitialEnemies(world, player.position);
+                        // Begin the designed onboarding tutorial. It controls all
+                        // enemy spawning (waves stay off) until the player graduates.
+                        if (tutorial == null) {
+                            tutorial = new TutorialManager(player, enemyManager, this, camera, world);
+                            tutorial.start();
+                        }
                         // Start welcome banner once per session
                         if (!welcomeStarted) {
                             welcomeTimer   = 6.0f;
@@ -1035,6 +1050,7 @@ public class Window {
 
                         // Update all enemies (gravity, AI, death fade, etc.)
                         enemyManager.update(deltaTime, world, player.position);
+                        if (tutorial != null) tutorial.update(deltaTime);
 
                         // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────
                         // Must run BEFORE the damage drain so it can intercept.

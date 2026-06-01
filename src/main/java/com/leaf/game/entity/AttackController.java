@@ -150,6 +150,13 @@ public class AttackController {
     /** 0–1 charge progress for optional HUD display. */
     public float    getChargeFrac()      { return isCharging ? Math.min(1f, chargeTime / GameConfig.voidShardMaxCharge) : 0f; }
 
+    /** Snipe (Void Shard) readiness for the HUD icon: 1 = ready, fills while charging or cooling. */
+    public float getSnipeIconFrac() {
+        if (isCharging) return Math.min(1f, chargeTime / GameConfig.voidShardMaxCharge);
+        return rangedCooldown <= 0f ? 1f
+                : Math.max(0f, 1f - rangedCooldown / GameConfig.voidShardCooldown);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Main tick — called from Player.update() every survival-mode frame
     // ─────────────────────────────────────────────────────────────────────────
