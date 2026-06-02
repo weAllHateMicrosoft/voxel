@@ -18,10 +18,10 @@ import java.util.function.Predicate;
  * Philosophy
  * ──────────
  *  • Teach ONE thing per step, in order of increasing complexity:
- *      basics → melee combat → movement tricks → ranged → spatial → flight → sustain.
+ *      basics -> melee combat -> movement tricks -> ranged -> spatial -> flight -> sustain.
  *  • Difficulty ramps: the first "enemy" is a single practice dummy spawned right
  *    in front of you; later steps add more, then tougher/ranged types.
- *  • The player drives the pace — a step completes when the player actually DOES
+ *  • The player drives the pace  -  a step completes when the player actually DOES
  *    the thing (detected from real game state), not on a blind timer.
  *  • Nothing is a hard wall: every step has a generous safety timeout and the
  *    whole tutorial can be skipped, so no one ever gets stuck.
@@ -117,7 +117,7 @@ public class TutorialManager {
 
     private void finish() {
         finished = true;
-        ctx.enemies.wavesEnabled = true;   // graduation → endless survival begins
+        ctx.enemies.wavesEnabled = true;   // graduation -> endless survival begins
     }
 
     private void advance() {
@@ -172,7 +172,7 @@ public class TutorialManager {
 
         // 4 ── JUMP + FALL SMASH
         steps.add(new Step("Jump",
-            "Press [SPACE] to jump. While falling, hold [SHIFT] just before landing to GROUND SLAM — craters the terrain.", "Space",
+            "Press [SPACE] to jump. While falling, hold [SHIFT] just before landing to GROUND SLAM  -  craters the terrain.", "Space",
             null,
             c -> { if (!c.player.isOnGround()) c.flag = true; return c.flag; }, 12f));
 
@@ -185,12 +185,12 @@ public class TutorialManager {
             null,
             c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 22f));
 
-        // 6 ── HANDOFF — waves (and ability unlocks) begin when this step ends
+        // 6 ── HANDOFF  -  waves (and ability unlocks) begin when this step ends
         steps.add(new Step("They're Coming",
-            "Survive each wave and the crystal bonds deeper — a NEW ability every wave. "
+            "Survive each wave and the crystal bonds deeper  -  a NEW ability every wave. "
             + "Forgot a control? Press [F1] anytime.", null,
             null,
-            c -> false, 6f));   // auto-advances after 6 s → finish() turns on the wave spawner
+            c -> false, 6f));   // auto-advances after 6 s -> finish() turns on the wave spawner
     }
 
     private static float angleDiff(float a, float b) {

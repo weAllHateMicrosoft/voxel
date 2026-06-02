@@ -4,11 +4,11 @@ import imgui.ImFont;
 import imgui.ImGui;
 
 /**
- * CutsceneManager — in-engine letterbox text cutscenes for DESCENT.
+ * CutsceneManager  -  in-engine letterbox text cutscenes for DESCENT.
  *
  * Cinematic-on-a-budget: black letterbox bars, a dimmed view of the world behind,
  * text that types in character-by-character, and a wind bed howling underneath.
- * No video files, no extra dependencies — and the ending can show live run stats.
+ * No video files, no extra dependencies  -  and the ending can show live run stats.
  *
  * ── HOW TO EDIT THE CUTSCENES ────────────────────────────────────────────────
  *  Everything you'd want to change is right here at the top:
@@ -45,9 +45,11 @@ public class CutsceneManager {
     public static final String[][] ENDING = {
         { "You survived.",
           "Every wave. Every hunter. Everything it sent." },
-        { "And now — the sky opens.",
+        { "And now  -  the sky opens.",
           "FLIGHT. The last thing the crystal ever gives." },
         { "The mountain has nothing left to hold you." },
+        { "Double-tap  [ SPACE ]  to take flight.",
+          "The world is yours." },
         { "DESCENT",
           "You are free.  Go anywhere." },
     };
@@ -73,7 +75,7 @@ public class CutsceneManager {
      */
     private static final float SLIDE_MIN_SHOW = 0.9f;
     private float   slideAge   = 0f;   // time the current slide has been shown
-    private float   windFade   = 0f;   // 0→1 fade-in for the wind bed
+    private float   windFade   = 0f;   // 0->1 fade-in for the wind bed
     private float   age        = 0f;   // total seconds the cutscene has run (for the glow pulse)
     private float   promptT    = 0f;   // blink timer for the "[SPACE]" prompt
 
@@ -106,14 +108,14 @@ public class CutsceneManager {
 
     /**
      * ENTER: complete the current typewriter, or move to the next slide.
-     * A per-slide minimum display time prevents accidental skipping — the
+     * A per-slide minimum display time prevents accidental skipping  -  the
      * player often has keys held from gameplay when a cutscene opens.
      */
     public void advance() {
         if (!active) return;
         // First press finishes typing; only then (and after min-show time) advance.
         if (typed < slideChars) {
-            if (slideAge < SLIDE_MIN_SHOW * 0.4f) return; // too soon — ignore
+            if (slideAge < SLIDE_MIN_SHOW * 0.4f) return; // too soon  -  ignore
             typed = slideChars;
             return;
         }

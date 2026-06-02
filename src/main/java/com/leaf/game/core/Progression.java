@@ -5,18 +5,18 @@ import java.util.EnumSet;
 import java.util.List;
 
 /**
- * Progression — the ability unlock system for DESCENT.
+ * Progression  -  the ability unlock system for DESCENT.
  *
  * ── How it works ────────────────────────────────────────────────────────────
  *  • The player starts every run able to use SNIPE plus everything they have
  *    EVER unlocked in a previous run (accumulated progress, persisted to disk).
- *  • Clearing a wave unlocks that wave's tier of abilities — but only the first
+ *  • Clearing a wave unlocks that wave's tier of abilities  -  but only the first
  *    time the player reaches it. Replaying earlier waves shows no card.
  *  • Locked abilities silently do nothing when their key is pressed.
  *
  * ── Editing the unlock schedule / card text ─────────────────────────────────
  *  Everything a designer needs to tweak lives at the top of this file:
- *    - the Ability enum (label / key hint / one-line description — also feeds F1)
+ *    - the Ability enum (label / key hint / one-line description  -  also feeds F1)
  *    - TIERS  : which abilities unlock at which wave (index = wave; 0 = start kit)
  *    - FLAVOR : the story headline shown on each wave's unlock card
  *  No other file needs to change to retune the progression.
@@ -24,27 +24,27 @@ import java.util.List;
 public class Progression {
 
     // ═══════════════════════════════════════════════════════════════════════
-    //  EDIT HERE — abilities, their keys, and one-line descriptions
+    //  EDIT HERE  -  abilities, their keys, and one-line descriptions
     //  (used by BOTH the unlock cards and the F1 reference, so they stay in sync)
     // ═══════════════════════════════════════════════════════════════════════
     public enum Ability {
         SNIPE      ("Snipe",            "[C]",        "Hold to charge a crystal bolt, release to fire. Longer charge = bigger blast."),
-        SLASH      ("Slash",            "[F]",        "Wide melee swing — hits every enemy in a cone in front of you."),
+        SLASH      ("Slash",            "[F]",        "Wide melee swing  -  hits every enemy in a cone in front of you."),
         DASH       ("Dash",             "[Q]",        "Instant burst in your move direction. Short cooldown, leaves a ghost trail."),
         QUAGMIRE   ("Quagmire",         "[M]",        "Fire a mud wave along the ground. Traps the enemy it hits for several seconds."),
         LIGHTNING  ("Lightning",        "[U]",        "Strike the enemy you aim at with lightning. Double-tap [U] for an area burst."),
-        HEAL       ("Heal",             "[L]",        "Hold to channel healing — restores health over time. You can't move while channeling."),
+        HEAL       ("Heal",             "[L]",        "Hold to channel healing  -  restores health over time. You can't move while channeling."),
         GRAB       ("Grab & Slam",      "[O]",        "Grab the enemy in your crosshair, hoist them up, then slam them into the ground."),
         BLINK      ("Blink",            "[E]",        "Teleport to the point you're looking at (up to ~22 blocks)."),
-        SWAP       ("Position Swap",    "[J]",        "Instantly swap places with the nearest enemy — perfect for escapes."),
+        SWAP       ("Position Swap",    "[J]",        "Instantly swap places with the nearest enemy  -  perfect for escapes."),
         PILLAR     ("Stone Pillar",     "[K]",        "A stone spire erupts under you and launches you skyward."),
         CANNONBALL ("Cannonball",       "[G]",        "Hold to charge, release to launch yourself as an explosive cannonball."),
         STAND      ("Manhattan Transfer","[X] / [TAB]","Deploy a combat drone that auto-fires at enemies. [TAB] to pilot it yourself."),
-        TIME       ("Time Dilation",    "[R] / [Y]",  "[R] slows time to a crawl, [Y] speeds it up — dodge or line up a shot."),
+        TIME       ("Time Dilation",    "[R] / [Y]",  "[R] slows time to a crawl, [Y] speeds it up  -  dodge or line up a shot."),
         SEAL       ("Minato's Seal",    "[H] / [B]",  "[H] throws a teleport seal; [B] warps you to it. Up to 5 active at once."),
-        SUBSTITUTE ("Substitute",       "[V]",        "Hold to prime. The next hit is absorbed — you blink back and leave an exploding decoy."),
+        SUBSTITUTE ("Substitute",       "[V]",        "Hold to prime. The next hit is absorbed  -  you blink back and leave an exploding decoy."),
         STONE_CANON("Stone Canon",      "[I]",        "Near stone, hold to absorb it into a giant projectile. Release to fire."),
-        KAMUI      ("Kamui",            "[Z]",        "Phase into another dimension — invincible while active. Drains mana fast."),
+        KAMUI      ("Kamui",            "[Z]",        "Phase into another dimension  -  invincible while active. Drains mana fast."),
         FLIGHT     ("Flight",           "[Space x2]", "Double-tap Space to fly. [V] cycles flight modes (skim / soar / grapple).");
 
         public final String label, key, desc;
@@ -62,15 +62,15 @@ public class Progression {
         /* wave 6 */ { Ability.PILLAR, Ability.CANNONBALL },
         /* wave 7 */ { Ability.STAND, Ability.TIME },
         /* wave 8 */ { Ability.SEAL, Ability.SUBSTITUTE, Ability.STONE_CANON, Ability.KAMUI },
-        /* wave 9 */ { Ability.FLIGHT },   // final parting gift — before the boss
+        /* wave 9 */ { Ability.FLIGHT },   // final parting gift  -  before the boss
     };
 
     /** Story headline shown on each wave's unlock card (index = wave cleared). */
     private static final String[] FLAVOR = {
         "The crystal stirs. Its first gift is yours.",
-        "They're closing in. Move faster — strike harder.",
+        "They're closing in. Move faster  -  strike harder.",
         "Don't let them surround you. Hold them in place.",
-        "The mountain's fury — and the means to endure it.",
+        "The mountain's fury  -  and the means to endure it.",
         "They send something bigger. Take it apart.",
         "Be everywhere they aren't.",
         "The earth itself answers to you now.",
@@ -79,11 +79,11 @@ public class Progression {
         "One last gift. The mountain releases you. The sky is yours now.",
     };
 
-    /** The wave that is the final boss (no ability unlock — you fight with everything). */
+    /** The wave that is the final boss (no ability unlock  -  you fight with everything). */
     public static final int BOSS_WAVE = 10;
 
-    /** Always shown on unlock cards — the user wants players reminded about mana. */
-    public static final String MANA_NOTE = "Most abilities draw MANA — the blue bar under your health. It refills over time.";
+    /** Always shown on unlock cards  -  the user wants players reminded about mana. */
+    public static final String MANA_NOTE = "Most abilities draw MANA  -  the blue bar under your health. It refills over time.";
 
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -91,12 +91,12 @@ public class Progression {
     private int maxTier;
 
     public Progression() {
-        reset();   // every run starts fresh — only the wave-0 starting kit
+        reset();   // every run starts fresh  -  only the wave-0 starting kit
     }
 
     /**
      * Reset to the starting kit (SNIPE only). Called at the start of every run so
-     * abilities unlock wave-by-wave each playthrough — that's what makes the unlock
+     * abilities unlock wave-by-wave each playthrough  -  that's what makes the unlock
      * cards appear every wave and the ability icons reveal one at a time.
      * (Abilities are intentionally NOT carried across runs.)
      */
@@ -110,7 +110,7 @@ public class Progression {
     /** True if the player may use this ability right now. */
     public boolean isUnlocked(Ability a) { return unlocked.contains(a); }
 
-    /** The abilities a given wave's tier grants (always — independent of unlock history). */
+    /** The abilities a given wave's tier grants (always  -  independent of unlock history). */
     public List<Ability> abilitiesForWave(int wave) {
         List<Ability> out = new ArrayList<>();
         if (wave >= 1 && wave < TIERS.length) for (Ability a : TIERS[wave]) out.add(a);
