@@ -498,7 +498,7 @@ public class GameConfig {
     /** Mana cost per dash use. */
     public static float manaDash             = 6f;
     /** Mana cost per blink use. */
-    public static float manaBlink            = 10f;
+    public static float manaBlink            = 50f;
     /** Mana cost to fire the cannonball. */
     public static float manaCannonball       = 18f;
     /** Mana cost per ground-smash activation. */

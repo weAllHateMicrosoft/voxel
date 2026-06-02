@@ -23,26 +23,12 @@ import java.util.*;
  *   SLAMMING    [GOLEM only]    — brief delay before shockwave AoE
  *
  * ── Pathfinding ───────────────────────────────────────────────────────────────
- *   Uses a flat A* search on the XZ plane (integer grid) to find a route
- *   around obstacles.  The path is cached and followed step-by-step; it is
- *   re-planned whenever the enemy gets within one block of the next waypoint,
- *   or whenever the cached path is stale (>PATH_CACHE_SECS seconds old), or
- *   whenever the target has moved more than PATH_REPLAN_DIST blocks.
- *
- *   Hole avoidance: a candidate step is only added to the open set if at
- *   least one of the two ground blocks directly under its landing column is
- *   solid. This prevents small/medium enemies from walking off ledges.
- *   The GOLEM ignores the hole penalty (it can jump two blocks and will
- *   smash its way through anything).
- *
- * ── GOLEM block-breaking ─────────────────────────────────────────────────────
- *   When the Golem's A* path is blocked by a wall it cannot jump, it sets
- *   pendingBlockBreak so EnemyManager can remove the block from the World.
- *   It is "smart" about which block to break: it inspects the two-block-tall
- *   column ahead and picks whichever block in the column is solid, starting
- *   from the feet upward, so it carves the minimal opening needed.
- *   If stuck in a pit (no solid ground neighbour), it breaks the wall at
- *   feet level to escape.
+ *   A* on a flat integer grid (Y = ground floor).  Runs every PATH_REPATH_SECS
+ *   seconds or immediately when the current path is exhausted/blocked.
+ *   Golems use a 2-block jump height; other enemies use 1.
+ *   Hole avoidance: a node is only walkable when the block directly below is
+ *   solid (no walking off edges into pits).
+ *   Golems can break any block in their way; other enemies jump or strafe.
  */
 public class Enemy {
 
@@ -64,17 +50,18 @@ public class Enemy {
     private static final float GRAVITY          = 28f;
     private static final float MAX_FALL_SPEED   = 30f;
 
-    private static final float PLAYER_RADIUS = 0.3f;
+    private static final float PLAYER_RADIUS    = 0.3f;
 
-    // ── A* / pathfinding constants ────────────────────────────────────────────
-    /** Maximum path-planning search radius (Manhattan), in blocks. */
-    private static final int   PATH_MAX_RADIUS    = 24;
-    /** Re-plan if target moved more than this many blocks. */
-    private static final float PATH_REPLAN_DIST   = 2.5f;
-    /** Re-plan at least this often (seconds), regardless of target movement. */
-    private static final float PATH_CACHE_SECS    = 2.0f;
-    /** How many waypoints to keep in the queued path. */
-    private static final int   PATH_MAX_NODES     = 48;
+    // ── A* pathfinding constants ──────────────────────────────────────────────
+    /** Seconds between full re-paths while the enemy has a valid route. */
+    private static final float PATH_REPATH_SECS  = 1.2f;
+    /** Maximum A* search nodes before we give up (prevents frame spikes). */
+    private static final int   PATH_MAX_NODES    = 512;
+    /** How close (blocks) the enemy must get to a waypoint before advancing. */
+    private static final float PATH_WAYPOINT_REACH = 1.1f;
+    /** Golem can break blocks; other enemies only step up 1 block. */
+    private static final int   GOLEM_JUMP_HEIGHT = 2;
+    private static final int   DEFAULT_JUMP_HEIGHT = 1;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Identity
@@ -144,21 +131,19 @@ public class Enemy {
     public int     breakX, breakY, breakZ;
     private float  stuckTimer = 0f;
 
-    // ─── A* path cache ────────────────────────────────────────────────────────
-    /** Queued waypoints (XZ integer grid coordinates), closest first. */
-    private final Deque<int[]> pathWaypoints = new ArrayDeque<>();
-    /** World-XZ of the target when the current path was planned. */
-    private int   pathTargetX = Integer.MIN_VALUE;
-    private int   pathTargetZ = Integer.MIN_VALUE;
-    /** Seconds since the path was last planned. */
-    private float pathAge     = Float.MAX_VALUE;
-    /** Set true when A* confirmed there is NO path (avoids re-planning every frame). */
-    private boolean pathBlocked = false;
-
-    // ── Sound timers (prevent sound spam) ────────────────────────────────────
-    private float stepSoundTimer    = 0f;
-    private float breakSoundPlayed  = 0f; // cooldown between break sounds
-    private float attackSoundTimer  = 0f;
+    // ── A* Pathfinding State ──────────────────────────────────────────────────
+    /**
+     * Current waypoint list produced by A*.
+     * Index 0 = next waypoint (world X,Z centre), index N-1 = destination.
+     * Each entry is a float[2]: { worldX + 0.5, worldZ + 0.5 }.
+     */
+    private final List<float[]> currentPath = new ArrayList<>();
+    private float repathTimer  = 0f;   // counts up; re-path when >= PATH_REPATH_SECS
+    /** Grid coords of the last A* target — used to skip redundant re-paths. */
+    private int   lastPathTargetGX = Integer.MIN_VALUE;
+    private int   lastPathTargetGZ = Integer.MIN_VALUE;
+    /** True while the golem is mid-jump to clear a 2-tall obstacle. */
+    private boolean pendingHighJump = false;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Visual / output
@@ -227,13 +212,13 @@ public class Enemy {
             }
         }
 
-        this.maxHealth      = health_;
-        this.health         = health_;
-        this.speed          = speed_;
-        this.damagePerSec   = dps_;
-        this.aggroRange     = aggro_;
-        this.attackRange    = atk_;
-        this.attackInterval = atkI_;
+        this.maxHealth       = health_;
+        this.health          = health_;
+        this.speed           = speed_;
+        this.damagePerSec    = dps_;
+        this.aggroRange      = aggro_;
+        this.attackRange     = atk_;
+        this.attackInterval  = atkI_;
         this.collisionRadius = cr;
         this.halfHeight      = hh;
     }
@@ -263,8 +248,9 @@ public class Enemy {
         knockbackVelX = kx * resist;
         knockbackVelZ = kz * resist;
         if (ky > 0f) velocityY = Math.max(velocityY, ky * resist);
-        // Knockback invalidates the current path
-        invalidatePath();
+        // Knock the golem off its current path so it recalculates from new position
+        currentPath.clear();
+        repathTimer = PATH_REPATH_SECS; // repath immediately next tick
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -293,7 +279,6 @@ public class Enemy {
         float    distToPlayer = new Vector3f(playerCentre).sub(getCentre()).length();
 
         tickCooldowns(dt);
-        tickSoundTimers(dt);
         tickAI(dt, distToPlayer, playerCentre, playerPos);
         tickMovement(dt, world, playerCentre, distToPlayer, allEnemies);
         tickGravity(dt, world);
@@ -310,7 +295,7 @@ public class Enemy {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  Cooldown / sound ticks
+    //  Cooldown ticks
     // ═════════════════════════════════════════════════════════════════════════
 
     private void tickCooldowns(float dt) {
@@ -318,13 +303,7 @@ public class Enemy {
         if (slamCooldown  > 0f) slamCooldown  -= dt;
         if (throwCooldown > 0f) throwCooldown  -= dt;
         if (mudTrapTimer  > 0f) mudTrapTimer   -= dt;
-        pathAge += dt;
-    }
-
-    private void tickSoundTimers(float dt) {
-        if (stepSoundTimer   > 0f) stepSoundTimer   -= dt;
-        if (breakSoundPlayed > 0f) breakSoundPlayed -= dt;
-        if (attackSoundTimer > 0f) attackSoundTimer -= dt;
+        repathTimer += dt;
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -345,13 +324,18 @@ public class Enemy {
         }
     }
 
-    // ─── GUARDIAN ───────────────────────────────────────────────────────────────
+    // ─── GUARDIAN ────────────────────────────────────────────────────────────
 
     private void tickGuardianAI(float dt, float dist, float leash, Vector3f playerCentre) {
         switch (state) {
             case IDLE -> {
                 tickPatrol(dt);
-                if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.6f; patrolWalking = false; }
+                if (dist <= aggroRange) {
+                    state = State.ALERTED;
+                    alertTimer = 0.6f;
+                    patrolWalking = false;
+                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 40f);
+                }
             }
             case ALERTED -> {
                 faceToward(playerCentre);
@@ -366,12 +350,17 @@ public class Enemy {
             case ATTACK -> {
                 faceToward(playerCentre);
                 swingTimer -= dt;
-                if (swingTimer <= 0f) {
+                // Damage at 60% of swing (0.6 * guardianAttackTime), not the end
+                float damageWindow = GameConfig.guardianAttackTime * 0.6f;
+                if (swingTimer <= (GameConfig.guardianAttackTime - damageWindow) && attackCooldown <= 0f) {
                     if (dist <= attackRange * 1.2f) {
                         boolean both = (comboIndex == 2);
                         framePlayerDamage = GameConfig.guardianHitDamage * (both ? 2f : 1f);
+                        attackCooldown = GameConfig.guardianAttackTime; // prevent double-hit this swing
                         com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 45f);
                     }
+                }
+                if (swingTimer <= 0f) {
                     comboIndex = (comboIndex + 1) % 3;
                     if (dist > attackRange * 1.4f) state = State.CHASE;
                     else beginSwing();
@@ -383,11 +372,13 @@ public class Enemy {
 
     private void beginSwing() {
         swingTimer = GameConfig.guardianAttackTime;
+        attackCooldown = GameConfig.guardianAttackTime; // reset per-swing guard
         attackAnim = switch (comboIndex) {
             case 0  -> "attack_left";
             case 1  -> "attack_right";
             default -> "attack";
         };
+        com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f) null, 30f);
     }
 
     private void tickPatrol(float dt) {
@@ -424,11 +415,13 @@ public class Enemy {
 
     private void tickGolemAI(float dt, float dist, float leash, Vector3f playerCentre) {
         switch (state) {
-            case IDLE    -> { if (dist <= aggroRange) {
-                state = State.ALERTED; alertTimer = 1.5f;
-                // Golem awakens — deep rumble
-                com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 60f);
-            }}
+            case IDLE    -> {
+                if (dist <= aggroRange) {
+                    state = State.ALERTED;
+                    alertTimer = 1.5f;
+                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 55f);
+                }
+            }
             case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
 
             case CHASE -> {
@@ -436,6 +429,7 @@ public class Enemy {
                 if (dist <= GameConfig.golemSlamRange && slamCooldown <= 0f) {
                     state = State.SLAMMING;
                     slamWindUp = 0.6f;
+                    com.leaf.game.core.AudioManager.playAt("enemy_roar", position, (Vector3f) null, 60f);
                     break;
                 }
                 if (dist >= GameConfig.golemSlamRange && dist <= GameConfig.golemThrowRange
@@ -452,28 +446,20 @@ public class Enemy {
                     framePlayerDamage = GameConfig.golemSlamDamage;
                     slamCooldown = GameConfig.golemSlamCooldown;
                     state        = State.CHASE;
-                    com.leaf.game.core.AudioManager.playAt("fall_smash", position, (Vector3f) null, 70f);
+                    com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 70f);
                 }
             }
 
             case ATTACK -> {
-                // Damage fires at 0.6 s into the attack interval, not at the end.
-                // We use attackCooldown as a count-down; when it crosses the 0.6 s
-                // threshold from above we deal damage, then let it run to zero
-                // before resetting for the next swing.
-                if (attackCooldown <= 0f) {
-                    // Start a new attack cycle
-                    attackCooldown = attackInterval;
-                    // Play swing-start sound
-                    if (attackSoundTimer <= 0f) {
-                        com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 45f);
-                        attackSoundTimer = attackInterval * 0.9f;
-                    }
-                } else if (attackCooldown <= (attackInterval - 0.6f)) {
-                    // 0.6 s have elapsed since the swing started → deal damage once
-                    if (framePlayerDamage == 0f) {
+                // Damage at 0.6 s into the attack interval, not at end
+                if (attackCooldown <= (attackInterval - 0.6f) && attackCooldown > (attackInterval - 0.65f)) {
+                    if (dist <= attackRange * 1.1f) {
                         framePlayerDamage = damagePerSec * attackInterval;
+                        com.leaf.game.core.AudioManager.playAt("golem_punch", position, (Vector3f) null, 50f);
                     }
+                }
+                if (attackCooldown <= 0f) {
+                    attackCooldown = attackInterval;
                 }
                 if (dist > attackRange * 1.3f) state = State.CHASE;
             }
@@ -485,7 +471,13 @@ public class Enemy {
 
     private void tickThrowerAI(float dt, float dist, float leash) {
         switch (state) {
-            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.4f; } }
+            case IDLE    -> {
+                if (dist <= aggroRange) {
+                    state = State.ALERTED;
+                    alertTimer = 0.4f;
+                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 35f);
+                }
+            }
             case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
 
             case CHASE -> {
@@ -506,10 +498,14 @@ public class Enemy {
             }
 
             case ATTACK -> {
-                if (attackCooldown <= 0f) {
-                    framePlayerDamage = damagePerSec * attackInterval;
-                    attackCooldown    = attackInterval;
+                // Damage at 0.6 s into the interval
+                if (attackCooldown <= (attackInterval - 0.6f) && attackCooldown > (attackInterval - 0.65f)) {
+                    if (dist <= attackRange * 1.1f) {
+                        framePlayerDamage = damagePerSec * attackInterval;
+                        com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f) null, 30f);
+                    }
                 }
+                if (attackCooldown <= 0f) attackCooldown = attackInterval;
                 if (dist > attackRange * 1.5f) state = State.CHASE;
             }
             default -> state = State.CHASE;
@@ -520,22 +516,27 @@ public class Enemy {
 
     private void tickZombieAI(float dt, float dist, float leash) {
         switch (state) {
-            case IDLE    -> { if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.7f; } }
+            case IDLE    -> {
+                if (dist <= aggroRange) {
+                    state = State.ALERTED;
+                    alertTimer = 0.7f;
+                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 30f);
+                }
+            }
             case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
             case CHASE   -> {
-                if (dist > leash)        { state = State.IDLE;   break; }
-                if (dist <= attackRange)   state = State.ATTACK;
+                if (dist > leash)      { state = State.IDLE;   break; }
+                if (dist <= attackRange) state = State.ATTACK;
             }
             case ATTACK  -> {
-                if (attackCooldown <= 0f) {
-                    framePlayerDamage = damagePerSec * attackInterval;
-                    attackCooldown    = attackInterval;
-                    // Zombie attack grunt
-                    if (attackSoundTimer <= 0f) {
-                        com.leaf.game.core.AudioManager.playAt("seal_hit", position, (Vector3f) null, 25f);
-                        attackSoundTimer = attackInterval * 0.8f;
+                // Damage at 0.6 s into the interval
+                if (attackCooldown <= (attackInterval - 0.6f) && attackCooldown > (attackInterval - 0.65f)) {
+                    if (dist <= attackRange * 1.1f) {
+                        framePlayerDamage = damagePerSec * attackInterval;
+                        com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f) null, 30f);
                     }
                 }
+                if (attackCooldown <= 0f) attackCooldown = attackInterval;
                 if (dist > attackRange * 1.6f) state = State.CHASE;
                 if (dist > leash)              state = State.IDLE;
             }
@@ -544,153 +545,226 @@ public class Enemy {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  A* Pathfinding  (flat XZ grid, integer coordinates)
+    //  A* Pathfinding
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
-     * Encode an XZ pair into a single long for use as a hash key.
-     * Safe for coordinates in ±1 million range.
+     * Compact grid node for the A* open set.
+     * gx, gz = integer grid coordinates.
+     * g      = cost from start.
+     * f      = g + heuristic.
+     * parent = encoded parent node index into a flat map (or -1 for start).
      */
-    private static long xzKey(int x, int z) {
-        return ((long)(x + 1_000_000)) * 2_000_001L + (z + 1_000_000);
+    private static final class ANode {
+        final int gx, gz;
+        float g, f;
+        int parentGx, parentGz;
+        boolean hasParent;
+
+        ANode(int gx, int gz, float g, float f, int px, int pz, boolean hasParent) {
+            this.gx = gx; this.gz = gz;
+            this.g = g;   this.f = f;
+            this.parentGx = px; this.parentGz = pz;
+            this.hasParent = hasParent;
+        }
     }
 
     /**
-     * Run A* from (startX, startZ) to (goalX, goalZ) at the enemy's current
-     * foot level.  Returns an ordered list of [x,z] waypoints, or null if no
-     * path was found within the search budget.
+     * Run A* from the enemy's current position to (targetGX, targetGZ).
      *
-     * Neighbour validity rules:
-     *  • The two-block-tall column at the neighbour must be passable (not solid)
-     *    for the enemy's height.  For the Golem (hh ≈ 1.8) we check three blocks.
-     *  • Unless this enemy is a Golem, the ground one block below the neighbour
-     *    must be solid (hole avoidance — won't walk into pits).
-     *  • A one-block-high step up is allowed (normal jump).
-     *  • The Golem allows a two-block-high step up.
+     * The search is done on the integer voxel grid at footY (the Y level the
+     * enemy is standing on).  A cell is walkable when:
+     *   • The block AT footY is AIR (can walk through).
+     *   • The block AT footY+1 is AIR (head clearance for 2-tall enemies).
+     *   • The block AT footY-1 is SOLID (something to stand on — no holes).
+     *     Exception: Golems ignore the hole-check because they can use a
+     *     2-block drop freely.
+     *   • (Optional step-up) The cell is 1 block higher but the gap above is clear.
+     *   • (Golem only)       2-block step-up is also tried.
+     *
+     * Returns true and populates {@code currentPath} if a path was found.
+     * Returns false and leaves {@code currentPath} empty on failure.
      */
-    private List<int[]> runAStar(World world, int startX, int startZ,
-                                 int goalX,  int goalZ,  int footY) {
+    private boolean runAStar(World world, int startGX, int startGZ,
+                             int targetGX, int targetGZ, int footY) {
 
-        boolean isGolem = (type == Type.GOLEM || type == Type.GUARDIAN);
-        int bodyBlocks  = (halfHeight >= 1.5f) ? 3 : 2; // blocks of vertical clearance needed
+        currentPath.clear();
 
-        // A* open set ordered by f = g + h
-        PriorityQueue<ANode> open = new PriorityQueue<>(Comparator.comparingInt(n -> n.f));
-        Map<Long, ANode> visited  = new HashMap<>();
+        if (startGX == targetGX && startGZ == targetGZ) return true;
 
-        ANode start = new ANode(startX, startZ, 0, heuristic(startX, startZ, goalX, goalZ), null);
-        open.add(start);
-        visited.put(xzKey(startX, startZ), start);
+        int jumpH = (type == Type.GOLEM) ? GOLEM_JUMP_HEIGHT : DEFAULT_JUMP_HEIGHT;
+        boolean isGolem = (type == Type.GOLEM);
 
-        int iters = 0;
-        while (!open.isEmpty() && iters++ < PATH_MAX_NODES * 8) {
+        // Open set — min-heap by f
+        PriorityQueue<ANode> open = new PriorityQueue<>(Comparator.comparingDouble(n -> n.f));
+        // Closed set and best-g map — key = gx * 65536 + gz (safe for ±32k range)
+        Map<Long, Float> bestG  = new HashMap<>();
+        Map<Long, ANode> cameFrom = new HashMap<>();
+
+        long startKey = nodeKey(startGX, startGZ);
+        ANode startNode = new ANode(startGX, startGZ, 0f,
+                heuristic(startGX, startGZ, targetGX, targetGZ),
+                0, 0, false);
+        open.add(startNode);
+        bestG.put(startKey, 0f);
+        cameFrom.put(startKey, startNode);
+
+        int explored = 0;
+
+        // 4-direction + diagonal neighbours
+        int[][] dirs = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+
+        while (!open.isEmpty() && explored < PATH_MAX_NODES) {
             ANode cur = open.poll();
+            explored++;
 
-            // Goal reached
-            if (cur.x == goalX && cur.z == goalZ) {
-                return reconstructPath(cur);
+            if (cur.gx == targetGX && cur.gz == targetGZ) {
+                // Reconstruct path
+                reconstructPath(cameFrom, cur, startGX, startGZ);
+                return !currentPath.isEmpty();
             }
 
-            // Expand 4-directional neighbours (diagonal allowed but costs √2)
-            int[][] dirs = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{1,-1},{-1,1},{-1,-1}};
+            long curKey = nodeKey(cur.gx, cur.gz);
+            // Skip if we've found a better path to this node already
+            Float recorded = bestG.get(curKey);
+            if (recorded != null && cur.g > recorded + 0.001f) continue;
+
             for (int[] d : dirs) {
-                int nx = cur.x + d[0];
-                int nz = cur.z + d[1];
-                long key = xzKey(nx, nz);
+                int nx = cur.gx + d[0];
+                int nz = cur.gz + d[1];
 
-                if (visited.containsKey(key)) continue;
-                if (Math.abs(nx - startX) > PATH_MAX_RADIUS ||
-                        Math.abs(nz - startZ) > PATH_MAX_RADIUS) continue;
+                // Try walking at the current footY, or stepping up by 1 (or 2 for golem)
+                int walkableY = findWalkableY(world, nx, nz, footY, jumpH, isGolem);
+                if (walkableY < 0) continue; // not walkable at any height
 
-                // Determine the actual foot-Y at this neighbour by checking a
-                // one/two block step-up from the current node's Y.
-                int nFootY = findStandableY(world, nx, nz, footY, isGolem ? 2 : 1);
-                if (nFootY < 0) continue; // can't stand here
+                float moveCost = (d[0] != 0 && d[1] != 0) ? 1.414f : 1.0f;
+                // Small penalty for height changes (golem prefers flat routes)
+                if (walkableY != footY) moveCost += 0.5f * Math.abs(walkableY - footY);
 
-                // Hole avoidance: non-Golem enemies refuse to step onto a column
-                // where there is no solid ground beneath (i.e., a cliff edge).
-                if (!isGolem && !hasSolidGround(world, nx, nFootY, nz)) continue;
+                float newG = cur.g + moveCost;
+                long nKey  = nodeKey(nx, nz);
+                Float prev = bestG.get(nKey);
+                if (prev != null && newG >= prev) continue;
 
-                // Passability: body clearance above nFootY
-                boolean passable = true;
-                for (int by = nFootY + 1; by <= nFootY + bodyBlocks; by++) {
-                    if (world.getBlock(nx, by, nz).isSolid()) { passable = false; break; }
-                }
-                if (!passable) continue;
-
-                int moveCost = (d[0] != 0 && d[1] != 0) ? 14 : 10; // diagonal ≈ √2 × 10
-                int g = cur.g + moveCost;
-                int h = heuristic(nx, nz, goalX, goalZ);
-                ANode next = new ANode(nx, nz, g, g + h, cur);
+                bestG.put(nKey, newG);
+                float f = newG + heuristic(nx, nz, targetGX, targetGZ);
+                ANode next = new ANode(nx, nz, newG, f, cur.gx, cur.gz, true);
                 open.add(next);
-                visited.put(key, next);
+                cameFrom.put(nKey, next);
             }
         }
-        return null; // no path found
+
+        return false; // No path found within budget
     }
 
-    /** Return the Y the enemy's feet should be at to stand on column (nx, nz),
-     *  given the current footY, allowing at most maxStepUp steps upward. */
-    private int findStandableY(World world, int nx, int nz, int footY, int maxStepUp) {
-        // Check from footY+maxStepUp downward
-        for (int dy = maxStepUp; dy >= -1; dy--) {
-            int ty = footY + dy;
-            if (ty < 0) continue;
-            boolean groundSolid = world.getBlock(nx, ty, nz).isSolid();
-            boolean clearFoot   = !world.getBlock(nx, ty + 1, nz).isSolid();
-            boolean clearHead   = !world.getBlock(nx, ty + 2, nz).isSolid();
-            if (groundSolid && clearFoot && clearHead) return ty + 1;
+    /**
+     * Determine the Y at which the enemy can walk at column (gx, gz) given a
+     * starting footY.  Returns -1 if unpassable.
+     *
+     * Logic:
+     *   • Try footY exactly: floor below solid, two air blocks above (body).
+     *   • Try footY+1 … footY+jumpH: step up.
+     *   • Golems also accept footY-1 (one-block drop) and footY-2 (two-block drop).
+     *   • Hole check: non-golem enemies require a solid block at footY-1 to prevent
+     *     walking off edges into pits.
+     */
+    private int findWalkableY(World world, int gx, int gz,
+                              int footY, int jumpH, boolean isGolem) {
+        // Try current level first, then step-up, then (golem) step-down
+        int[] tryYs;
+        if (isGolem) {
+            tryYs = new int[]{ footY, footY + 1, footY + 2, footY - 1, footY - 2 };
+        } else {
+            tryYs = new int[]{ footY, footY + 1 };
         }
-        // Also allow stepping down up to 2 blocks (walking down a slope)
-        for (int dy = -2; dy >= -4; dy--) {
-            int ty = footY + dy;
-            if (ty < 0) continue;
-            boolean groundSolid = world.getBlock(nx, ty, nz).isSolid();
-            boolean clearFoot   = !world.getBlock(nx, ty + 1, nz).isSolid();
-            boolean clearHead   = !world.getBlock(nx, ty + 2, nz).isSolid();
-            if (groundSolid && clearFoot && clearHead) return ty + 1;
+
+        for (int ty : tryYs) {
+            if (ty < 1 || ty >= Chunk.HEIGHT - 3) continue;
+            if (!isWalkableCell(world, gx, gz, ty, isGolem)) continue;
+            return ty;
         }
         return -1;
     }
 
-    /** True if there is a solid block directly under this column (no pit below). */
-    private boolean hasSolidGround(World world, int nx, int footY, int nz) {
-        // Require at least one solid block in the two cells below foot level
-        return world.getBlock(nx, footY - 1, nz).isSolid()
-                || world.getBlock(nx, footY - 2, nz).isSolid();
+    /**
+     * Returns true iff the enemy can occupy column (gx,gz) with feet at ty.
+     *
+     * Conditions:
+     *   1. The cell at ty   is not solid (feet don't clip).
+     *   2. The cell at ty+1 is not solid (body doesn't clip — standard 2-tall).
+     *   3. There is a solid block at ty-1 (won't fall into a hole) — UNLESS isGolem.
+     */
+    private boolean isWalkableCell(World world, int gx, int gz, int ty, boolean isGolem) {
+        // Feet and body must be clear
+        if (world.getBlock(gx, ty, gz).isSolid())     return false;
+        if (world.getBlock(gx, ty + 1, gz).isSolid()) return false;
+        // Must have ground underfoot (hole avoidance) — golems skip this check
+        if (!isGolem && !world.getBlock(gx, ty - 1, gz).isSolid()) return false;
+        return true;
     }
 
-    private static int heuristic(int ax, int az, int bx, int bz) {
-        // Octile heuristic (good for 8-directional movement)
-        int dx = Math.abs(ax - bx), dz = Math.abs(az - bz);
-        return 10 * Math.max(dx, dz) + (14 - 10) * Math.min(dx, dz);
+    private float heuristic(int ax, int az, int bx, int bz) {
+        // Octile distance — admissible for 8-direction grid
+        int dx = Math.abs(ax - bx);
+        int dz = Math.abs(az - bz);
+        return Math.max(dx, dz) + (float)(Math.sqrt(2) - 1) * Math.min(dx, dz);
     }
 
-    private static List<int[]> reconstructPath(ANode goal) {
-        List<int[]> path = new ArrayList<>();
-        for (ANode n = goal; n != null; n = n.parent) path.add(new int[]{n.x, n.z});
-        Collections.reverse(path);
-        if (path.size() > PATH_MAX_NODES) path = path.subList(0, PATH_MAX_NODES);
-        return path;
+    private long nodeKey(int gx, int gz) {
+        // Safe for ±32767 coords
+        return ((long)(gx + 32768) << 17) | (gz + 32768);
     }
 
-    private void invalidatePath() {
-        pathWaypoints.clear();
-        pathAge     = Float.MAX_VALUE;
-        pathBlocked = false;
+    /** Walk cameFrom map backwards to build currentPath (waypoints in forward order). */
+    private void reconstructPath(Map<Long, ANode> cameFrom, ANode goal,
+                                 int startGX, int startGZ) {
+        List<float[]> reversed = new ArrayList<>();
+        ANode cur = goal;
+        // Guard against runaway loops
+        int safety = PATH_MAX_NODES * 2;
+        while (cur.hasParent && safety-- > 0) {
+            reversed.add(new float[]{ cur.gx + 0.5f, cur.gz + 0.5f });
+            long pk = nodeKey(cur.parentGx, cur.parentGz);
+            ANode parent = cameFrom.get(pk);
+            if (parent == null || (parent.gx == startGX && parent.gz == startGZ)) break;
+            cur = parent;
+        }
+        // Reverse so index 0 = first step
+        for (int i = reversed.size() - 1; i >= 0; i--) {
+            currentPath.add(reversed.get(i));
+        }
     }
 
-    /** Lightweight A* node. */
-    private static final class ANode {
-        final int x, z, g, f;
-        final ANode parent;
-        ANode(int x, int z, int g, int f, ANode parent) {
-            this.x = x; this.z = z; this.g = g; this.f = f; this.parent = parent;
+    /**
+     * Refresh the A* path to the given target if needed.
+     * Called each frame from tickMovement.
+     */
+    private void maybeRepath(World world, float targetX, float targetZ) {
+        int footY    = (int) Math.floor(position.y);
+        int startGX  = (int) Math.floor(position.x);
+        int startGZ  = (int) Math.floor(position.z);
+        int targetGX = (int) Math.floor(targetX);
+        int targetGZ = (int) Math.floor(targetZ);
+
+        boolean targetMoved = (targetGX != lastPathTargetGX || targetGZ != lastPathTargetGZ);
+        boolean timerElapsed = repathTimer >= PATH_REPATH_SECS;
+        boolean pathEmpty    = currentPath.isEmpty();
+
+        if (!pathEmpty && !timerElapsed && !targetMoved) return;
+
+        repathTimer = 0f;
+        lastPathTargetGX = targetGX;
+        lastPathTargetGZ = targetGZ;
+
+        boolean found = runAStar(world, startGX, startGZ, targetGX, targetGZ, footY);
+        if (!found) {
+            // A* failed (blocked or budget exceeded): fall back to direct vector
+            currentPath.clear();
         }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    //  Horizontal movement
+    //  Horizontal movement (A*-guided)
     // ═════════════════════════════════════════════════════════════════════════
 
     private void tickMovement(float dt, World world, Vector3f target,
@@ -704,12 +778,12 @@ public class Enemy {
         } else {
             shouldMove = switch (state) {
                 case CHASE, ATTACK, SLAMMING, RETREATING -> true;
-                default -> false;
+                default                                  -> false;
             };
         }
         if (!shouldMove) return;
 
-        // ── Determine desired direction ────────────────────────────────────────
+        // ── Determine raw desired direction ──────────────────────────────────
         float dx, dz;
         if (guardianPatrol) {
             dx = (float) Math.sin(facingYaw);
@@ -718,51 +792,16 @@ public class Enemy {
             dx = position.x - target.x;
             dz = position.z - target.z;
         } else {
-            // Chase / Attack — use A* waypoint if available; fall back to direct
-            int footY  = (int) Math.floor(position.y);
-            int goalX  = (int) Math.floor(target.x);
-            int goalZ  = (int) Math.floor(target.z);
-            int startX = (int) Math.floor(position.x);
-            int startZ = (int) Math.floor(position.z);
+            // Chase / Attack: use A* waypoints
+            maybeRepath(world, target.x, target.z);
+            advanceWaypoints();
 
-            // Decide whether to replan
-            boolean targetMoved = (Math.abs(goalX - pathTargetX) + Math.abs(goalZ - pathTargetZ)) > (int) PATH_REPLAN_DIST;
-            boolean stale       = pathAge > PATH_CACHE_SECS;
-            boolean emptyPath   = pathWaypoints.isEmpty();
-
-            if ((emptyPath || targetMoved || stale) && !pathBlocked) {
-                pathTargetX = goalX;
-                pathTargetZ = goalZ;
-                pathAge     = 0f;
-                List<int[]> newPath = runAStar(world, startX, startZ, goalX, goalZ, footY);
-                pathWaypoints.clear();
-                if (newPath != null && newPath.size() > 1) {
-                    // Skip the first node (it's our own position)
-                    for (int i = 1; i < newPath.size(); i++) pathWaypoints.add(newPath.get(i));
-                    pathBlocked = false;
-                } else {
-                    pathBlocked = (newPath == null);
-                }
-            }
-
-            // Pop waypoints we've passed
-            while (!pathWaypoints.isEmpty()) {
-                int[] wp = pathWaypoints.peek();
-                float wpDx = wp[0] + 0.5f - position.x;
-                float wpDz = wp[1] + 0.5f - position.z;
-                if (wpDx * wpDx + wpDz * wpDz < 0.8f * 0.8f) {
-                    pathWaypoints.poll(); // reached this waypoint
-                } else {
-                    break;
-                }
-            }
-
-            if (!pathWaypoints.isEmpty()) {
-                int[] wp = pathWaypoints.peek();
-                dx = wp[0] + 0.5f - position.x;
-                dz = wp[1] + 0.5f - position.z;
+            if (!currentPath.isEmpty()) {
+                float[] wp = currentPath.get(0);
+                dx = wp[0] - position.x;
+                dz = wp[1] - position.z;
             } else {
-                // No path or path exhausted — steer directly
+                // Fallback: direct vector (no valid path)
                 dx = target.x - position.x;
                 dz = target.z - position.z;
             }
@@ -777,28 +816,11 @@ public class Enemy {
         int underX = (int) Math.floor(position.x);
         int underY = (int) Math.floor(position.y - 0.1f);
         int underZ = (int) Math.floor(position.z);
-        boolean onMud = world.getBlock(underX, underY, underZ) == Block.MUD;
-
-        float moveSpeed = guardianPatrol         ? GameConfig.guardianPatrolSpeed
+        boolean onMud  = world.getBlock(underX, underY, underZ) == Block.MUD;
+        float   moveSpeed = guardianPatrol         ? GameConfig.guardianPatrolSpeed
                 : (state == State.RETREATING) ? GameConfig.throwerRetreatSpeed
                   : speed;
         float step = moveSpeed * dt * (onMud ? 0.10f : 1.0f);
-
-        // ── Footstep sound ─────────────────────────────────────────────────────
-        if (onGround && stepSoundTimer <= 0f) {
-            float stepInterval = switch (type) {
-                case GOLEM    -> 0.55f;   // heavy thud
-                case GUARDIAN -> 0.45f;
-                default       -> 0.35f;
-            };
-            String stepSound = switch (type) {
-                case GOLEM, GUARDIAN -> "fall_smash"; // deep boom
-                default              -> "seal_hit";   // lighter thump
-            };
-            com.leaf.game.core.AudioManager.playAt(stepSound, position, (Vector3f) null,
-                    type == Type.GOLEM ? 40f : 20f);
-            stepSoundTimer = stepInterval;
-        }
 
         float nx = position.x + ndx * step;
         float nz = position.z + ndz * step;
@@ -807,7 +829,7 @@ public class Enemy {
         boolean blockedX = isSolidColumn(world, nx, footY, position.z);
         boolean blockedZ = isSolidColumn(world, position.x, footY, nz);
 
-        // Wall sliding
+        // Wall-slide along the open axis
         if (blockedX && !blockedZ) {
             position.z += Math.signum(ndz) * step * 1.5f;
         } else if (blockedZ && !blockedX) {
@@ -817,7 +839,7 @@ public class Enemy {
         if (!blockedX) position.x = nx;
         if (!blockedZ) position.z = nz;
 
-        // ── Wall-escape push ───────────────────────────────────────────────────
+        // ── Wall-escape: push out of embedded solid ───────────────────────────
         if (isSolidColumn(world, position.x, footY, position.z)) {
             float escape = collisionRadius + 0.2f;
             float[][] dirs8 = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}};
@@ -831,82 +853,78 @@ public class Enemy {
             }
         }
 
+        // ── Obstacle handling: jump, break, or strafe ─────────────────────────
         if ((blockedX || blockedZ) && onGround) {
             if (guardianPatrol) patrolTimer = 0f;
 
             int blockAheadX = (int) Math.floor(position.x + ndx * 0.9f);
             int blockAheadZ = (int) Math.floor(position.z + ndz * 0.9f);
 
-            // ── GOLEM / GUARDIAN: can jump 2 blocks ───────────────────────────
-            boolean isGolem = (type == Type.GOLEM || type == Type.GUARDIAN);
-            int jumpClearBlocks = isGolem ? 2 : 1; // how many clear blocks we need above foot
-
-            boolean canJump = true;
-            for (int by = footY + 1; by <= footY + jumpClearBlocks + 1; by++) {
-                if (world.getBlock(blockAheadX, by, blockAheadZ).isSolid()) { canJump = false; break; }
+            // How many blocks tall is the wall?  (up to 3 high check)
+            int wallHeight = 0;
+            for (int wy = footY; wy <= footY + 3; wy++) {
+                if (world.getBlock(blockAheadX, wy, blockAheadZ).isSolid()) wallHeight++;
+                else break;
             }
 
-            if (canJump) {
-                // Normal jump (1 block high) or Golem high-jump (2 blocks)
-                velocityY = isGolem ? 9.5f : 7.5f;
-                // Invalidate path so the next tick uses fresh waypoints
-                invalidatePath();
+            if (wallHeight == 1) {
+                // Single-block wall: all enemies can hop over it
+                velocityY = 7.5f;
+                currentPath.clear(); // recompute next tick so we don't run into it again
+                com.leaf.game.core.AudioManager.playAt("enemy_step", position, (Vector3f) null, 15f);
+            } else if (wallHeight == 2 && type == Type.GOLEM) {
+                // Two-block wall: golem high-jump
+                if (!pendingHighJump) {
+                    velocityY = 11.0f;
+                    pendingHighJump = true;
+                    currentPath.clear();
+                    com.leaf.game.core.AudioManager.playAt("golem_step", position, (Vector3f) null, 40f);
+                }
             } else {
                 stuckTimer += dt;
 
-                if (stuckTimer > 0.6f && isGolem) {
-                    // ── GOLEM SMART BLOCK BREAKING ────────────────────────────
-                    // Find the lowest solid block in the 3-tall column ahead and
-                    // break it first so we carve the minimum necessary opening.
-                    int breakY = -1;
-                    for (int by = footY; by <= footY + 2; by++) {
-                        if (world.getBlock(blockAheadX, by, blockAheadZ).isSolid()) {
-                            breakY = by; break;
+                if (stuckTimer > 0.5f && (type == Type.GOLEM || type == Type.GUARDIAN)) {
+                    // ── Golem precision block-break ──────────────────────────
+                    // Break the lowest wall block first (clear a doorway from bottom up)
+                    int breakAtY = footY;
+                    for (int wy = footY; wy <= footY + 3; wy++) {
+                        if (world.getBlock(blockAheadX, wy, blockAheadZ).isSolid()) {
+                            breakAtY = wy;
+                            break;
                         }
                     }
-                    // If still stuck (hole? pit wall?) try above the foot level
-                    if (breakY < 0) breakY = footY;
-
                     pendingBlockBreak = true;
                     breakX = blockAheadX;
-                    breakY = breakY;   // local to this block (intentional re-use)
+                    breakY = breakAtY;
                     breakZ = blockAheadZ;
                     stuckTimer = 0f;
-                    invalidatePath(); // path is no longer valid after block change
-
-                    // Block-break sound
-                    if (breakSoundPlayed <= 0f) {
-                        com.leaf.game.core.AudioManager.playAt("fall_smash", position, (Vector3f) null, 55f);
-                        breakSoundPlayed = 0.8f;
-                    }
+                    currentPath.clear();    // repath around the new gap next tick
 
                     if (type == Type.GUARDIAN) {
-                        state = State.ATTACK; beginSwing();
+                        state = State.ATTACK;
+                        beginSwing();
                     } else {
-                        state = State.SLAMMING; slamWindUp = 0.5f;
+                        // Golem smash-break sound + brief slam-wind-up for effect
+                        state     = State.SLAMMING;
+                        slamWindUp = 0.4f;
+                        com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 55f);
                     }
-                } else if (stuckTimer > 0.6f) {
-                    // Smaller enemies strafe around the wall
+                } else if (stuckTimer > 0.3f) {
+                    // Non-golem enemies: strafe
                     strafeTimer += dt;
                     if (strafeTimer >= STRAFE_FLIP_SECS) { strafeSign = -strafeSign; strafeTimer = 0f; }
                     float sx = position.x + (-ndz * strafeSign) * step;
                     float sz = position.z + ( ndx * strafeSign) * step;
                     if (!isSolidColumn(world, sx, footY, sz)) { position.x = sx; position.z = sz; }
-                    // Also invalidate path so it plans around the obstacle
-                    if (stuckTimer > 1.2f) { invalidatePath(); stuckTimer = 0f; }
-                } else {
-                    strafeTimer += dt;
-                    if (strafeTimer >= STRAFE_FLIP_SECS) { strafeSign = -strafeSign; strafeTimer = 0f; }
-                    float sx = position.x + (-ndz * strafeSign) * step;
-                    float sz = position.z + ( ndx * strafeSign) * step;
-                    if (!isSolidColumn(world, sx, footY, sz)) { position.x = sx; position.z = sz; }
+                    currentPath.clear(); // recompute to find the detour
                 }
             }
         } else {
-            stuckTimer = 0f;
+            stuckTimer    = 0f;
+            pendingHighJump = false;
         }
 
-        // ── Separation ────────────────────────────────────────────────────────
+        // ── Separation from other enemies ─────────────────────────────────────
         float sepRadius = collisionRadius * 2.2f;
         for (Enemy other : allEnemies) {
             if (other == this || !other.alive) continue;
@@ -920,7 +938,7 @@ public class Enemy {
             }
         }
 
-        // ── Player personal-space buffer ──────────────────────────────────────
+        // ── Keep out of player's personal space ───────────────────────────────
         float minPlayerDist = collisionRadius + 0.3f;
         float pdx = position.x - target.x;
         float pdz = position.z - target.z;
@@ -929,6 +947,24 @@ public class Enemy {
             float push = minPlayerDist - pd;
             position.x += (pdx / pd) * push;
             position.z += (pdz / pd) * push;
+        }
+    }
+
+    /**
+     * Remove any waypoints the enemy has already passed through.
+     * A waypoint is considered reached when the enemy is within PATH_WAYPOINT_REACH
+     * blocks of its (X,Z) centre.
+     */
+    private void advanceWaypoints() {
+        while (!currentPath.isEmpty()) {
+            float[] wp = currentPath.get(0);
+            float ex = wp[0] - position.x;
+            float ez = wp[1] - position.z;
+            if (Math.sqrt(ex*ex + ez*ez) <= PATH_WAYPOINT_REACH) {
+                currentPath.remove(0);
+            } else {
+                break;
+            }
         }
     }
 
@@ -977,18 +1013,22 @@ public class Enemy {
             grabImpactIsGround = slamIsGround || atFloor;
             pendingGrabImpact  = true;
 
-            float impactDamage = grabImpactIsGround ? GameConfig.grabGroundDamage : GameConfig.grabWallDamage;
+            float impactDamage = grabImpactIsGround
+                    ? GameConfig.grabGroundDamage
+                    : GameConfig.grabWallDamage;
             applyDamage(impactDamage);
 
             isThrown   = false;
             thrownVelX = 0f;
             thrownVelY = 0f;
             thrownVelZ = 0f;
-            invalidatePath();
 
             position.x = newX;
             position.y = Math.max(1f, (float) impY + 1.01f);
             position.z = newZ;
+
+            // Invalidate path — position teleported
+            currentPath.clear();
         } else {
             position.x = newX;
             position.y = newY;
@@ -996,8 +1036,12 @@ public class Enemy {
         }
     }
 
-    // ─── Solid-column test ────────────────────────────────────────────────────
+    // ─── isSolidColumn ────────────────────────────────────────────────────────
 
+    /**
+     * Returns true if either the foot or head block at (x, footY, z) is solid.
+     * Used as a quick horizontal collision check before A* supplies a real path.
+     */
     private boolean isSolidColumn(World world, float x, int footY, float z) {
         int bx = (int) Math.floor(x);
         int bz = (int) Math.floor(z);
@@ -1021,14 +1065,13 @@ public class Enemy {
         if (dy < 0f) {
             int feetY = (int) Math.floor(position.y + dy);
             if (feetY >= 0 && feetY < Chunk.HEIGHT && world.getBlock(bx, feetY, bz).isSolid()) {
-                // Landing sound (only on non-trivial falls)
-                if (velocityY < -6f) {
-                    float vol = Math.min(50f, Math.abs(velocityY) * 1.5f);
-                    com.leaf.game.core.AudioManager.playAt("fall_smash", position, (Vector3f) null, vol);
-                }
                 position.y = feetY + 1f;
                 velocityY  = 0f;
                 onGround   = true;
+                // Land sound for golem only (other enemies are too frequent)
+                if (type == Type.GOLEM && dy < -8f) {
+                    com.leaf.game.core.AudioManager.playAt("golem_step", position, (Vector3f) null, 45f);
+                }
             } else {
                 position.y += dy;
             }
@@ -1072,6 +1115,7 @@ public class Enemy {
     }
 
     public float renderScale() {
-        return renderScaleVec()[1];
+        float[] v = renderScaleVec();
+        return v[1];
     }
 }
