@@ -2963,11 +2963,12 @@ public class Window {
                             ap.tick(rawDeltaTime);
 
                             // Face the player (Y-axis rotation only).
-                            // +PI because Blockbench authors a model's front on the -Z face.
-                            // The guardian controls its own facing (patrol heading / toward player).
+                            // The golem's front is on the +Z face, so it needs NO +PI flip
+                            // (the slime/enemy_basic front is -Z and does). The guardian
+                            // controls its own facing (patrol heading / toward player).
                             float faceY;
                             if (isGuardian) {
-                                faceY = enemy.facingYaw + (float) Math.PI;
+                                faceY = enemy.facingYaw;
                             } else {
                                 float faceDx = player.position.x - enemy.position.x;
                                 float faceDz = player.position.z - enemy.position.z;
