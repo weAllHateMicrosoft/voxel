@@ -356,31 +356,34 @@ public class AbilityController {
         lastG = gHeld;
 
         // ── HEALING (hold L) ──────────────────────────────────────────────────
-        boolean lHeld = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS
+        boolean lHeld   = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS
                 && player.can(com.leaf.game.core.Progression.Ability.HEAL);
+        boolean mpEmpty = player.mana <= 0f;
         if (lHeld && healCooldownTimer <= 0f && !player.debugMode
                 && player.health < player.maxHealth
-                && player.mana > 0f
+                && !mpEmpty
                 && healChannelTimer < GameConfig.healMaxDuration) {
             if (!isHealing) {
-                // Leading edge: fire the sound once and let it play to completion —
-                // never stop it mid-way, so the full audio always plays.
                 com.leaf.game.core.AudioManager.play("healing");
             }
             isHealing = true;
             healChannelTimer += dt;
-            float gain = GameConfig.healPerSecond * dt;
-            player.health = Math.min(player.maxHealth, player.health + gain);
-            // Drain mana continuously while healing
-            player.mana = Math.max(0f, player.mana - GameConfig.manaHealPerSecond * dt);
+            player.health = Math.min(player.maxHealth, player.health + GameConfig.healPerSecond * dt);
+            player.mana   = Math.max(0f, player.mana - GameConfig.manaHealPerSecond * dt);
             blendOverlay(new Vector3f(0.15f, 0.85f, 0.35f), 0.18f, dt);
         } else {
-            if (isHealing || (healChannelTimer >= GameConfig.healMaxDuration && lHeld)) {
-                // Start cooldown: either key released after healing, or channel exhausted
-                healCooldownTimer = GameConfig.healCooldown;
+            if (isHealing) {
+                if (mpEmpty) {
+                    // MP ran out — stop immediately, no cooldown so they can resume when MP refills.
+                    healCooldownTimer = 0f;
+                } else if (healChannelTimer >= GameConfig.healMaxDuration) {
+                    healCooldownTimer = GameConfig.healCooldown;  // fully exhausted
+                } else {
+                    healCooldownTimer = GameConfig.healCooldown * 0.3f;  // key released early — short cooldown
+                }
             }
             isHealing        = false;
-            healChannelTimer = 0f;  // reset channel time whenever healing is inactive
+            healChannelTimer = 0f;
         }
 
         // ── KAMUI (Z toggle) — phase into a separate dimension ───────────────

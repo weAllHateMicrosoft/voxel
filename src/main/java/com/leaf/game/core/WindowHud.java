@@ -269,18 +269,14 @@ class WindowHud {
         draw.addText(cx - gw/2, ty, goalCol, goal);
         ty += 22f;
 
-        // Timer + skip
+        // Timer bar + skip hint  (input handled exclusively in Window game-loop tick)
         int secs = Math.max(0, (int) win.practiceTimer);
-        String skip = "Auto-continues in " + secs + "s  or  [ ENTER ] to skip";
+        boolean canSkipNow = win.practiceTimer < Window.PRACTICE_TIMEOUT - 1.2f;
+        String skip = canSkipNow
+                ? "Auto-continues in " + secs + "s   —   [ ENTER ] to skip"
+                : "Try the ability above to continue...";
         float sw2 = ImGui.calcTextSize(skip).x;
         draw.addText(cx - sw2/2, ty, ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.8f), skip);
-
-        // ENTER key skips the practice session
-        if (glfwGetKey(win.window, GLFW_KEY_ENTER) == GLFW_PRESS) {
-            win.practiceAbility = null;
-            win.practiceTimer   = 0f;
-            win.enemyManager.beginNextWave();
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

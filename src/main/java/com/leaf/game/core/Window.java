@@ -107,7 +107,16 @@ public class Window {
     float practiceTimer   = 0f;
     /** True once the player has actually used the ability being practised. */
     boolean practiceUsed  = false;
-    private static final float PRACTICE_TIMEOUT = 40f;
+    static final float PRACTICE_TIMEOUT = 40f;
+    /**
+     * Edge-detect for ENTER inside the practice tick.
+     * Prevents the same keypress that dismissed the unlock card from instantly
+     * killing the practice session — ENTER must be RELEASED between the two.
+     */
+    private boolean lastPracticeEnter = false;
+
+    /** Set after the wave-9 ending cutscene fires; stops wave spawning. */
+    boolean gameEnded = false;
     final ImString chatInput = new ImString(256);
     final List<String> chatHistory = new ArrayList<>();
     final ImString seedInput = new ImString(32);
@@ -917,11 +926,12 @@ public class Window {
                             player.abilities.kamuiAutoExited  = false;
                             player.abilities.absorptionCharge = 0f;
                             player.abilities.isDashing        = false;
-                            enemyManager.getEnemies().forEach(e -> e.alive = false);
-                            enemyManager.projectiles.clear();
-                            enemyManager.wavesEnabled  = true;
-                            practiceAbility = null; practiceTimer = 0f;
-                            showUnlockCard  = false;
+                            player.abilities.isCannonballing  = false;
+                            enemyManager.resetForNewRun();          // resets wave to 0 + clears enemies
+                            practiceAbility   = null; practiceTimer = 0f;
+                            showUnlockCard    = false; lastCardSpace = false;
+                            lastPracticeEnter = false;
+                            gameEnded         = false;
                             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
                             AudioManager.stopContinuous("kamui_duration");
                             AudioManager.stopContinuous("kamui_distortion");
@@ -1145,6 +1155,21 @@ public class Window {
                         // ── WAVE CLEARED → unlock ability + show card ─────────
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
                             int waveJustCleared = enemyManager.lastClearedWave;
+
+                            // ── WAVE 9 = FLIGHT = GAME ENDING ────────────────────
+                            if (waveJustCleared == 9 && !gameEnded) {
+                                player.progression.unlockForWave(9);       // grants FLIGHT
+                                float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
+                                int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
+                                cutscene.endingStat = String.format(
+                                        "Enemies defeated: %d     Time: %d:%02d",
+                                        enemyManager.totalKills, em, es);
+                                cutscene.startEnding();
+                                enemyManager.wavesEnabled = false;   // no more waves
+                                enemyManager.beginNextWave();         // clear awaitingNextWave
+                                gameEnded = true;
+                            } else {
+
                             java.util.List<Progression.Ability> gained =
                                     player.progression.unlockForWave(waveJustCleared);
                             // Show the card whenever there are new abilities OR the wave has a
@@ -1165,6 +1190,7 @@ public class Window {
                                 showUnlockCard      = true;
                                 AudioManager.play("seal_collect");
                             }
+                            } // end else (non-ending wave)
                         }
                         // Dismiss the card with ENTER → practice (for complex abilities) or next wave.
                         if (showUnlockCard) {
@@ -1194,7 +1220,7 @@ public class Window {
                         // ── PRACTICE SESSION tick ─────────────────────────────
                         if (practiceAbility != null && practiceTimer > 0f) {
                             practiceTimer -= deltaTime;
-                            // Detect ability usage for each type
+
                             boolean used = switch (practiceAbility) {
                                 case KAMUI -> player.abilities.isKamui;
                                 case SEAL  -> player.seals.getSealCount() > 0;
@@ -1203,14 +1229,28 @@ public class Window {
                             };
                             if (used) practiceUsed = true;
 
-                            // Dismiss once used (after 1s grace) or timed out
-                            boolean done = (practiceUsed && practiceTimer < PRACTICE_TIMEOUT - 1f)
-                                    || practiceTimer <= 0f;
+                            // ENTER can skip only after 1.2 s AND the key was released at
+                            // least once — prevents the card-dismiss ENTER from killing the
+                            // session on the very same frame it opens.
+                            boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                            boolean canSkip = practiceTimer < PRACTICE_TIMEOUT - 1.2f
+                                    && !lastPracticeEnter && enterNow;
+                            lastPracticeEnter = enterNow;
+
+                            boolean done = (practiceUsed && practiceTimer < PRACTICE_TIMEOUT - 2f)
+                                    || practiceTimer <= 0f
+                                    || canSkip;
                             if (done) {
-                                practiceAbility = null;
-                                practiceTimer   = 0f;
+                                practiceAbility   = null;
+                                practiceTimer     = 0f;
+                                lastPracticeEnter = true; // arm: next card dismiss won't skip its practice
                                 enemyManager.beginNextWave();
                             }
+                        } else {
+                            // Track ENTER state even when no session is active
+                            lastPracticeEnter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                         }
 
                         // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────
