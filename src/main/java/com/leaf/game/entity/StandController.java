@@ -158,7 +158,8 @@ public class StandController {
         updateLOS(camera, world);
 
         // ── X — Deploy / Recall ────────────────────────────────────────────────
-        boolean xHeld = glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS;
+        boolean xHeld = glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.STAND);
         if (xHeld && !lastX) {
             if (isDeployed) {
                 recall();

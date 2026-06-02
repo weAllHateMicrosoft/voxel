@@ -3,6 +3,7 @@ package com.leaf.game.entity;
 import com.leaf.game.util.Camera;
 import com.leaf.game.util.RaycastResult;
 import com.leaf.game.core.GameConfig;
+import com.leaf.game.core.Progression;
 import com.leaf.game.world.Block;
 import com.leaf.game.world.World;
 import org.joml.Vector3f;
@@ -13,6 +14,11 @@ public class Player {
 
     public boolean debugMode = false;
     public Vector3f position;
+
+    /** Ability unlock state (persists across deaths). Checked at every ability trigger. */
+    public final Progression progression = new Progression();
+    /** Shorthand gate used at ability triggers. */
+    public boolean can(Progression.Ability a) { return progression.isUnlocked(a); }
 
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
     public float health    = 20.0f;
@@ -111,7 +117,9 @@ public class Player {
         // ── DOUBLE-TAP SPACE → TOGGLE FLIGHT ─────────────────────────────────
         boolean currentSpace = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (currentSpace && !lastSpace) {
-            if (now - lastSpaceTime < 0.3 && !stand.isInStandPerspective()) {
+            // Flight is a late unlock; allow exiting if already flying, but block entering until learned.
+            boolean flightAllowed = debugMode || can(Progression.Ability.FLIGHT);
+            if (now - lastSpaceTime < 0.3 && !stand.isInStandPerspective() && flightAllowed) {
                 debugMode = !debugMode;
                 velocityY = 0f;
                 isSmashing = false;

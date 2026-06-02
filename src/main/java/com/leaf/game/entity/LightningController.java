@@ -125,7 +125,8 @@ public class LightningController {
             return;
         }
 
-        boolean uHeld = glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS;
+        boolean uHeld = glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.LIGHTNING);
 
         // ── Tick pending single strike ────────────────────────────────────────
         // When U is released after charging, we queue the strike for doubleTapWindow

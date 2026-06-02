@@ -203,7 +203,14 @@ public class Enemy {
         if (type == Type.GOLEM) amount *= GameConfig.golemSmashResist + (1f - GameConfig.golemSmashResist);
         health        = Math.max(0f, health - amount);
         hitFlashTimer = 0.18f;
-        if (health <= 0f) { alive = false; return true; }
+        if (health <= 0f) {
+            alive = false;
+            // Positional death thud — audible from a distance so you hear kills off-screen.
+            com.leaf.game.core.AudioManager.playAt("fall_smash", position, (Vector3f) null, 50f);
+            return true;
+        }
+        // Positional hit sound — gives every strike weight and helps locate enemies.
+        com.leaf.game.core.AudioManager.playAt("seal_hit", position, (Vector3f) null, 35f);
         return false;
     }
 

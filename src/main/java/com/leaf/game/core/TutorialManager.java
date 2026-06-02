@@ -176,99 +176,21 @@ public class TutorialManager {
             null,
             c -> { if (!c.player.isOnGround()) c.flag = true; return c.flag; }, 10f));
 
-        // 5 ── FIRST DUMMY → SLASH
-        steps.add(new Step("Your First Enemy",
-            "A practice dummy appeared! Walk up and press [F] to SLASH it.", "F",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 1, 7f),
-            c -> killedSince(c, 1), 45f));
-
-        // 6 ── DASH
-        steps.add(new Step("Dash",
-            "Press [Q] to DASH — a fast burst in your move direction.", "Q",
-            null, c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 16f));
-
-        // 7 ── TWO ENEMIES
-        steps.add(new Step("Hold the Line",
-            "Two more incoming. Dash in and SLASH [F] to clear them both.", "F",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 2, 9f),
-            c -> c.enemies.aliveCount() == 0, 60f));
-
-        // 8 ── SNIPE
-        steps.add(new Step("Snipe",
-            "A distant target. Hold [C] to charge a crystal bolt, release to fire.", "C",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.THROWER, 1, 22f),
-            c -> killedSince(c, 1) || usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 50f));
-
-        // 9 ── LIGHTNING
-        steps.add(new Step("Lightning",
-            "Aim at the enemy and press [U] to call down LIGHTNING.", "U",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 1, 12f),
-            c -> usedCooldown(c, c.player.lightning.getCooldownFrac()) || killedSince(c, 1), 40f));
-
-        // 10 ── GRAB & SLAM
-        steps.add(new Step("Grab & Slam",
-            "Get close, look at the enemy, press [O] to GRAB then SLAM it down.", "O",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 1, 6f),
-            c -> c.player.grab.isActive() || killedSince(c, 1), 45f));
-
-        // 11 ── QUAGMIRE
-        steps.add(new Step("Quagmire",
-            "Press [M] to fire a mud wave that traps an enemy in place.", "M",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 1, 14f),
-            c -> c.win.quagmireCooldown > 0.01f || killedSince(c, 1), 40f));
-
-        // 12 ── STONE PILLAR
-        steps.add(new Step("Stone Pillar",
-            "Press [K] — a stone spire erupts under you and launches you skyward.", "K",
-            null, c -> usedCooldown(c, c.player.abilities.getPillarCooldownFrac()), 18f));
-
-        // 13 ── POSITION SWAP
-        steps.add(new Step("Position Swap",
-            "Press [J] to instantly swap places with the nearest enemy.", "J",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 1, 16f),
-            c -> c.win.todoSwapCooldown > 0.01f || killedSince(c, 1), 40f));
-
-        // 14 ── SEAL throw + warp
-        steps.add(new Step("Minato's Seal",
-            "Press [H] to throw a teleport seal, then [B] to warp to it.", "H  then  B",
+        // 5 ── YOUR STARTING TECHNIQUE: SNIPE
+        // The crystal grants SNIPE for free; every other ability unlocks by
+        // surviving waves (see Progression). So the tutorial only teaches movement
+        // plus this one offensive tool, then hands off to the first wave.
+        steps.add(new Step("Your First Technique",
+            "The crystal wakes one power: SNIPE. Hold [C] to charge a bolt, release to fire.", "C",
             null,
-            c -> {
-                if (c.player.seals.getSealCount() > 0) c.flag = true; // seal thrown
-                // complete once a seal exists AND the player teleported (moved far suddenly)
-                return c.flag && movedFar(c, 6f);
-            }, 35f));
+            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 22f));
 
-        // 15 ── DRONE
-        steps.add(new Step("Deploy Drone",
-            "Press [X] to deploy your combat drone. It auto-fires at enemies.", "X",
-            c -> c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 1, 18f),
-            c -> c.player.stand.isDeployed(), 25f));
-
-        // 16 ── FLIGHT
-        steps.add(new Step("Take Flight",
-            "Double-tap [SPACE] to FLY. (Press [V] anytime to change flight mode.)", "Space x2",
-            null, c -> c.player.debugMode, 25f));
-
-        // 17 ── LAND
-        steps.add(new Step("Land",
-            "Double-tap [SPACE] again to stop flying and land safely.", "Space x2",
-            null, c -> !c.player.debugMode, 25f));
-
-        // 18 ── HEAL
-        steps.add(new Step("Heal",
-            "Hold [L] to channel HEALING. (You can't move while healing.)", "L",
+        // 6 ── HANDOFF — waves (and ability unlocks) begin when this step ends
+        steps.add(new Step("They're Coming",
+            "Survive each wave and the crystal bonds deeper — a NEW ability every wave. "
+            + "Forgot a control? Press [F1] anytime.", null,
             null,
-            c -> c.player.abilities.isHealing
-                 || c.player.health >= c.player.maxHealth - 0.01f, 22f));
-
-        // 19 ── GRADUATION
-        steps.add(new Step("Final Test",
-            "Clear these three, and the real fight begins — endless waves. Good luck!", null,
-            c -> {
-                c.enemies.wavesEnabled = true;
-                c.enemies.spawnTutorialEnemies(w, c.player.position, Enemy.Type.ZOMBIE, 3, 16f);
-            },
-            c -> killedSince(c, 3), 0f));
+            c -> false, 6f));   // auto-advances after 6 s → finish() turns on the wave spawner
     }
 
     private static float angleDiff(float a, float b) {

@@ -184,7 +184,8 @@ public class AttackController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void tickMelee(long window, Camera camera, World world, float dt) {
-        boolean fHeld = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
+        boolean fHeld = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.SLASH);
 
         switch (meleePhase) {
 
@@ -383,7 +384,8 @@ public class AttackController {
     }
 
     private void tickRanged(long window, Camera camera, World world, float dt) {
-        boolean cHeld = glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS;
+        boolean cHeld = glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.SNIPE);
 
         if (!isCharging && meleePhase == MeleePhase.IDLE) {
             blendOverlay(new Vector3f(0f, 0f, 0f), 0f, dt);

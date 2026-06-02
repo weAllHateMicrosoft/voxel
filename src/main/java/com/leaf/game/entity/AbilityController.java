@@ -178,7 +178,8 @@ public class AbilityController {
         updateRewindTrail();
 
         // ── STONE PILLAR (hold K) ─────────────────────────────────────────────
-        boolean kHeld = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS;
+        boolean kHeld = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.PILLAR);
 
         if (kHeld && !lastK && !isAnyAbilityActive() && pillarCooldownTimer <= 0f) {
             int cx = (int) Math.floor(player.position.x);
@@ -271,7 +272,8 @@ public class AbilityController {
         lastK = kHeld;
 
         // ── BLINK (E) — instant ───────────────────────────────────────────────
-        boolean eHeld = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+        boolean eHeld = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.BLINK);
         if (eHeld && !lastE && blinkCooldown <= 0f && !isAnyAbilityActive()) {
             executeBlink(camera, world);
         }
@@ -283,7 +285,8 @@ public class AbilityController {
         }
 
         // ── DASH (Q) — tap ────────────────────────────────────────────────────
-        boolean qHeld = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS;
+        boolean qHeld = glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.DASH);
         if (qHeld && !lastQ && dashCooldown <= 0f && !isAnyAbilityActive()) {
             startDash(window, camera);
         }
@@ -302,7 +305,8 @@ public class AbilityController {
         }
 
         // ── CANNONBALL (hold G) ───────────────────────────────────────────────
-        boolean gHeld = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS;
+        boolean gHeld = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.CANNONBALL);
         if (isCannonballing) {
             float drag = (float)Math.pow(GameConfig.cannonHorizDrag, dt * 60f);
             cannonVelX *= drag;
@@ -352,7 +356,8 @@ public class AbilityController {
         lastG = gHeld;
 
         // ── HEALING (hold L) ──────────────────────────────────────────────────
-        boolean lHeld = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
+        boolean lHeld = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.HEAL);
         if (lHeld && healCooldownTimer <= 0f && !player.debugMode
                 && player.health < player.maxHealth
                 && player.mana > 0f
@@ -379,7 +384,8 @@ public class AbilityController {
         }
 
         // ── KAMUI (Z toggle) — phase into a separate dimension ───────────────
-        boolean zHeld       = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS;
+        boolean zHeld       = glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.KAMUI);
         // Attack / action keys — pressing any of these exits Kamui temporarily.
         // The player is vulnerable (exposed) for kamuiExposureDuration after releasing.
         boolean attackHeld  = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS

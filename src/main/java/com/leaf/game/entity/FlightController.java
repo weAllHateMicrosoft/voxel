@@ -12,8 +12,14 @@ public class FlightController {
 
     public enum FlightMode { SKIM, SOAR, GRAPPLE }
 
+    /**
+     * Ship with flight locked to SKIM only. SOAR/GRAPPLE remain fully implemented
+     * below — flip this to false to re-enable cycling them with [V].
+     */
+    private static final boolean SKIM_ONLY = true;
+
     private final Player player;
-    private FlightMode mode = FlightMode.SOAR;
+    private FlightMode mode = FlightMode.SKIM;
     private final Vector3f velocity = new Vector3f();
 
     private float smoothRoll     = 0f;
@@ -87,6 +93,7 @@ public class FlightController {
     }
 
     private void cycleMode() {
+        if (SKIM_ONLY) { mode = FlightMode.SKIM; return; }  // locked to skim for release
         if (mode == FlightMode.GRAPPLE && hooked) {
             hooked = false;
             cooldownTimer = GameConfig.grappleCooldown;

@@ -10,15 +10,16 @@ public class Inventory {
     // Maps block type to how many the player has
     private final Map<Block, Integer> items = new HashMap<>();
 
-    // How many blocks the player starts with (so they can build immediately)
+    // How many blocks the player starts with. There's no pickaxe, so the player
+    // relies on these for cover/barricades during waves — start them generously.
     public Inventory() {
-        items.put(Block.CRYSTAL_AMETHYST, 64);
-        items.put(Block.MEGALITH,  64);
-        items.put(Block.ANCIENT_MARROW, 64);
-        items.put(Block.ICE, 64);
-        items.put(Block.CRYSTAL_CITRINE, 64);
-        items.put(Block.CRYSTAL_ROSE, 64);
-        items.put(Block.CRATER_BLOOM, 64);
+        items.put(Block.CRYSTAL_AMETHYST, 256);
+        items.put(Block.MEGALITH,  256);
+        items.put(Block.ANCIENT_MARROW, 256);
+        items.put(Block.ICE, 256);
+        items.put(Block.CRYSTAL_CITRINE, 256);
+        items.put(Block.CRYSTAL_ROSE, 256);
+        items.put(Block.CRATER_BLOOM, 256);
     }
 
     /** Add one block to the inventory. Called when a block is broken. */

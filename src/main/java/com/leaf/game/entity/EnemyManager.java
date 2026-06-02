@@ -59,8 +59,20 @@ public class EnemyManager {
     public float pendingPlayerDamage = 0f;
 
     // ── Wave spawning state ───────────────────────────────────────────────────
-    private float waveTimer  = GameConfig.spawnWaveInterval; // counts down to 0 → spawn
+    private float waveTimer  = GameConfig.spawnWaveInterval; // (legacy; unused by clear-based waves)
     private int   waveNumber = 0;
+
+    // ── Clear-based wave flow ──────────────────────────────────────────────────
+    // A wave spawns, the player clears it, THEN the next wave (and its ability
+    // unlock) happens. Window drives the unlock card during the pause.
+    private boolean waveInProgress  = false;
+    /** True when a wave was just cleared and we're waiting for Window to start the next. */
+    public  boolean awaitingNextWave = false;
+    /** The wave number that was just cleared (drives the unlock card). */
+    public  int     lastClearedWave  = 0;
+
+    /** Window calls this when the unlock card is dismissed, to spawn the next wave. */
+    public void beginNextWave() { awaitingNextWave = false; }
 
     /** Total enemies the player has killed this session (drives the demo objective). */
     public int totalKills = 0;
@@ -256,12 +268,19 @@ public class EnemyManager {
             return cull;
         });
 
-        // ── Wave spawner (suppressed during the tutorial) ──────────────────────
-        if (wavesEnabled && enemies.size() < GameConfig.spawnMaxEnemies) {
-            waveTimer -= dt;
-            if (waveTimer <= 0f) {
-                waveTimer = GameConfig.spawnWaveInterval;
-                spawnWave(world, playerPos);
+        // ── Clear-based wave flow (suppressed during the tutorial) ──────────────
+        //   no wave active → spawn the next one
+        //   wave active and all enemies dead → mark cleared, wait for Window's card
+        if (wavesEnabled) {
+            if (awaitingNextWave) {
+                // Paused between waves: Window is showing the ability-unlock card.
+            } else if (!waveInProgress) {
+                int spawned = spawnWave(world, playerPos); // increments waveNumber
+                if (spawned > 0) waveInProgress = true;     // else retry next frame (no valid spawn yet)
+            } else if (aliveCount() == 0) {
+                waveInProgress   = false;
+                lastClearedWave  = waveNumber;
+                awaitingNextWave = true;                    // Window unlocks + shows card, then beginNextWave()
             }
         }
     }
@@ -295,21 +314,26 @@ public class EnemyManager {
     //  Wave spawning logic
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void spawnWave(World world, Vector3f playerPos) {
+    /** Spawn the next wave's enemies. @return how many actually spawned. */
+    private int spawnWave(World world, Vector3f playerPos) {
         waveNumber++;
 
         int count = Math.min(
             GameConfig.spawnWaveBase + waveNumber / 2,
             GameConfig.spawnMaxEnemies - enemies.size()
         );
-        if (count <= 0) return;
+        if (count <= 0) { waveNumber--; return 0; } // couldn't spawn — undo the increment, retry later
 
+        int spawned = 0;
         for (int i = 0; i < count; i++) {
             Vector3f spawnPos = findSpawnPoint(world, playerPos);
             if (spawnPos == null) continue; // no valid surface found
             Enemy.Type type = pickType();
             spawnAt(spawnPos.x, spawnPos.y, spawnPos.z, type);
+            spawned++;
         }
+        if (spawned == 0) waveNumber--; // nothing placed this frame — let it retry without burning a wave number
+        return spawned;
     }
 
     /**

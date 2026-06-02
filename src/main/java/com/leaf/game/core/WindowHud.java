@@ -29,35 +29,47 @@ class WindowHud {
         this.win = win;
     }
 
+    /**
+     * Flip to true to expose the developer options (load game, multiplayer,
+     * pre-gen radius). The shipping start screen shows only "Play Game".
+     * The code below is kept intact so nothing is lost — just hidden.
+     */
+    private static final boolean DEV_MENU = false;
+
     void renderConnectionMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 150.0f, h / 2.0f - 180.0f);
-        ImGui.setNextWindowSize(300.0f, 340.0f);
+        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 120.0f);
+        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 360.0f : 200.0f);
         ImGui.begin("Start Screen",
                 imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
 
-        ImGui.text("Minecraft Voxel Engine");
-        ImGui.separator();
         ImGui.spacing();
-
-        ImGui.text("Pre-generate Radius:");
-        int[] rad = {win.preloadRadius};
-        if (ImGui.sliderInt("##rad", rad, 0, 100)) win.preloadRadius = rad[0];
-        if (win.preloadRadius > 40) {
-            ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "WARNING: Radii > 40 require");
-            ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "allocating extra JVM RAM!");
-        } else {
-            ImGui.textDisabled("(0=instant, 10=fast, 50=massive, 100=epic)");
-        }
+        ImGui.textColored(1.0f, 0.85f, 0.4f, 1.0f, "        D E S C E N T");
         ImGui.spacing();
+        ImGui.textDisabled("        Survive. Learn. Escape.");
+        ImGui.spacing(); ImGui.separator(); ImGui.spacing(); ImGui.spacing();
 
-        if (ImGui.button("Single Player", 280, 30)) {
+        // ── The one shipping button ───────────────────────────────────────────
+        if (ImGui.button("PLAY", 320, 44)) {
             win.network = null;
+            win.playIntroOnSpawn = true;   // roll the intro cutscene once spawn loads
             win.startPreload();
         }
         ImGui.spacing();
 
-        if (SaveManager.saveExists()) {
-            if (ImGui.button("Load Saved Game", 280, 30)) {
+        // ── Developer options (hidden unless DEV_MENU) — kept in code ─────────
+        if (DEV_MENU) {
+            ImGui.separator(); ImGui.spacing();
+            ImGui.text("Pre-generate Radius:");
+            int[] rad = {win.preloadRadius};
+            if (ImGui.sliderInt("##rad", rad, 0, 100)) win.preloadRadius = rad[0];
+            ImGui.spacing();
+
+            if (ImGui.button("Single Player (no intro)", 320, 28)) {
+                win.network = null;
+                win.startPreload();
+            }
+            ImGui.spacing();
+            if (SaveManager.saveExists() && ImGui.button("Load Saved Game", 320, 28)) {
                 java.util.Arrays.fill(win.hotbar, Block.AIR);
                 SaveManager.loadGame(win.world, win.player, win.inventory);
                 for (Block b : Block.values()) {
@@ -69,24 +81,20 @@ class WindowHud {
                 win.startPreload();
             }
             ImGui.spacing();
-        }
-
-        ImGui.separator();
-        ImGui.spacing();
-
-        if (ImGui.button("Host Multiplayer Game", 280, 30)) {
-            win.network = new NetworkSession(true, null);
-            win.network.start();
-            win.remotePlayer = new RemotePlayer();
-            win.startPreload();
-        }
-        ImGui.spacing();
-        ImGui.inputText("Host IP", win.ipInput);
-        if (ImGui.button("Join Multiplayer Game", 280, 30)) {
-            win.network = new NetworkSession(false, win.ipInput.get().trim());
-            win.network.start();
-            win.remotePlayer = new RemotePlayer();
-            win.startPreload();
+            if (ImGui.button("Host Multiplayer Game", 320, 28)) {
+                win.network = new NetworkSession(true, null);
+                win.network.start();
+                win.remotePlayer = new RemotePlayer();
+                win.startPreload();
+            }
+            ImGui.spacing();
+            ImGui.inputText("Host IP", win.ipInput);
+            if (ImGui.button("Join Multiplayer Game", 320, 28)) {
+                win.network = new NetworkSession(false, win.ipInput.get().trim());
+                win.network.start();
+                win.remotePlayer = new RemotePlayer();
+                win.startPreload();
+            }
         }
         ImGui.end();
     }
@@ -130,6 +138,55 @@ class WindowHud {
             glfwSetWindowShouldClose(win.window, true);
         }
         ImGui.end();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  ABILITY UNLOCK CARD  (shown between waves)
+    // ─────────────────────────────────────────────────────────────────────────
+    void renderUnlockCard(float w, float h) {
+        int n = win.unlockCardAbilities.size();
+        float cardW = 500f;
+        float cardH = 210f + n * 78f;
+        ImGui.setNextWindowPos(w / 2f - cardW / 2f, h / 2f - cardH / 2f);
+        ImGui.setNextWindowSize(cardW, cardH);
+        ImGui.setNextWindowBgAlpha(0.93f);
+        ImGui.begin("AbilityUnlock",
+                imgui.flag.ImGuiWindowFlags.NoDecoration
+              | imgui.flag.ImGuiWindowFlags.NoMove
+              | imgui.flag.ImGuiWindowFlags.NoResize);
+
+        ImGui.spacing(); ImGui.spacing();
+        cardCenter("ABILITY UNLOCKED", 1.0f, 0.85f, 0.35f);
+        ImGui.spacing();
+        cardCenter(win.player.progression.flavorFor(win.unlockCardWave), 0.85f, 0.9f, 1.0f);
+        ImGui.spacing(); ImGui.separator(); ImGui.spacing();
+
+        for (Progression.Ability a : win.unlockCardAbilities) {
+            cardCenter(a.label + "    " + a.key, 0.45f, 0.95f, 1.0f);
+            ImGui.spacing();
+            ImGui.pushTextWrapPos(ImGui.getWindowWidth() - 24f);
+            ImGui.setCursorPosX(22f);
+            ImGui.text(a.desc);
+            ImGui.popTextWrapPos();
+            ImGui.spacing();
+        }
+
+        ImGui.spacing();
+        ImGui.pushTextWrapPos(ImGui.getWindowWidth() - 24f);
+        ImGui.setCursorPosX(22f);
+        ImGui.textColored(0.55f, 0.75f, 1.0f, 0.95f, Progression.MANA_NOTE);
+        ImGui.popTextWrapPos();
+        ImGui.spacing(); ImGui.separator(); ImGui.spacing();
+
+        cardCenter("[ SPACE ]   begin wave " + (win.unlockCardWave + 1), 1.0f, 0.9f, 0.4f);
+        ImGui.end();
+    }
+
+    /** Centre a single line of text horizontally in the current ImGui window. */
+    private void cardCenter(String text, float r, float g, float b) {
+        float tw = ImGui.calcTextSize(text).x;
+        ImGui.setCursorPosX(Math.max(8f, (ImGui.getWindowWidth() - tw) * 0.5f));
+        ImGui.textColored(r, g, b, 1.0f, text);
     }
 
     void renderChatBox(int screenHeight) {
@@ -625,12 +682,26 @@ class WindowHud {
             // Health bar
             float hpWidth = 200f, hpHeight = 14f;
             float hpX = cx - hpWidth / 2.0f, hpY = screenH - 80f;
+            // Recent-damage pulse: bright red wash + flashing outline behind the bar.
+            float dmgT = Math.max(0f, win.damageFlashTimer);
             draw.addRectFilled(hpX, hpY, hpX + hpWidth, hpY + hpHeight,
                     ImGui.colorConvertFloat4ToU32(0.2f, 0, 0, 0.8f));
             float fillW = hpWidth * (Math.max(0, win.player.health) / win.player.maxHealth);
+            float flashLift = dmgT > 0f ? (0.4f * (float) Math.abs(Math.sin(glfwGetTime() * 18f))) : 0f;
             draw.addRectFilled(hpX, hpY, hpX + fillW, hpY + hpHeight,
-                    ImGui.colorConvertFloat4ToU32(0.8f, 0.1f, 0.1f, 1.0f));
-            draw.addRect(hpX, hpY, hpX + hpWidth, hpY + hpHeight, black, 0f, 0, 2.0f);
+                    ImGui.colorConvertFloat4ToU32(0.8f + flashLift, 0.1f + flashLift, 0.1f + flashLift, 1.0f));
+            // Low-health warning: the whole bar gently pulses when under 30%.
+            float hpFracP = Math.max(0f, win.player.health) / win.player.maxHealth;
+            if (hpFracP < 0.30f) {
+                float warn = 0.3f + 0.4f * (float) Math.abs(Math.sin(glfwGetTime() * 5f));
+                draw.addRect(hpX - 2, hpY - 2, hpX + hpWidth + 2, hpY + hpHeight + 2,
+                        ImGui.colorConvertFloat4ToU32(1f, 0.2f, 0.2f, warn), 0f, 0, 2.5f);
+            }
+            int hpBorder = dmgT > 0f
+                    ? ImGui.colorConvertFloat4ToU32(1f, 0.9f, 0.9f, Math.min(1f, dmgT * 2f))
+                    : black;
+            draw.addRect(hpX, hpY, hpX + hpWidth, hpY + hpHeight, hpBorder, 0f, 0, dmgT > 0f ? 3.0f : 2.0f);
+            draw.addText(hpX - 26f, hpY, ImGui.colorConvertFloat4ToU32(1f, 0.7f, 0.7f, 0.9f), "HP");
 
             // Mana bar (blue, below health bar)
             float mpHeight = 9f;
@@ -641,6 +712,7 @@ class WindowHud {
             draw.addRectFilled(hpX, mpY, hpX + mpFill, mpY + mpHeight,
                     ImGui.colorConvertFloat4ToU32(0.22f, 0.45f, 1.0f, 1.0f));
             draw.addRect(hpX, mpY, hpX + hpWidth, mpY + mpHeight, black, 0f, 0, 1.5f);
+            draw.addText(hpX - 26f, mpY - 2f, ImGui.colorConvertFloat4ToU32(0.55f, 0.7f, 1f, 0.9f), "MP");
             // Mana text label (compact, right-aligned inside bar)
             String mpLabel = String.format("%.0f / %.0f  MP", win.player.mana, win.player.maxMana);
             draw.addText(hpX + hpWidth - 78f, mpY - 0.5f, black, mpLabel);
@@ -1048,31 +1120,42 @@ class WindowHud {
             // Camera eye position and look direction for in-front culling
             Vector3f eyePos = new Vector3f(camera.position);
             Vector3f lookDir = camera.getLookDirection();
+            Vector3f right = camera.getRight();
+
+            // Off-screen enemies within this range get an edge arrow so the player
+            // can always locate threats (fixes "enemies are hard to find / hit me
+            // from nowhere"). Each entry: {screenDirX, screenDirY, distance}.
+            java.util.List<float[]> offscreen = new java.util.ArrayList<>();
+            float ecx = screenW * 0.5f, ecy = screenH * 0.5f;
+            float marker = (float) glfwGetTime();
 
             for (Enemy enemy : win.enemyManager.getEnemies()) {
                 if (!enemy.alive) continue;
 
-                // Cull enemies more than 60 blocks away
                 Vector3f headPos = new Vector3f(
                         enemy.position.x,
                         enemy.position.y + 2.3f,    // just above model top
                         enemy.position.z);
                 Vector3f toEnemy = new Vector3f(headPos).sub(eyePos);
                 float dist = toEnemy.length();
-                if (dist > 60f) continue;
+                if (dist > 70f) continue;           // too far to matter
 
-                // Cull enemies behind the camera (dot product < 0)
-                if (dist > 0.001f && toEnemy.dot(lookDir) / dist < 0.0f) continue;
-
-                // Project to clip space
                 org.joml.Vector4f clip = new org.joml.Vector4f(
                         headPos.x, headPos.y, headPos.z, 1f).mul(enemyVP);
-                if (clip.w <= 0.001f) continue; // behind near plane
+                float ndcX = clip.w != 0f ? clip.x / clip.w : 2f;
+                float ndcY = clip.w != 0f ? clip.y / clip.w : 2f;
+                boolean onScreen = clip.w > 0.001f
+                        && ndcX >= -1.0f && ndcX <= 1.0f && ndcY >= -1.0f && ndcY <= 1.0f;
 
-                float ndcX = clip.x / clip.w;
-                float ndcY = clip.y / clip.w;
-                // Tight cull — only show when enemy is well within screen bounds
-                if (ndcX < -1.05f || ndcX > 1.05f || ndcY < -1.05f || ndcY > 1.05f) continue;
+                if (!onScreen) {
+                    // Collect nearby off-screen threats for an edge arrow.
+                    if (dist <= 50f && dist > 0.001f) {
+                        Vector3f dir = new Vector3f(headPos).sub(eyePos).div(dist);
+                        Vector3f up  = new Vector3f(right).cross(lookDir).normalize();
+                        offscreen.add(new float[]{ dir.dot(right), -dir.dot(up), dist });
+                    }
+                    continue;
+                }
 
                 float sx = (ndcX * 0.5f + 0.5f) * screenW;
                 float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
@@ -1080,6 +1163,12 @@ class WindowHud {
                 float hpFrac = Math.max(0f, enemy.health / enemy.maxHealth);
                 float barW = 44f, barH = 6f;
                 float barX = sx - barW / 2f, barY = sy - barH;
+
+                // Downward chevron above the bar — makes enemies pop against terrain.
+                float hurt = enemy.hitFlashTimer > 0f ? 1f : 0f;
+                int chevCol = ImGui.colorConvertFloat4ToU32(1f, 0.25f + 0.6f * hurt, 0.2f, 0.95f);
+                float chTop = barY - 16f, chMid = barY - 7f;
+                draw.addTriangleFilled(sx - 7f, chTop, sx + 7f, chTop, sx, chMid, chevCol);
 
                 // Background
                 draw.addRectFilled(barX, barY, barX + barW, barY + barH,
@@ -1094,9 +1183,34 @@ class WindowHud {
 
                 // HP numbers
                 String hpStr = String.format("%.0f", enemy.health);
-                draw.addText(sx - 7f, barY - 12f, black, hpStr);
-                draw.addText(sx - 8f, barY - 13f,
+                draw.addText(sx - 7f, barY - 30f, black, hpStr);
+                draw.addText(sx - 8f, barY - 31f,
                         ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.85f, 0.85f), hpStr);
+            }
+
+            // ── OFF-SCREEN ENEMY ARROWS (nearest few, pulsing red) ────────────
+            offscreen.sort((a, b) -> Float.compare(a[2], b[2]));
+            int arrows = Math.min(6, offscreen.size());
+            float pulse = 0.55f + 0.45f * (float) Math.sin(marker * 4f);
+            for (int i = 0; i < arrows; i++) {
+                float[] o = offscreen.get(i);
+                float angle  = (float) Math.atan2(o[1], o[0]);
+                float radius = Math.min(ecx, ecy) * 0.80f;
+                float ix = ecx + (float) Math.cos(angle) * radius;
+                float iy = ecy + (float) Math.sin(angle) * radius;
+                float closeness = 1f - Math.min(1f, o[2] / 50f);   // bigger when closer
+                float s = 11f + closeness * 10f;
+                float cosA = (float) Math.cos(angle), sinA = (float) Math.sin(angle);
+                // Triangle pointing outward toward the threat.
+                float[][] tri = {{ s, 0 }, { -s * 0.7f, s * 0.7f }, { -s * 0.7f, -s * 0.7f }};
+                for (float[] p : tri) {
+                    float rx = p[0] * cosA - p[1] * sinA, ry = p[0] * sinA + p[1] * cosA;
+                    p[0] = ix + rx; p[1] = iy + ry;
+                }
+                int fill = ImGui.colorConvertFloat4ToU32(1f, 0.2f, 0.15f, 0.55f + 0.4f * pulse * closeness);
+                draw.addTriangleFilled(tri[0][0], tri[0][1], tri[1][0], tri[1][1], tri[2][0], tri[2][1], fill);
+                draw.addTriangle(tri[0][0], tri[0][1], tri[1][0], tri[1][1], tri[2][0], tri[2][1],
+                        ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f), 1.5f);
             }
         }
 
@@ -1344,6 +1458,24 @@ class WindowHud {
 
         ImGui.textDisabled("  [F1] or [ESC] to close.   Scroll down for all sections.");
         ImGui.separator();
+        ImGui.spacing();
+
+        // ── YOUR ABILITIES (unlocked vs. still locked) ────────────────────────
+        ImGui.textColored(1.0f, 0.85f, 0.25f, 1.0f, "YOUR ABILITIES");
+        ImGui.separator();
+        Progression prog = win.player.progression;
+        for (Progression.Ability a : prog.allAbilities()) {
+            if (prog.isUnlocked(a)) {
+                helpRow(a.key, a.label + " — " + a.desc);
+            } else {
+                int wv = prog.unlockWaveOf(a);
+                ImGui.textDisabled("  [ ? ]");
+                ImGui.sameLine(230f);
+                ImGui.pushTextWrapPos(0f);
+                ImGui.textDisabled("Locked — survive wave " + wv + " to unlock.");
+                ImGui.popTextWrapPos();
+            }
+        }
         ImGui.spacing();
 
         // ── MOVEMENT ──────────────────────────────────────────────────────────

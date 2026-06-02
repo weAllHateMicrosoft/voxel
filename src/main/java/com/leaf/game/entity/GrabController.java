@@ -56,7 +56,8 @@ public class GrabController {
         if (throwFlash > 0f) throwFlash = Math.max(0f, throwFlash - dt * 4f);
         if (cooldown > 0f) cooldown -= dt;
 
-        boolean oHeld = glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS;
+        boolean oHeld = glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS
+                && player.can(com.leaf.game.core.Progression.Ability.GRAB);
 
         switch (phase) {
 

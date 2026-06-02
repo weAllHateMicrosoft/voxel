@@ -80,6 +80,20 @@ public class Window {
     boolean isPaused  = false;
     boolean showDebug = false;
     boolean showChat  = false;
+
+    // ── ABILITY-UNLOCK CARD (shown between waves) ──────────────────────────────
+    boolean showUnlockCard = false;
+    int     unlockCardWave  = 0;
+    java.util.List<Progression.Ability> unlockCardAbilities = new java.util.ArrayList<>();
+    private boolean lastCardSpace = false;
+
+    // ── CUTSCENE (intro / ending) ──────────────────────────────────────────────
+    final CutsceneManager cutscene = new CutsceneManager();
+    /** Set by the "Play Game" button; the intro plays once the spawn finishes loading. */
+    boolean playIntroOnSpawn = false;
+
+    /** Counts down after the player takes damage; HUD pulses the health bar red. */
+    float damageFlashTimer = 0f;
     final ImString chatInput = new ImString(256);
     final List<String> chatHistory = new ArrayList<>();
     final ImString seedInput = new ImString(32);
@@ -395,6 +409,15 @@ public class Window {
 
         glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
             if (!networkInitialized || isPreloading) return;
+
+            // ── CUTSCENE swallows input: SPACE/ENTER advances, ESC skips ──────
+            if (cutscene.isActive()) {
+                if (action == GLFW_RELEASE) {
+                    if (key == GLFW_KEY_ESCAPE) cutscene.skip();
+                    else if (key == GLFW_KEY_SPACE || key == GLFW_KEY_ENTER) cutscene.advance();
+                }
+                return;
+            }
 
             if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
                 if (showChat) {
@@ -739,8 +762,9 @@ public class Window {
             //   Neither → normal (1.0)
             // Chat box suppresses time dilation so Y/R text doesn't glitch.
             if (!showChat && !isPaused && networkInitialized && !isPreloading) {
-                boolean rHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
-                boolean yHeld = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS;
+                boolean timeUnlocked = player.can(Progression.Ability.TIME);
+                boolean rHeld = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && timeUnlocked;
+                boolean yHeld = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS && timeUnlocked;
                 if (rHeld) {
                     tc.setTargetScale(GameConfig.timeSlowScale);
                 } else if (yHeld) {
@@ -756,6 +780,9 @@ public class Window {
 
             // ── SCALED DELTA TIME for physics ─────────────────────────────────
             ScreenEffectManager.INSTANCE.tick(rawDeltaTime);
+            // Cutscene advances on raw time even though the world below is frozen.
+            if (cutscene.isActive()) cutscene.update(rawDeltaTime);
+            if (damageFlashTimer > 0f) damageFlashTimer -= rawDeltaTime;
             float deltaTime = rawDeltaTime * tc.getScale()
                     * ScreenEffectManager.INSTANCE.getHitStopScale();
 
@@ -842,9 +869,14 @@ public class Window {
                             welcomeTimer   = 6.0f;
                             welcomeStarted = true;
                         }
+                        // Roll the intro cutscene the first time a NEW game reaches spawn.
+                        if (playIntroOnSpawn) {
+                            playIntroOnSpawn = false;
+                            cutscene.startIntro();
+                        }
                     }
 
-                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp) {
+                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive()) {
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
                         // Save state BEFORE update so we can detect transitions.
                         // player.update() resets highestY on landing and toggles debugMode.
@@ -1057,10 +1089,35 @@ public class Window {
                         enemyManager.update(deltaTime, world, player.position);
                         if (tutorial != null) tutorial.update(deltaTime);
 
+                        // ── WAVE CLEARED → unlock ability + show card ─────────
+                        if (enemyManager.awaitingNextWave && !showUnlockCard) {
+                            java.util.List<Progression.Ability> gained =
+                                    player.progression.unlockForWave(enemyManager.lastClearedWave);
+                            if (gained.isEmpty()) {
+                                // Nothing new (replaying an early wave) — straight into the next.
+                                enemyManager.beginNextWave();
+                            } else {
+                                unlockCardWave      = enemyManager.lastClearedWave;
+                                unlockCardAbilities = gained;
+                                showUnlockCard      = true;
+                                AudioManager.play("seal_collect"); // brief unlock chime
+                            }
+                        }
+                        // Dismiss the card with SPACE → the next wave begins.
+                        if (showUnlockCard) {
+                            boolean sp = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+                            if (sp && !lastCardSpace) {
+                                showUnlockCard = false;
+                                enemyManager.beginNextWave();
+                            }
+                            lastCardSpace = sp;
+                        }
+
                         // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────
                         // Must run BEFORE the damage drain so it can intercept.
                         if (substituteCooldown > 0f) substituteCooldown -= deltaTime;
-                        boolean vHeld = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS;
+                        boolean vHeld = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS
+                                && player.can(Progression.Ability.SUBSTITUTE);
                         substitutePrimed = vHeld && !player.debugMode && substituteCooldown <= 0f;
 
                         if (substitutePrimed && enemyManager.pendingPlayerDamage > 0f) {
@@ -1141,7 +1198,15 @@ public class Window {
                                 // Kamui = invincible — absorb damage with no effect
                                 enemyManager.pendingPlayerDamage = 0f;
                             } else {
-                                player.health -= enemyManager.pendingPlayerDamage;
+                                // ── DAMAGE ALERT — so a hit never comes "from nowhere" ──
+                                float dmg = enemyManager.pendingPlayerDamage;
+                                // Red vignette flash; stronger the harder you're hit.
+                                float fa = Math.min(0.6f, 0.18f + dmg * 0.05f);
+                                ScreenEffectManager.INSTANCE.flash(0.75f, 0.02f, 0.02f, fa, 0.35f);
+                                AudioManager.play("fall_hit", Math.min(1f, 0.5f + dmg * 0.05f));
+                                damageFlashTimer = 0.5f;   // HUD pulses the health bar
+
+                                player.health -= dmg;
                                 enemyManager.pendingPlayerDamage = 0f;
                                 if (player.health <= 0f) {
                                     System.out.println("You died! Respawning at spawn point.");
@@ -1301,7 +1366,8 @@ public class Window {
                         lastP = pHeld;
                         // ── TODO'S TECHNIQUE (J key) ──────────────────────────
                         if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
-                        boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS;
+                        boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS
+                                && player.can(Progression.Ability.SWAP);
                         if (jHeld && !lastJ && !player.debugMode && todoSwapCooldown <= 0f
                                 && player.mana >= GameConfig.manaTodoSwap) {
                             Vector3f eyePos = new Vector3f(player.position.x,
@@ -1326,7 +1392,8 @@ public class Window {
 
                         // ── QUAGMIRE (M key) ──────────────────────────────────
                         if (quagmireCooldown > 0f) quagmireCooldown -= deltaTime;
-                        boolean mHeld = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS;
+                        boolean mHeld = glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS
+                                && player.can(Progression.Ability.QUAGMIRE);
                         if (mHeld && !lastM && !player.debugMode && quagmireCooldown <= 0f
                                 && player.mana >= GameConfig.manaQuagmire) {
                             Vector3f eyePos = new Vector3f(player.position.x,
@@ -1439,7 +1506,8 @@ public class Window {
 
                         // ── STONE CANON (I key) ───────────────────────────────
                         if (stoneCanonCooldownTimer > 0f) stoneCanonCooldownTimer -= deltaTime;
-                        boolean iHeld = glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS;
+                        boolean iHeld = glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS
+                                && player.can(Progression.Ability.STONE_CANON);
 
                         if (!isChargingStoneCanon && iHeld && !lastI
                                 && !player.debugMode && stoneCanonCooldownTimer <= 0f
@@ -2970,6 +3038,9 @@ public class Window {
             } else {
                 if (isPreloading) {
                     hud.renderPreloadProgress(ww[0], wh[0]);
+                } else if (cutscene.isActive()) {
+                    // Cutscene takes over the screen (world still renders behind, dimmed).
+                    cutscene.render((float) ww[0], (float) wh[0]);
                 } else {
                     hud.renderHUD(camera, ww[0], wh[0]);
                     hud.renderTargetCracks(camera, ww[0], wh[0]);
@@ -2978,6 +3049,7 @@ public class Window {
                     if (showChat || !chatHistory.isEmpty()) hud.renderChatBox(wh[0]);
                     if (isPaused)        hud.renderPauseMenu(ww[0], wh[0]);
                     if (showHelp)        hud.renderHelpScreen((float)ww[0], (float)wh[0]);
+                    if (showUnlockCard)  hud.renderUnlockCard((float)ww[0], (float)wh[0]);
                     // Screen flash overlay (snipe, explosion, melee hit, etc.)
                     ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
                     // Snow particle overlay — drawn on top of world, under flash

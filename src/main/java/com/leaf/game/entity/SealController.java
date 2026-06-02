@@ -143,7 +143,8 @@ public class SealController {
         updateTargeting(camera);
 
         // ── H — Fire seal projectile ───────────────────────────────────────────
-        boolean hHeld = glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS;
+        boolean sealUnlocked = player.can(com.leaf.game.core.Progression.Ability.SEAL);
+        boolean hHeld = glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS && sealUnlocked;
         if (hHeld && !lastH
                 && placeCooldown <= 0f
                 && placedSeals.size() < GameConfig.sealMaxCount) {
@@ -153,14 +154,14 @@ public class SealController {
         lastH = hHeld;
 
         // ── B — Teleport to targeted seal ─────────────────────────────────────
-        boolean bHeld = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
+        boolean bHeld = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS && sealUnlocked;
         if (bHeld && !lastB && teleportCooldown <= 0f) {
             teleportToTargetedSeal(camera);
         }
         lastB = bHeld;
 
         // ── N — Reclaim targeted seal ──────────────────────────────────────────
-        boolean nHeld = glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS;
+        boolean nHeld = glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS && sealUnlocked;
         if (nHeld && !lastN) {
             reclaimTargetedSeal();
         }
