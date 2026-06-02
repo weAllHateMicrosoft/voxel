@@ -32,36 +32,57 @@ public class AnimClip {
         float time = loop ? (t % duration) : Math.min(t, duration);
         if (time < 0) time += duration;
 
-        // Find surrounding keyframes
-        Keyframe prev = null, next = null;
+        // Find the four channel-valued keyframes surrounding `time` (no allocation):
+        //   p1 = last key <= time, p0 = the one before it,
+        //   p2 = first key  > time, p3 = the one after it.
+        // p0/p3 are needed for the Catmull-Rom spline (smooth interpolation).
+        Keyframe p0 = null, p1 = null, p2 = null, p3 = null;
         for (Keyframe kf : track) {
-            Float v = ch.get(kf);
-            if (v == null) continue;
-            if (kf.t <= time) prev = kf;
-            else if (next == null) { next = kf; break; }
+            if (ch.get(kf) == null) continue;
+            if (kf.t <= time) { p0 = p1; p1 = kf; }
+            else if (p2 == null) p2 = kf;
+            else { p3 = kf; break; }
         }
-        if (prev == null && next == null) return null;
-        if (prev == null) return ch.get(next);
-        if (next == null) {
-            if (!loop) return ch.get(prev);
-            // Wrap: interpolate between last key and first key
+
+        if (p1 == null && p2 == null) return null;
+        if (p1 == null) return ch.get(p2);     // before the first key
+        if (p2 == null) {                        // after the last key
+            if (!loop) return ch.get(p1);
+            // Wrap linearly from the last key back to the first.
             Keyframe first = null;
             for (Keyframe kf : track) { if (ch.get(kf) != null) { first = kf; break; } }
-            if (first == null) return ch.get(prev);
-            next = first;
-            float span = duration - prev.t + next.t;
-            if (span <= 0) return ch.get(prev);
-            float ratio = next.ease((time - prev.t) / span);
-            float pv = ch.get(prev), nv = ch.get(next);
+            if (first == null || first == p1) return ch.get(p1);
+            float span = duration - p1.t + first.t;
+            if (span <= 0) return ch.get(p1);
+            float ratio = first.ease((time - p1.t) / span);
+            float pv = ch.get(p1), nv = ch.get(first);
             return pv + (nv - pv) * ratio;
         }
-        float span = next.t - prev.t;
-        if (span <= 0) return ch.get(next);
-        float ratio = next.ease((time - prev.t) / span);
-        Float pv = ch.get(prev), nv = ch.get(next);
-        if (pv == null) return nv;
-        if (nv == null) return pv;
-        return pv + (nv - pv) * ratio;
+
+        // Segment p1 -> p2
+        float span = p2.t - p1.t;
+        if (span <= 0) return ch.get(p2);
+        float u  = (time - p1.t) / span;
+        float v1 = ch.get(p1), v2 = ch.get(p2);
+
+        // Catmull-Rom spline (smooth, matches Blockbench) when either end keyframe
+        // requests it; otherwise the regular eased/linear lerp.
+        boolean smooth = "catmullrom".equals(p1.easing) || "catmullrom".equals(p2.easing);
+        if (smooth) {
+            float v0 = (p0 != null) ? ch.get(p0) : v1;   // clamp ends (no wrap-around for splines)
+            float v3 = (p3 != null) ? ch.get(p3) : v2;
+            return catmullRom(v0, v1, v2, v3, u);
+        }
+        return v1 + (v2 - v1) * p2.ease(u);
+    }
+
+    /** Uniform Catmull-Rom interpolation of the segment p1..p2 (p0,p3 are the neighbours). */
+    private static float catmullRom(float p0, float p1, float p2, float p3, float u) {
+        float u2 = u * u, u3 = u2 * u;
+        return 0.5f * ((2f * p1)
+                + (-p0 + p2) * u
+                + (2f * p0 - 5f * p1 + 4f * p2 - p3) * u2
+                + (-p0 + 3f * p1 - 3f * p2 + p3) * u3);
     }
 
     public enum FloatChannel {

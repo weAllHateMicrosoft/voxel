@@ -484,17 +484,19 @@ public class BlockbenchImporter {
     private String mapEasing(JsonObject kf) {
         String interp = kf.has("interpolation") ? kf.get("interpolation").getAsString() : "linear";
         switch (interp) {
-            case "step":   return "step";
-            case "linear": return "linear";
-            case "smooth": return "ease_in_out";
-            case "catmullrom":
+            case "step":       return "step";
+            case "linear":     return "linear";
+            case "smooth":     return "catmullrom";   // Blockbench "smooth" = Catmull-Rom spline
+            case "catmullrom": return "catmullrom";
             case "bezier":
+                // We don't parse per-handle bezier tangents; Catmull-Rom is a close,
+                // smooth approximation (far better than flat linear).
                 if (!warnedCurve) {
-                    res.warnings.add("Curved interpolation ('" + interp + "') was approximated as linear.");
+                    res.warnings.add("Bezier interpolation approximated with a Catmull-Rom spline.");
                     warnedCurve = true;
                 }
-                return "linear";
-            default: return "linear";
+                return "catmullrom";
+            default:           return "linear";
         }
     }
 
