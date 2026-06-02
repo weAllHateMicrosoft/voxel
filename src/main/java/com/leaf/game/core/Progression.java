@@ -1,9 +1,5 @@
 package com.leaf.game.core;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -89,22 +85,37 @@ public class Progression {
     /** Always shown on unlock cards — the user wants players reminded about mana. */
     public static final String MANA_NOTE = "Most abilities draw MANA — the blue bar under your health. It refills over time.";
 
-    private static final String PROGRESS_FILE = "descent_progress.txt";
-
     // ═══════════════════════════════════════════════════════════════════════
 
     private final EnumSet<Ability> unlocked = EnumSet.noneOf(Ability.class);
     private int maxTier;
 
     public Progression() {
-        maxTier = loadMaxTier();
-        // Unlock the starting kit plus everything earned in past runs.
+        reset();   // every run starts fresh — only the wave-0 starting kit
+    }
+
+    /**
+     * Reset to the starting kit (SNIPE only). Called at the start of every run so
+     * abilities unlock wave-by-wave each playthrough — that's what makes the unlock
+     * cards appear every wave and the ability icons reveal one at a time.
+     * (Abilities are intentionally NOT carried across runs.)
+     */
+    public void reset() {
+        unlocked.clear();
+        maxTier = 0;
         for (int t = 0; t <= maxTier && t < TIERS.length; t++)
             for (Ability a : TIERS[t]) unlocked.add(a);
     }
 
     /** True if the player may use this ability right now. */
     public boolean isUnlocked(Ability a) { return unlocked.contains(a); }
+
+    /** The abilities a given wave's tier grants (always — independent of unlock history). */
+    public List<Ability> abilitiesForWave(int wave) {
+        List<Ability> out = new ArrayList<>();
+        if (wave >= 1 && wave < TIERS.length) for (Ability a : TIERS[wave]) out.add(a);
+        return out;
+    }
 
     /**
      * Mark a cleared wave's tier as unlocked.
@@ -113,10 +124,9 @@ public class Progression {
     public List<Ability> unlockForWave(int wave) {
         List<Ability> gained = new ArrayList<>();
         if (wave < 1 || wave >= TIERS.length) return gained;  // wave 10+ = boss, no tier
-        if (wave <= maxTier) return gained;                   // already earned (replay)
+        if (wave <= maxTier) return gained;                   // already earned this run
         for (Ability a : TIERS[wave]) if (unlocked.add(a)) gained.add(a);
         maxTier = Math.max(maxTier, wave);
-        saveMaxTier(maxTier);
         return gained;
     }
 
@@ -132,27 +142,8 @@ public class Progression {
         return -1;
     }
 
-    /** Highest wave-tier the player has ever reached (persisted across deaths). */
+    /** Highest wave-tier reached this run. */
     public int maxTier() { return maxTier; }
 
     public Ability[] allAbilities() { return Ability.values(); }
-
-    // ── Persistence (a single integer in descent_progress.txt) ────────────────
-    private static int loadMaxTier() {
-        File f = new File(PROGRESS_FILE);
-        if (!f.exists()) return 0;
-        try (BufferedReader in = new BufferedReader(new FileReader(f))) {
-            String line = in.readLine();
-            if (line != null) return Math.max(0, Integer.parseInt(line.trim()));
-        } catch (Exception ignored) { /* corrupt/missing → start fresh */ }
-        return 0;
-    }
-
-    private static void saveMaxTier(int tier) {
-        try (PrintWriter out = new PrintWriter(PROGRESS_FILE)) {
-            out.println(tier);
-        } catch (Exception e) {
-            System.err.println("[Progression] Could not save progress: " + e.getMessage());
-        }
-    }
 }

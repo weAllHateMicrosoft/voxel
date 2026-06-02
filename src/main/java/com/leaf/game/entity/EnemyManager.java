@@ -74,6 +74,18 @@ public class EnemyManager {
     /** Window calls this when the unlock card is dismissed, to spawn the next wave. */
     public void beginNextWave() { awaitingNextWave = false; }
 
+    /** Full reset for a new run (player death → restart). Wave goes back to 1. */
+    public void resetForNewRun() {
+        for (Enemy e : enemies) e.alive = false;   // fade them out
+        projectiles.clear();
+        waveNumber       = 0;
+        waveInProgress   = false;
+        awaitingNextWave = false;
+        lastClearedWave  = 0;
+        totalKills       = 0;
+        wavesEnabled     = true;
+    }
+
     /** Total enemies the player has killed this session (drives the demo objective). */
     public int totalKills = 0;
 

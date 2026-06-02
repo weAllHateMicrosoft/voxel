@@ -52,6 +52,8 @@ class WindowHud {
         if (ImGui.button("PLAY", 320, 44)) {
             win.network = null;
             win.playIntroOnSpawn = true;
+            win.gameEnded = false;
+            win.player.progression.reset();   // fresh run: start with only the starting kit
             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
             win.startPreload();
         }
@@ -269,18 +271,15 @@ class WindowHud {
         draw.addText(cx - gw/2, ty, goalCol, goal);
         ty += 22f;
 
-        // Timer + skip
+        // Timer + skip hint (input handled in the Window game-loop tick, not here,
+        // so the ENTER that dismissed the unlock card can't kill this on frame 1).
         int secs = Math.max(0, (int) win.practiceTimer);
-        String skip = "Auto-continues in " + secs + "s  or  [ ENTER ] to skip";
+        boolean canSkipNow = win.practiceTimer < Window.PRACTICE_TIMEOUT - 1.2f;
+        String skip = canSkipNow
+                ? "Auto-continues in " + secs + "s   —   [ ENTER ] to skip"
+                : "Try the ability above to continue...";
         float sw2 = ImGui.calcTextSize(skip).x;
         draw.addText(cx - sw2/2, ty, ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.8f), skip);
-
-        // ENTER key skips the practice session
-        if (glfwGetKey(win.window, GLFW_KEY_ENTER) == GLFW_PRESS) {
-            win.practiceAbility = null;
-            win.practiceTimer   = 0f;
-            win.enemyManager.beginNextWave();
-        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

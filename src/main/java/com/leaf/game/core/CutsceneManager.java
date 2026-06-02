@@ -43,10 +43,13 @@ public class CutsceneManager {
     };
 
     public static final String[][] ENDING = {
-        { "The mountain falls silent." },
-        { "You carry their techniques now —",
-          "and whatever it was they kept sealed here." },
-        { "DESCENT" },
+        { "You survived.",
+          "Every wave. Every hunter. Everything it sent." },
+        { "And now — the sky opens.",
+          "FLIGHT. The last thing the crystal ever gives." },
+        { "The mountain has nothing left to hold you." },
+        { "DESCENT",
+          "You are free.  Go anywhere." },
     };
 
     /** Typewriter speed (characters revealed per second). */

@@ -107,7 +107,14 @@ public class Window {
     float practiceTimer   = 0f;
     /** True once the player has actually used the ability being practised. */
     boolean practiceUsed  = false;
-    private static final float PRACTICE_TIMEOUT = 40f;
+    static final float PRACTICE_TIMEOUT = 40f;
+    /** Queued practice sessions for the current wave (e.g. wave 8 = Seal then Kamui). */
+    final java.util.ArrayDeque<Progression.Ability> practiceQueue = new java.util.ArrayDeque<>();
+    /** ENTER edge-detect for the practice tick (so the card-dismiss press can't skip it). */
+    private boolean lastPracticeEnter = false;
+    /** Set after the wave-9 ending cutscene fires; stops further waves. */
+    boolean gameEnded = false;
+
     final ImString chatInput = new ImString(256);
     final List<String> chatHistory = new ArrayList<>();
     final ImString seedInput = new ImString(32);
@@ -621,6 +628,20 @@ public class Window {
         isPreloading       = true;
     }
 
+    /** Begin the next queued practice session, or start the next wave if the queue is empty. */
+    private void startNextPractice() {
+        Progression.Ability next = practiceQueue.poll();
+        if (next != null && player.progression.isUnlocked(next)) {
+            practiceAbility = next;
+            practiceTimer   = PRACTICE_TIMEOUT;
+            practiceUsed    = false;
+        } else {
+            practiceAbility = null;
+            practiceTimer   = 0f;
+            enemyManager.beginNextWave();
+        }
+    }
+
     private void loop() {
         // ── MAC OS CRASH FIX ──────────────────────────────────────────────
         // Flush the window creation events and give macOS 150ms to finish
@@ -917,11 +938,13 @@ public class Window {
                             player.abilities.kamuiAutoExited  = false;
                             player.abilities.absorptionCharge = 0f;
                             player.abilities.isDashing        = false;
-                            enemyManager.getEnemies().forEach(e -> e.alive = false);
-                            enemyManager.projectiles.clear();
-                            enemyManager.wavesEnabled  = true;
-                            practiceAbility = null; practiceTimer = 0f;
-                            showUnlockCard  = false;
+                            player.abilities.isCannonballing  = false;
+                            // Fresh run: abilities reset to the starting kit, wave back to 1.
+                            player.progression.reset();
+                            enemyManager.resetForNewRun();
+                            practiceAbility = null; practiceTimer = 0f; practiceQueue.clear();
+                            showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
+                            gameEnded       = false;
                             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
                             AudioManager.stopContinuous("kamui_duration");
                             AudioManager.stopContinuous("kamui_distortion");
@@ -1142,51 +1165,55 @@ public class Window {
                         enemyManager.update(deltaTime, world, player.position);
                         if (tutorial != null) tutorial.update(deltaTime);
 
-                        // ── WAVE CLEARED → unlock ability + show card ─────────
+                        // ── WAVE CLEARED → ending / unlock card ───────────────
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
                             int waveJustCleared = enemyManager.lastClearedWave;
-                            java.util.List<Progression.Ability> gained =
-                                    player.progression.unlockForWave(waveJustCleared);
-                            // Show the card whenever there are new abilities OR the wave has a
-                            // practice session (must always appear even on replay runs).
-                            Progression.Ability practiceForWave = switch (waveJustCleared) {
-                                case 7 -> Progression.Ability.STAND;
-                                case 8 -> Progression.Ability.SEAL;   // also Kamui, but Seal is primary
-                                default -> null;
-                            };
-                            boolean hasPractice = practiceForWave != null
-                                    && player.progression.isUnlocked(practiceForWave);
-                            if (gained.isEmpty() && !hasPractice) {
-                                // Replay with nothing new and no practice — skip straight to next wave.
-                                enemyManager.beginNextWave();
+
+                            if (waveJustCleared >= 9 && !gameEnded) {
+                                // ── WAVE 9 = FLIGHT = THE ENDING ──────────────
+                                player.progression.unlockForWave(9);   // grant FLIGHT
+                                float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
+                                int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
+                                cutscene.endingStat = String.format(
+                                        "Enemies defeated: %d      Time: %d:%02d",
+                                        enemyManager.totalKills, em, es);
+                                cutscene.startEnding();
+                                enemyManager.wavesEnabled = false;  // world is yours now — no more waves
+                                enemyManager.beginNextWave();        // clear the awaiting flag
+                                gameEnded = true;
                             } else {
-                                unlockCardWave      = waveJustCleared;
-                                unlockCardAbilities = gained;
-                                showUnlockCard      = true;
-                                AudioManager.play("seal_collect");
+                                // Normal wave: unlock this tier and ALWAYS show the card
+                                // (abilities reset each run, so there's always something new).
+                                java.util.List<Progression.Ability> gained =
+                                        player.progression.unlockForWave(waveJustCleared);
+                                if (gained.isEmpty()) gained = player.progression.abilitiesForWave(waveJustCleared);
+                                if (gained.isEmpty()) {
+                                    enemyManager.beginNextWave();   // no tier (shouldn't happen ≤ wave 9)
+                                } else {
+                                    unlockCardWave      = waveJustCleared;
+                                    unlockCardAbilities = gained;
+                                    showUnlockCard      = true;
+                                    AudioManager.play("seal_collect");
+                                }
                             }
                         }
-                        // Dismiss the card with ENTER → practice (for complex abilities) or next wave.
+
+                        // Dismiss the card with ENTER → queue practice (complex abilities) or next wave.
                         if (showUnlockCard) {
                             boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
                                     || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                             if (en && !lastCardSpace) {
                                 showUnlockCard = false;
-                                // Practice is triggered by WAVE NUMBER, not unlock list,
-                                // so it fires on every run (not just the first time).
-                                Progression.Ability practiceCandidate = switch (enemyManager.lastClearedWave) {
-                                    case 7 -> Progression.Ability.STAND;
-                                    case 8 -> Progression.Ability.KAMUI; // wave 8 has both; Kamui is the harder one
-                                    default -> null;
-                                };
-                                // Only run practice if the ability is actually unlocked
-                                if (practiceCandidate != null && player.progression.isUnlocked(practiceCandidate)) {
-                                    practiceAbility = practiceCandidate;
-                                    practiceTimer   = PRACTICE_TIMEOUT;
-                                    practiceUsed    = false;
-                                } else {
-                                    enemyManager.beginNextWave();
+                                // Queue pause-and-teach sessions for the complex abilities on this wave.
+                                practiceQueue.clear();
+                                switch (enemyManager.lastClearedWave) {
+                                    case 7 -> practiceQueue.add(Progression.Ability.STAND);             // Manhattan Transfer
+                                    case 8 -> { practiceQueue.add(Progression.Ability.SEAL);            // Minato's Seal
+                                                practiceQueue.add(Progression.Ability.KAMUI); }         // then Kamui
+                                    default -> { }
                                 }
+                                lastPracticeEnter = true;   // require ENTER release before a skip counts
+                                startNextPractice();         // begins first queued session, or next wave
                             }
                             lastCardSpace = en;
                         }
@@ -1194,7 +1221,6 @@ public class Window {
                         // ── PRACTICE SESSION tick ─────────────────────────────
                         if (practiceAbility != null && practiceTimer > 0f) {
                             practiceTimer -= deltaTime;
-                            // Detect ability usage for each type
                             boolean used = switch (practiceAbility) {
                                 case KAMUI -> player.abilities.isKamui;
                                 case SEAL  -> player.seals.getSealCount() > 0;
@@ -1203,13 +1229,21 @@ public class Window {
                             };
                             if (used) practiceUsed = true;
 
-                            // Dismiss once used (after 1s grace) or timed out
-                            boolean done = (practiceUsed && practiceTimer < PRACTICE_TIMEOUT - 1f)
-                                    || practiceTimer <= 0f;
+                            // ENTER skips — but only after 1.2s AND a key release, so the
+                            // card-dismiss press can't kill the session on the opening frame.
+                            boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                            boolean canSkip = practiceTimer < PRACTICE_TIMEOUT - 1.2f
+                                    && !lastPracticeEnter && enterNow;
+                            lastPracticeEnter = enterNow;
+
+                            boolean done = (practiceUsed && practiceTimer < PRACTICE_TIMEOUT - 2f)
+                                    || practiceTimer <= 0f || canSkip;
                             if (done) {
-                                practiceAbility = null;
-                                practiceTimer   = 0f;
-                                enemyManager.beginNextWave();
+                                practiceAbility   = null;
+                                practiceTimer     = 0f;
+                                lastPracticeEnter = true;  // arm for the next queued session
+                                startNextPractice();        // next queued ability, or begin the wave
                             }
                         }
 
