@@ -30,6 +30,7 @@ context.txt
 # Game Saves & Local Run Data
 savegame.txt
 descent_progress.txt
+descent_records.txt
 
 # Development Automation & AI Context Files
 claudebox.txt

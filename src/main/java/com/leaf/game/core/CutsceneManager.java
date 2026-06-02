@@ -33,9 +33,11 @@ public class CutsceneManager {
         { "They were already here when you arrived.",
           "They have always been here.",
           "Waiting." },
-        { "The crystal is warm in your hands.",
-          "It knows you are afraid.",
-          "It will teach you to survive." },
+        { "The crystal bonds with you.",
+          "Watch the blue bar beneath your health. That is your MANA.",
+          "Every ability you learn will cost it.  It refills on its own." },
+        { "Survive each wave and the crystal teaches you something new.",
+          "Press [ F1 ] anytime to review what you have learned." },
         { "DESCENT",
           "Survive.   Learn.   Escape." },
     };
@@ -61,6 +63,13 @@ public class CutsceneManager {
     private int     slideChars = 0;    // total characters on the current slide
     private boolean active     = false;
     private boolean ending     = false;
+    /**
+     * Minimum seconds a slide must be visible before ENTER can advance it.
+     * Prevents accidental skip: players often have Space held from jumping;
+     * requiring ENTER + a cooldown makes advancement deliberate.
+     */
+    private static final float SLIDE_MIN_SHOW = 0.9f;
+    private float   slideAge   = 0f;   // time the current slide has been shown
     private float   windFade   = 0f;   // 0→1 fade-in for the wind bed
     private float   age        = 0f;   // total seconds the cutscene has run (for the glow pulse)
     private float   promptT    = 0f;   // blink timer for the "[SPACE]" prompt
@@ -73,7 +82,7 @@ public class CutsceneManager {
 
     private void begin(String[][] s, boolean isEnding) {
         script = s; slide = 0; typed = 0f; active = true; ending = isEnding;
-        windFade = 0f; age = 0f; promptT = 0f;
+        windFade = 0f; age = 0f; promptT = 0f; slideAge = 0f;
         slideChars = charCount(0);
         AudioManager.playContinuous(WIND_SOUND, 0f); // starts silent, update() fades it in
     }
@@ -84,23 +93,34 @@ public class CutsceneManager {
     // ── Per-frame update (raw dt; runs while the world is frozen) ─────────────
     public void update(float dt) {
         if (!active) return;
-        age     += dt;
-        promptT += dt;
-        windFade = Math.min(1f, windFade + dt * 0.6f);
+        age      += dt;
+        promptT  += dt;
+        slideAge += dt;
+        windFade  = Math.min(1f, windFade + dt * 0.6f);
         AudioManager.setContinuousVolume(WIND_SOUND, WIND_VOLUME * windFade);
         if (typed < slideChars) typed = Math.min(slideChars, typed + CPS * dt);
     }
 
-    /** SPACE/ENTER: complete the current line, or move to the next slide. */
+    /**
+     * ENTER: complete the current typewriter, or move to the next slide.
+     * A per-slide minimum display time prevents accidental skipping — the
+     * player often has keys held from gameplay when a cutscene opens.
+     */
     public void advance() {
         if (!active) return;
-        if (typed < slideChars) { typed = slideChars; return; }  // reveal the rest first
+        // First press finishes typing; only then (and after min-show time) advance.
+        if (typed < slideChars) {
+            if (slideAge < SLIDE_MIN_SHOW * 0.4f) return; // too soon — ignore
+            typed = slideChars;
+            return;
+        }
+        if (slideAge < SLIDE_MIN_SHOW) return;  // must have been visible long enough
         slide++;
         if (slide >= script.length) { end(); return; }
-        typed = 0f;
+        typed = 0f; slideAge = 0f;
         slideChars = charCount(slide);
         promptT = 0f;
-        AudioManager.play("cystal_click", 0.4f);                 // soft page-turn
+        AudioManager.play("cystal_click", 0.4f);
     }
 
     /** ESC: skip the whole thing. */
@@ -186,10 +206,10 @@ public class CutsceneManager {
         }
 
         // "[ SPACE ]" prompt, blinking, once the current slide has finished typing.
-        if (typed >= slideChars) {
+        if (typed >= slideChars && slideAge >= SLIDE_MIN_SHOW) {
             float a = 0.35f + 0.35f * (float) Math.sin(promptT * 3.2f);
             boolean last = slide >= script.length - 1;
-            String prompt = last ? "[ SPACE ]  begin" : "[ SPACE ]";
+            String prompt = last ? "[ ENTER ]  begin" : "[ ENTER ]";
             float tw = ImGui.calcTextSize(prompt).x;
             draw.addText(font, base, (w - tw) * 0.5f, h - bar + 18f,
                     ImGui.colorConvertFloat4ToU32(0.7f, 0.75f, 0.85f, a), prompt);

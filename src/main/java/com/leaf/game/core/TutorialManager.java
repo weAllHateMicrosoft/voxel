@@ -170,11 +170,11 @@ public class TutorialManager {
             "Double-tap [W] and keep holding to SPRINT.", "W W",
             null, c -> c.player.isSprinting() || movedFar(c, 18f), 14f));
 
-        // 4 ── JUMP
+        // 4 ── JUMP + FALL SMASH
         steps.add(new Step("Jump",
-            "Press [SPACE] to jump.", "Space",
+            "Press [SPACE] to jump. While falling, hold [SHIFT] just before landing to GROUND SLAM — craters the terrain.", "Space",
             null,
-            c -> { if (!c.player.isOnGround()) c.flag = true; return c.flag; }, 10f));
+            c -> { if (!c.player.isOnGround()) c.flag = true; return c.flag; }, 12f));
 
         // 5 ── YOUR STARTING TECHNIQUE: SNIPE
         // The crystal grants SNIPE for free; every other ability unlocks by

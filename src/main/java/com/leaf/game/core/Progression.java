@@ -65,8 +65,8 @@ public class Progression {
         /* wave 5 */ { Ability.BLINK, Ability.SWAP },
         /* wave 6 */ { Ability.PILLAR, Ability.CANNONBALL },
         /* wave 7 */ { Ability.STAND, Ability.TIME },
-        /* wave 8 */ { Ability.SEAL, Ability.SUBSTITUTE, Ability.STONE_CANON },
-        /* wave 9 */ { Ability.KAMUI, Ability.FLIGHT },
+        /* wave 8 */ { Ability.SEAL, Ability.SUBSTITUTE, Ability.STONE_CANON, Ability.KAMUI },
+        /* wave 9 */ { Ability.FLIGHT },   // final parting gift — before the boss
     };
 
     /** Story headline shown on each wave's unlock card (index = wave cleared). */
@@ -80,7 +80,7 @@ public class Progression {
         "The earth itself answers to you now.",
         "You are not alone anymore.",
         "Mark the world. Bend it around you.",
-        "The final gift. Step beyond their reach.",
+        "One last gift. The mountain releases you. The sky is yours now.",
     };
 
     /** The wave that is the final boss (no ability unlock — you fight with everything). */
