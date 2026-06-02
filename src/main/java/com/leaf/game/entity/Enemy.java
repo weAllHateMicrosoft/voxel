@@ -463,23 +463,6 @@ public class Enemy {
         if (!blockedX) position.x = nx;
         if (!blockedZ) position.z = nz;
 
-        // ── Wall-escape: if the enemy is already inside a solid block, push out ──
-        // This prevents enemies from getting permanently stuck inside terrain
-        // (can happen after knockback, spawning, or separation pushes into walls).
-        if (isSolidColumn(world, position.x, footY, position.z)) {
-            // Probe 8 directions and pick the first open one.
-            float escape = collisionRadius + 0.2f;
-            float[][] dirs8 = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}};
-            for (float[] d : dirs8) {
-                float len = (float)Math.sqrt(d[0]*d[0]+d[1]*d[1]);
-                float ex = position.x + d[0]/len * escape;
-                float ez = position.z + d[1]/len * escape;
-                if (!isSolidColumn(world, ex, footY, ez)) {
-                    position.x = ex; position.z = ez; break;
-                }
-            }
-        }
-
         if ((blockedX || blockedZ) && onGround) {
             int blockAheadX = (int) Math.floor(position.x + ndx * 0.9f);
             int blockAheadZ = (int) Math.floor(position.z + ndz * 0.9f);
