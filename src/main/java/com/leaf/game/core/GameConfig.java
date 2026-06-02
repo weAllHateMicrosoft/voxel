@@ -175,9 +175,9 @@ public class GameConfig {
     // Recoil: pitch + FOV decay back to neutral (0.22 s)
     public static float meleeWindupDuration  = 0.14f;  // seconds
     public static float meleeRecoilDuration  = 0.22f;  // seconds
-    public static float meleeCooldown        = 0.80f;  // seconds between strikes
+    public static float meleeCooldown        = 0.00f;  // seconds between strikes
     public static float meleeShakeStrength   = 0.13f;  // shake timer length (s)
-    public static float meleeDamage          = 100f;    // HP per hit (cone arc)
+    public static float meleeDamage          = 50f;    // HP per hit (cone arc)
     public static boolean melee3DAiming = true;
 
     // ── RANGED ATTACK (Void Shard — C key) ───────────────────────────────────
@@ -385,8 +385,8 @@ public class GameConfig {
     public static float golemSmashResist     = 0.35f;
 
     // ── ENEMY: GUARDIAN (golem.bbmodel — patrolling melee bruiser, 3-hit combo) ─
-    public static float guardianHealth       = 600f;  // very high — a wall of stone
-    public static float guardianSpeed        = 2.4f;  // chase speed (purposeful, not fast)
+    public static float guardianHealth       = 999f;  // very high — a wall of stone
+    public static float guardianSpeed        = 2.0f;  // chase speed (purposeful, not fast)
     public static float guardianPatrolSpeed  = 0.9f;  // slow idle wander
     public static float guardianAggroRange   = 30f;
     public static float guardianAttackRange  = 3.4f;  // long reach (big arms)
@@ -506,7 +506,7 @@ public class GameConfig {
 
     // Attack costs
     /** Mana cost per Runic Cleave (F key). */
-    public static float manaCleave           = 30f;
+    public static float manaCleave           = 15f;
     /** Mana cost per Void Shard bolt (C key). */
     public static float manaVoidShard        = 20f;
     /** Mana cost when the earth pillar activates (one-time). */
