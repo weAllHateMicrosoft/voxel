@@ -100,6 +100,16 @@ public class Window {
     String[]     deathScreenLines    = null;
     private boolean lastDeathEnter   = false;
 
+    /**
+     * Set when the player dies and a cutscene sequence is pending.
+     * KAMUI_AWAKEN plays first (on 3rd death), then REVIVAL auto-plays, then
+     * Window restores the player automatically when the revival ends.
+     * While any death cutscene is active: player update is frozen (same gate as showDeathScreen).
+     */
+    boolean      deathCutscenePending  = false;
+    /** Death position saved so the player respawns in the same spot. */
+    float        deathRespawnX = 0f, deathRespawnY = 0f, deathRespawnZ = 0f;
+
     // ── PRACTICE SESSION (pause-and-teach for complex abilities) ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
@@ -834,7 +844,28 @@ public class Window {
             // ── SCALED DELTA TIME for physics ─────────────────────────────────
             ScreenEffectManager.INSTANCE.tick(rawDeltaTime);
             // Cutscene advances on raw time even though the world below is frozen.
-            if (cutscene.isActive()) cutscene.update(rawDeltaTime);
+            if (cutscene.isActive()) {
+                cutscene.update(rawDeltaTime);
+            } else if (deathCutscenePending) {
+                // Cutscene just ended — check which kind finished.
+                CutsceneManager.Kind finishedKind = cutscene.getKind();
+                if (finishedKind == CutsceneManager.Kind.KAMUI_AWAKEN) {
+                    // Kamui awakening done — now play the revival cutscene.
+                    cutscene.startRevival();
+                } else if (finishedKind == CutsceneManager.Kind.REVIVAL) {
+                    // Revival done — restore player and resume.
+                    deathCutscenePending = false;
+                    player.position.set(deathRespawnX, deathRespawnY, deathRespawnZ);
+                    player.setVelocityY(0f);
+                    player.health = player.maxHealth * 0.4f;   // come back at 40% HP — vulnerable
+                    player.mana   = player.maxMana   * 0.3f;
+                    player.abilities.isKamui          = false;
+                    player.abilities.kamuiAutoExited  = false;
+                    player.abilities.absorptionCharge = 0f;
+                    player.abilities.isDashing        = false;
+                    ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f); // fade colour back in
+                }
+            }
             if (damageFlashTimer > 0f) damageFlashTimer -= rawDeltaTime;
             float deltaTime = rawDeltaTime * tc.getScale()
                     * ScreenEffectManager.INSTANCE.getHitStopScale();
@@ -950,6 +981,7 @@ public class Window {
                             enemyManager.resetForNewRun();
                             practiceAbility = null; practiceTimer = 0f; practiceQueue.clear();
                             showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
+                            deathCutscenePending = false;
                             gameEnded       = false;
                             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
                             AudioManager.stopContinuous("kamui_duration");
@@ -958,7 +990,7 @@ public class Window {
                         lastDeathEnter = en;
                     }
 
-                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen) {
+                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending) {
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
                         // Save state BEFORE update so we can detect transitions.
                         // player.update() resets highestY on landing and toggles debugMode.
@@ -1383,16 +1415,31 @@ public class Window {
                                 enemyManager.pendingPlayerDamage = 0f;
                                 if (player.health <= 0f) {
                                     player.health = 0f;  // clamp; actual reset happens on restart
-                                    if (!showDeathScreen) {
-                                        // Record the death and capture stat strings for the screen.
+                                    if (!showDeathScreen && !deathCutscenePending) {
+                                        AudioManager.stopContinuous("kamui_duration");
+                                        AudioManager.stopContinuous("kamui_distortion");
+
+                                        // Record death — this also checks if it's the 3rd
+                                        // (Kamui awakening) and persists the flag.
                                         deathScreenLines = RunRecords.INSTANCE.recordDeath(
                                                 enemyManager.getWaveNumber(),
                                                 (float) org.lwjgl.glfw.GLFW.glfwGetTime());
-                                        showDeathScreen = true;
-                                        AudioManager.play("fall_smash");
-                                        AudioManager.stopContinuous("kamui_duration");
-                                        AudioManager.stopContinuous("kamui_distortion");
-                                        ScreenEffectManager.INSTANCE.desaturate(0.7f, 2.0f);
+
+                                        // Save respawn position (player stays near death site).
+                                        deathRespawnX = player.position.x;
+                                        deathRespawnY = player.position.y + 2f;
+                                        deathRespawnZ = player.position.z;
+                                        deathCutscenePending = true;
+
+                                        // 3rd death: play Kamui awakening first, then revival.
+                                        if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
+                                            // Unlock Kamui in this run's progression (death-earned, not wave-earned).
+                                            player.progression.grantKamui();
+                                            cutscene.startKamuiAwaken();
+                                        } else {
+                                            cutscene.startRevival();
+                                        }
+                                        ScreenEffectManager.INSTANCE.desaturate(0.7f, 1.5f);
                                     }
                                 }
                             }

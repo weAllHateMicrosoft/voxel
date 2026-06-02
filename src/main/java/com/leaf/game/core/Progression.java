@@ -130,6 +130,15 @@ public class Progression {
         return gained;
     }
 
+    /**
+     * Directly grant Kamui regardless of wave progress.
+     * Called when the 3rd death triggers the awakening cutscene.
+     */
+    public void grantKamui() {
+        unlocked.add(Ability.KAMUI);
+        if (maxTier < 8) maxTier = 8;   // treat as if wave-8 was cleared
+    }
+
     /** Story headline for a wave's unlock card. */
     public String flavorFor(int wave) {
         return (wave >= 0 && wave < FLAVOR.length) ? FLAVOR[wave] : "";

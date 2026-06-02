@@ -42,6 +42,34 @@ public class CutsceneManager {
           "Survive.   Learn.   Escape." },
     };
 
+    /**
+     * Played on every death before the player is revived.
+     * Auto-advances: no ENTER needed, the last slide fades out and the
+     * caller restores the player automatically when isActive() returns false.
+     */
+    public static final String[][] REVIVAL = {
+        { "The crystal catches you.",
+          "It is not done with you yet." },
+        { "You feel cold stone  -  and then warmth.",
+          "You are back." },
+    };
+
+    /**
+     * Played when the 3rd death triggers the Kamui awakening.
+     * Comes BEFORE the normal revival cutscene.
+     */
+    public static final String[][] KAMUI_AWAKEN = {
+        { "Three times the darkness has taken you." },
+        { "But something remained.",
+          "A part of you that refused to be here." },
+        { "Obito felt it crushed under stone.",
+          "You felt it emptied by death." },
+        { "Your body learns to slip between worlds.",
+          "Between here  -  and the other side." },
+        { "KAMUI",
+          "Phase through. Become untouchable." },
+    };
+
     public static final String[][] ENDING = {
         { "You survived.",
           "Every wave. Every hunter. Everything it sent." },
@@ -62,40 +90,49 @@ public class CutsceneManager {
 
     // ═══════════════════════════════════════════════════════════════════════
 
+    /** Identifies which script is currently running — read by Window to know what to do on end. */
+    public enum Kind { INTRO, REVIVAL, KAMUI_AWAKEN, ENDING }
+
     private String[][] script = null;
     private int     slide      = 0;
-    private float   typed      = 0f;   // characters revealed on the current slide so far
-    private int     slideChars = 0;    // total characters on the current slide
+    private float   typed      = 0f;
+    private int     slideChars = 0;
     private boolean active     = false;
-    private boolean ending     = false;
+    private Kind    kind       = Kind.INTRO;
     /**
-     * Minimum seconds a slide must be visible before ENTER can advance it.
-     * Prevents accidental skip: players often have Space held from jumping;
-     * requiring ENTER + a cooldown makes advancement deliberate.
+     * When true, the cutscene auto-advances each slide after a fixed pause
+     * (used for revival — player shouldn't need to press ENTER just to respawn).
      */
-    private static final float SLIDE_MIN_SHOW = 0.9f;
-    private float   slideAge   = 0f;   // time the current slide has been shown
-    private float   windFade   = 0f;   // 0->1 fade-in for the wind bed
-    private float   age        = 0f;   // total seconds the cutscene has run (for the glow pulse)
-    private float   promptT    = 0f;   // blink timer for the "[SPACE]" prompt
+    private boolean autoAdvance = false;
+    private static final float AUTO_SLIDE_PAUSE = 2.2f;  // seconds per slide in auto mode
 
-    /** Optional stat lines shown on the ENDING (set by Window before startEnding). */
+    private static final float SLIDE_MIN_SHOW = 0.9f;
+    private float   slideAge   = 0f;
+    private float   windFade   = 0f;
+    private float   age        = 0f;
+    private float   promptT    = 0f;
+
+    /** Optional stat line shown on the ENDING. */
     public String endingStat = null;
 
-    public void startIntro()  { begin(INTRO,  false); }
-    public void startEnding() { begin(ENDING, true);  }
+    public void startIntro()       { begin(INTRO,        Kind.INTRO,       false); }
+    public void startRevival()     { begin(REVIVAL,      Kind.REVIVAL,     true);  }
+    public void startKamuiAwaken() { begin(KAMUI_AWAKEN, Kind.KAMUI_AWAKEN,false); }
+    public void startEnding()      { begin(ENDING,       Kind.ENDING,      false); }
 
-    private void begin(String[][] s, boolean isEnding) {
-        script = s; slide = 0; typed = 0f; active = true; ending = isEnding;
+    private void begin(String[][] s, Kind k, boolean auto) {
+        script = s; slide = 0; typed = 0f; active = true; kind = k; autoAdvance = auto;
         windFade = 0f; age = 0f; promptT = 0f; slideAge = 0f;
         slideChars = charCount(0);
-        AudioManager.playContinuous(WIND_SOUND, 0f); // starts silent, update() fades it in
+        AudioManager.playContinuous(WIND_SOUND, 0f);
     }
 
-    public boolean isActive()  { return active; }
-    public boolean wasEnding()  { return ending; }
+    public boolean isActive()   { return active; }
+    public Kind    getKind()    { return kind;   }
+    @Deprecated
+    public boolean wasEnding()  { return kind == Kind.ENDING; }
 
-    // ── Per-frame update (raw dt; runs while the world is frozen) ─────────────
+    // ── Per-frame update ──────────────────────────────────────────────────────
     public void update(float dt) {
         if (!active) return;
         age      += dt;
@@ -104,6 +141,14 @@ public class CutsceneManager {
         windFade  = Math.min(1f, windFade + dt * 0.6f);
         AudioManager.setContinuousVolume(WIND_SOUND, WIND_VOLUME * windFade);
         if (typed < slideChars) typed = Math.min(slideChars, typed + CPS * dt);
+
+        // Auto-advance mode: scroll through slides automatically (revival cutscene).
+        if (autoAdvance && typed >= slideChars && slideAge >= AUTO_SLIDE_PAUSE) {
+            slide++;
+            if (slide >= script.length) { end(); return; }
+            typed = 0f; slideAge = 0f;
+            slideChars = charCount(slide);
+        }
     }
 
     /**
@@ -203,15 +248,29 @@ public class CutsceneManager {
             y += size + gap;
         }
 
-        // Optional stat line on the ending (e.g. "You remember 84 faces.").
-        if (ending && endingStat != null && typed >= slideChars) {
+        // Optional stat line on the ending.
+        if (kind == Kind.ENDING && endingStat != null && typed >= slideChars) {
             float tw = ImGui.calcTextSize(endingStat).x;
             draw.addText(font, base, (w - tw) * 0.5f, h - bar - 40f,
                     ImGui.colorConvertFloat4ToU32(0.8f, 0.6f, 0.55f, 0.95f), endingStat);
         }
 
-        // "[ SPACE ]" prompt, blinking, once the current slide has finished typing.
-        if (typed >= slideChars && slideAge >= SLIDE_MIN_SHOW) {
+        // Crystal glow effect: a pulsing radial bloom in the centre of the screen.
+        // Shown on REVIVAL (warm amber) and KAMUI_AWAKEN (cold purple/void).
+        if (kind == Kind.REVIVAL || kind == Kind.KAMUI_AWAKEN) {
+            float pulse = 0.18f + 0.12f * (float) Math.sin(age * 4.5f);
+            boolean revival = (kind == Kind.REVIVAL);
+            int glowCol = revival
+                ? ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, pulse)   // warm crystal amber
+                : ImGui.colorConvertFloat4ToU32(0.55f, 0.0f, 0.9f,  pulse);  // void purple
+            // Layered bloom — bigger & softer each pass
+            for (int r = 220; r >= 40; r -= 30) {
+                draw.addCircleFilled(w * 0.5f, h * 0.5f, r, glowCol, 48);
+            }
+        }
+
+        // ENTER prompt — hidden on auto-advance (revival), shown on manual-advance.
+        if (!autoAdvance && typed >= slideChars && slideAge >= SLIDE_MIN_SHOW) {
             float a = 0.35f + 0.35f * (float) Math.sin(promptT * 3.2f);
             boolean last = slide >= script.length - 1;
             String prompt = last ? "[ ENTER ]  begin" : "[ ENTER ]";
@@ -220,8 +279,10 @@ public class CutsceneManager {
                     ImGui.colorConvertFloat4ToU32(0.7f, 0.75f, 0.85f, a), prompt);
         }
 
-        // Unobtrusive skip hint in the corner.
-        draw.addText(font, base, 16f, h - bar + 18f,
-                ImGui.colorConvertFloat4ToU32(0.5f, 0.52f, 0.6f, 0.6f), "[ESC] skip");
+        // Skip hint — only on manual cutscenes, not revival.
+        if (!autoAdvance) {
+            draw.addText(font, base, 16f, h - bar + 18f,
+                    ImGui.colorConvertFloat4ToU32(0.5f, 0.52f, 0.6f, 0.6f), "[ESC] skip");
+        }
     }
 }

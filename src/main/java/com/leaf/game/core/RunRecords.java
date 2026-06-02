@@ -22,8 +22,12 @@ public class RunRecords {
     public  float runStartTime  = 0f;  // glfwGetTime() snapshot when run began
 
     // ── All-time (loaded + saved on death) ────────────────────────────────────
-    private int totalDeaths = 0;
-    private int bestWave    = 0;
+    private int     totalDeaths     = 0;
+    private int     bestWave        = 0;
+    /** True once the player has unlocked Kamui via 3 deaths (persisted). */
+    public  boolean kamuiEverUnlocked = false;
+    /** Number of deaths required to awaken Kamui. */
+    public  static final int KAMUI_AWAKEN_DEATHS = 3;
 
     // Singleton used by Window
     public static final RunRecords INSTANCE = new RunRecords();
@@ -57,13 +61,25 @@ public class RunRecords {
 
         save();
 
+        // Check if this death triggers the Kamui awakening (exactly on death #3,
+        // only if not already unlocked).
+        boolean kamuiThisDeath = (totalDeaths == KAMUI_AWAKEN_DEATHS && !kamuiEverUnlocked);
+        if (kamuiThisDeath) kamuiEverUnlocked = true;
+
+        save();
+
         return new String[]{
             "Wave Reached   " + waveReached,
             "Deaths This Run   " + deathsThisRun,
             String.format("Time Survived   %d:%02d", mins, secs),
-            newBest ? "NEW PERSONAL BEST — Wave " + bestWave
+            newBest ? "NEW PERSONAL BEST - Wave " + bestWave
                     : "Personal Best   Wave " + bestWave,
         };
+    }
+
+    /** True if this death (already recorded) was the 3rd and triggers Kamui. */
+    public boolean wasKamuiAwakenDeath() {
+        return totalDeaths == KAMUI_AWAKEN_DEATHS && kamuiEverUnlocked;
     }
 
     // ── Persistence ────────────────────────────────────────────────────────────
@@ -74,8 +90,9 @@ public class RunRecords {
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if (line.startsWith("DEATHS:"))    totalDeaths = Integer.parseInt(line.substring(7).trim());
-                else if (line.startsWith("BEST:")) bestWave    = Integer.parseInt(line.substring(5).trim());
+                if      (line.startsWith("DEATHS:")) totalDeaths       = Integer.parseInt(line.substring(7).trim());
+                else if (line.startsWith("BEST:"))   bestWave          = Integer.parseInt(line.substring(5).trim());
+                else if (line.startsWith("KAMUI:"))  kamuiEverUnlocked = line.substring(6).trim().equals("1");
             }
         } catch (Exception ignored) {}
     }
@@ -84,6 +101,7 @@ public class RunRecords {
         try (PrintWriter w = new PrintWriter(FILE)) {
             w.println("DEATHS:" + totalDeaths);
             w.println("BEST:"   + bestWave);
+            w.println("KAMUI:"  + (kamuiEverUnlocked ? "1" : "0"));
         } catch (Exception e) {
             System.err.println("[Records] Could not save: " + e.getMessage());
         }
