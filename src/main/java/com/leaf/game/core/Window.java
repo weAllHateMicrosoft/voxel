@@ -1169,6 +1169,39 @@ public class Window {
 
                         // Update all enemies (gravity, AI, death fade, etc.)
                         enemyManager.update(deltaTime, world, player.position);
+
+                        // ── PROCESS GOLEM BLOCK BREAKING ──
+                        for (Enemy e : enemyManager.getEnemies()) {
+                            if (e.pendingBlockBreak) {
+                                e.pendingBlockBreak = false;
+
+                                // Golems smash a 2-block high hole through the wall
+                                for (int dy = 0; dy <= 1; dy++) {
+                                    int bx = e.breakX;
+                                    int by = e.breakY + dy;
+                                    int bz = e.breakZ;
+                                    Block b = world.getBlock(bx, by, bz);
+
+                                    // Don't let them break indestructible terrain
+                                    if (b.isSolid() && b != Block.STAR_IRON && b != Block.MEGALITH && b != Block.MEGALITH_CARVED) {
+                                        world.setBlock(bx, by, bz, Block.AIR);
+                                        world.rebuildChunkAt(bx, by, bz);
+
+                                        // Spawn flying debris
+                                        Vector3f ejectVel = new Vector3f(
+                                                (float)(shakeRng.nextFloat() - 0.5f) * 6f,
+                                                3f + shakeRng.nextFloat() * 4f,
+                                                (float)(shakeRng.nextFloat() - 0.5f) * 6f);
+                                        droppedItems.add(new DroppedItem(bx, by, bz, b, ejectVel));
+                                    }
+                                }
+                                // Play massive sound and shake the screen!
+                                AudioManager.playAt("ground_smash", e.position, (Vector3f)null, 40f);
+                                activeShakeDuration = 0.25f;
+                                activeShakeAmplitude = 0.15f;
+                                smashShakeTimer = Math.max(smashShakeTimer, activeShakeDuration);
+                            }
+                        }
                         if (tutorial != null) tutorial.update(deltaTime);
 
                         // ── WAVE CLEARED → ending / unlock card ───────────────
@@ -2917,11 +2950,12 @@ public class Window {
                             }
 
                             // Pick the right model for the enemy type
-                            boolean isGuardian = enemy.type == Enemy.Type.GUARDIAN;
+                            boolean isGuardian = enemy.type == Enemy.Type.GUARDIAN || enemy.type == Enemy.Type.GOLEM;
+
                             com.leaf.game.anim.AnimModel targetModel =
                                     (enemy.type == Enemy.Type.SLIME    && slimeAnimModel != null) ? slimeAnimModel
-                                  : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
-                                  : enemyAnimModel;
+                                            : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
+                                              : enemyAnimModel;
 
                             com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
                                     enemy.id, id -> {

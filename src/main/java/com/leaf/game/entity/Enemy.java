@@ -114,6 +114,11 @@ public class Enemy {
     private boolean patrolWalking = false;  // true = wandering, false = standing/turning
     private float   patrolTimer  = 0f;
 
+    // ── Block Breaking State ──
+    public boolean pendingBlockBreak = false;
+    public int     breakX, breakY, breakZ;
+    private float  stuckTimer = 0f;
+
     // ── THROWER special ───────────────────────────────────────────────────────
     // (wantsToThrow also used here; throwCooldown shared)
 
@@ -393,12 +398,12 @@ public class Enemy {
 
     /** Animation the GUARDIAN wants to play this frame (read by Window's render loop). */
     public String getAnimName() {
-        if (!alive) return "idle";   // golem model has no death clip — just freeze + fade
+        if (!alive) return "idle";
         return switch (state) {
-            case ATTACK         -> attackAnim;                       // attack_left / _right / attack
-            case CHASE, ALERTED -> "walk";
-            case IDLE           -> patrolWalking ? "walk" : "idle";
-            default             -> "idle";
+            case ATTACK, SLAMMING -> (type == Type.GUARDIAN && attackAnim != null) ? attackAnim : "attack";
+            case CHASE, ALERTED   -> "walk";
+            case IDLE             -> patrolWalking ? "walk" : "idle";
+            default               -> "idle";
         };
     }
 
@@ -558,8 +563,8 @@ public class Enemy {
         int underZ = (int) Math.floor(position.z);
         boolean onMud  = world.getBlock(underX, underY, underZ) == Block.MUD;
         float   moveSpeed = guardianPatrol         ? GameConfig.guardianPatrolSpeed
-                          : (state == State.RETREATING) ? GameConfig.throwerRetreatSpeed
-                          : speed;
+                : (state == State.RETREATING) ? GameConfig.throwerRetreatSpeed
+                  : speed;
         float step = moveSpeed * dt * (onMud ? 0.10f : 1.0f);
 
         float nx = position.x + ndx * step;
@@ -568,6 +573,14 @@ public class Enemy {
 
         boolean blockedX = isSolidColumn(world, nx, footY, position.z);
         boolean blockedZ = isSolidColumn(world, position.x, footY, nz);
+
+        // 1. Smarter Pathfinding: Wall Sliding
+        // If they hit a flat wall, they will naturally glide along the open axis
+        if (blockedX && !blockedZ) {
+            position.z += Math.signum(ndz) * step * 1.5f;
+        } else if (blockedZ && !blockedX) {
+            position.x += Math.signum(ndx) * step * 1.5f;
+        }
 
         if (!blockedX) position.x = nx;
         if (!blockedZ) position.z = nz;
@@ -592,19 +605,44 @@ public class Enemy {
         if ((blockedX || blockedZ) && onGround) {
             // Patrolling guardian that hits a wall: pick a fresh heading next tick.
             if (guardianPatrol) patrolTimer = 0f;
+
             int blockAheadX = (int) Math.floor(position.x + ndx * 0.9f);
             int blockAheadZ = (int) Math.floor(position.z + ndz * 0.9f);
             boolean clear1  = !world.getBlock(blockAheadX, footY + 1, blockAheadZ).isSolid();
             boolean clear2  = !world.getBlock(blockAheadX, footY + 2, blockAheadZ).isSolid();
+
             if (clear1 && clear2) {
-                velocityY = 7.5f;
+                velocityY = 7.5f; // Jump over short obstacles
             } else {
-                strafeTimer += dt;
-                if (strafeTimer >= STRAFE_FLIP_SECS) { strafeSign = -strafeSign; strafeTimer = 0f; }
-                float sx = position.x + (-ndz * strafeSign) * step;
-                float sz = position.z + ( ndx * strafeSign) * step;
-                if (!isSolidColumn(world, sx, footY, sz)) { position.x = sx; position.z = sz; }
+                stuckTimer += dt;
+
+                // 2. GOLEM KOOL-AID MAN: Smash walls if stuck!
+                if (stuckTimer > 0.6f && (type == Type.GOLEM || type == Type.GUARDIAN)) {
+                    pendingBlockBreak = true;
+                    breakX = blockAheadX;
+                    breakY = footY;
+                    breakZ = blockAheadZ;
+                    stuckTimer = 0f;
+
+                    // Force the attack animation to play while breaking
+                    if (type == Type.GUARDIAN) {
+                        state = State.ATTACK;
+                        beginSwing();
+                    } else {
+                        state = State.SLAMMING;
+                        slamWindUp = 0.5f;
+                    }
+                } else {
+                    // Normal strafing for smaller enemies
+                    strafeTimer += dt;
+                    if (strafeTimer >= STRAFE_FLIP_SECS) { strafeSign = -strafeSign; strafeTimer = 0f; }
+                    float sx = position.x + (-ndz * strafeSign) * step;
+                    float sz = position.z + ( ndx * strafeSign) * step;
+                    if (!isSolidColumn(world, sx, footY, sz)) { position.x = sx; position.z = sz; }
+                }
             }
+        } else {
+            stuckTimer = 0f;
         }
 
         // Separation
@@ -625,7 +663,7 @@ public class Enemy {
         // Without this the enemy walks straight into the player and the camera
         // ends up inside the model (you see the hollow interior / texture glitch).
         // minPlayerDist stays below attackRange for every type, so melee still lands.
-        float minPlayerDist = collisionRadius + PLAYER_RADIUS;
+        float minPlayerDist = collisionRadius + 0.3f; // PLAYER_RADIUS
         float pdx = position.x - target.x;
         float pdz = position.z - target.z;
         float pd  = (float) Math.sqrt(pdx * pdx + pdz * pdz);
