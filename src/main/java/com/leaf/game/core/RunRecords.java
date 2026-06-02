@@ -22,11 +22,13 @@ public class RunRecords {
     public  float runStartTime  = 0f;  // glfwGetTime() snapshot when run began
 
     // ── All-time (loaded + saved on death) ────────────────────────────────────
-    private int     totalDeaths     = 0;
-    private int     bestWave        = 0;
-    /** True once the player has unlocked Kamui via 3 deaths (persisted). */
+    private int     totalDeaths       = 0;
+    private int     bestWave          = 0;
+    /** Deaths accumulated BEFORE Kamui was unlocked. Resets once Kamui is granted. */
+    private int     deathsBeforeKamui = 0;
+    /** True once Kamui was ever awakened via this system (persisted). */
     public  boolean kamuiEverUnlocked = false;
-    /** Number of deaths required to awaken Kamui. */
+    /** Deaths required before the Kamui awakening triggers. */
     public  static final int KAMUI_AWAKEN_DEATHS = 3;
 
     // Singleton used by Window
@@ -55,16 +57,14 @@ public class RunRecords {
         boolean newBest = waveReached > bestWave;
         bestWave = Math.max(bestWave, waveReached);
 
+        // Count deaths toward Kamui separately — robust regardless of total deaths history.
+        if (!kamuiEverUnlocked) deathsBeforeKamui++;
+        if (deathsBeforeKamui >= KAMUI_AWAKEN_DEATHS && !kamuiEverUnlocked)
+            kamuiEverUnlocked = true;  // awakening triggers this death
+
         float elapsed = nowSecs - runStartTime;
         int mins = (int)(elapsed / 60f);
         int secs = (int)(elapsed % 60f);
-
-        save();
-
-        // Check if this death triggers the Kamui awakening (exactly on death #3,
-        // only if not already unlocked).
-        boolean kamuiThisDeath = (totalDeaths == KAMUI_AWAKEN_DEATHS && !kamuiEverUnlocked);
-        if (kamuiThisDeath) kamuiEverUnlocked = true;
 
         save();
 
@@ -77,9 +77,12 @@ public class RunRecords {
         };
     }
 
-    /** True if this death (already recorded) was the 3rd and triggers Kamui. */
+    /**
+     * True if the death just recorded (via recordDeath) triggered the Kamui awakening.
+     * Uses deathsBeforeKamui reaching the threshold — works regardless of total deaths.
+     */
     public boolean wasKamuiAwakenDeath() {
-        return totalDeaths == KAMUI_AWAKEN_DEATHS && kamuiEverUnlocked;
+        return deathsBeforeKamui == KAMUI_AWAKEN_DEATHS && kamuiEverUnlocked;
     }
 
     // ── Persistence ────────────────────────────────────────────────────────────
@@ -90,18 +93,20 @@ public class RunRecords {
         try (BufferedReader r = new BufferedReader(new FileReader(f))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if      (line.startsWith("DEATHS:")) totalDeaths       = Integer.parseInt(line.substring(7).trim());
-                else if (line.startsWith("BEST:"))   bestWave          = Integer.parseInt(line.substring(5).trim());
-                else if (line.startsWith("KAMUI:"))  kamuiEverUnlocked = line.substring(6).trim().equals("1");
+                if      (line.startsWith("DEATHS:"))   totalDeaths       = Integer.parseInt(line.substring(7).trim());
+                else if (line.startsWith("BEST:"))     bestWave          = Integer.parseInt(line.substring(5).trim());
+                else if (line.startsWith("KAMUI:"))    kamuiEverUnlocked = line.substring(6).trim().equals("1");
+                else if (line.startsWith("KDEATHS:"))  deathsBeforeKamui = Integer.parseInt(line.substring(8).trim());
             }
         } catch (Exception ignored) {}
     }
 
     private void save() {
         try (PrintWriter w = new PrintWriter(FILE)) {
-            w.println("DEATHS:" + totalDeaths);
-            w.println("BEST:"   + bestWave);
-            w.println("KAMUI:"  + (kamuiEverUnlocked ? "1" : "0"));
+            w.println("DEATHS:"  + totalDeaths);
+            w.println("BEST:"    + bestWave);
+            w.println("KAMUI:"   + (kamuiEverUnlocked ? "1" : "0"));
+            w.println("KDEATHS:" + deathsBeforeKamui);
         } catch (Exception e) {
             System.err.println("[Records] Could not save: " + e.getMessage());
         }

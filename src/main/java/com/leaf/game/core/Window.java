@@ -107,8 +107,9 @@ public class Window {
      * While any death cutscene is active: player update is frozen (same gate as showDeathScreen).
      */
     boolean      deathCutscenePending  = false;
-    /** Death position saved so the player respawns in the same spot. */
-    float        deathRespawnX = 0f, deathRespawnY = 0f, deathRespawnZ = 0f;
+    /** Seconds of post-revival immunity remaining (player is invincible, flickers). */
+    float        immunityTimer = 0f;
+    static final float REVIVAL_IMMUNITY_SECS = 4f;
 
     // ── PRACTICE SESSION (pause-and-teach for complex abilities) ──────────────
     /** Which ability is currently being taught; null when no session is active. */
@@ -443,12 +444,15 @@ public class Window {
         glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
             if (!networkInitialized || isPreloading) return;
 
-            // ── CUTSCENE swallows input: SPACE/ENTER advances, ESC skips ──────
+            // ── CUTSCENE swallows input: ENTER advances, ESC skips.
+            // On the ENDING last slide: double-tap SPACE exits (matches the on-screen hint).
             if (cutscene.isActive()) {
-                if (action == GLFW_PRESS) {          // fire on press so it feels snappy
+                if (action == GLFW_PRESS) {
                     if (key == GLFW_KEY_ESCAPE) cutscene.skip();
                     else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) cutscene.advance();
-                    // Space deliberately NOT wired — player often holds it from jumping
+                    else if (key == GLFW_KEY_SPACE && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
+                        cutscene.tapSpaceForEnding();  // double-tap exits ending
+                    }
                 }
                 return;
             }
@@ -850,22 +854,33 @@ public class Window {
                 // Cutscene just ended — check which kind finished.
                 CutsceneManager.Kind finishedKind = cutscene.getKind();
                 if (finishedKind == CutsceneManager.Kind.KAMUI_AWAKEN) {
-                    // Kamui awakening done — now play the revival cutscene.
+                    // Kamui awakening done: chain into revival, then queue Kamui practice.
                     cutscene.startRevival();
                 } else if (finishedKind == CutsceneManager.Kind.REVIVAL) {
-                    // Revival done — restore player and resume.
+                    // Revival done — restore at SPAWN with full HP and immunity.
                     deathCutscenePending = false;
-                    player.position.set(deathRespawnX, deathRespawnY, deathRespawnZ);
+                    player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
                     player.setVelocityY(0f);
-                    player.health = player.maxHealth * 0.4f;   // come back at 40% HP — vulnerable
-                    player.mana   = player.maxMana   * 0.3f;
+                    player.health = player.maxHealth;   // full HP — crystal fully healed you
+                    player.mana   = player.maxMana;
                     player.abilities.isKamui          = false;
                     player.abilities.kamuiAutoExited  = false;
                     player.abilities.absorptionCharge = 0f;
                     player.abilities.isDashing        = false;
-                    ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f); // fade colour back in
+                    immunityTimer = REVIVAL_IMMUNITY_SECS;   // 4 s of invincibility
+                    ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f);
+                    // If Kamui was just awakened, show its practice session immediately.
+                    if (player.progression.isUnlocked(Progression.Ability.KAMUI)
+                            && practiceAbility == null) {
+                        practiceQueue.clear();
+                        practiceQueue.add(Progression.Ability.KAMUI);
+                        lastPracticeEnter = true;  // require ENTER release first
+                        startNextPractice();
+                    }
                 }
             }
+            // Tick immunity — block incoming damage while it's active.
+            if (immunityTimer > 0f) immunityTimer -= rawDeltaTime;
             if (damageFlashTimer > 0f) damageFlashTimer -= rawDeltaTime;
             float deltaTime = rawDeltaTime * tc.getScale()
                     * ScreenEffectManager.INSTANCE.getHitStopScale();
@@ -1399,8 +1414,8 @@ public class Window {
 
                         // ── DRAIN remaining enemy damage into player health ────
                         if (enemyManager.pendingPlayerDamage > 0f) {
-                            if (player.abilities.isKamui) {
-                                // Kamui = invincible — absorb damage with no effect
+                            if (player.abilities.isKamui || immunityTimer > 0f) {
+                                // Kamui / revival immunity = invincible
                                 enemyManager.pendingPlayerDamage = 0f;
                             } else {
                                 // ── DAMAGE ALERT — so a hit never comes "from nowhere" ──
@@ -1425,10 +1440,6 @@ public class Window {
                                                 enemyManager.getWaveNumber(),
                                                 (float) org.lwjgl.glfw.GLFW.glfwGetTime());
 
-                                        // Save respawn position (player stays near death site).
-                                        deathRespawnX = player.position.x;
-                                        deathRespawnY = player.position.y + 2f;
-                                        deathRespawnZ = player.position.z;
                                         deathCutscenePending = true;
 
                                         // 3rd death: play Kamui awakening first, then revival.

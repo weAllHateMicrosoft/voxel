@@ -817,6 +817,21 @@ class WindowHud {
         // Health bar and win.hotbar  -  hidden while piloting the drone
         if (!win.player.stand.isInStandPerspective()) {
 
+            // Revival immunity indicator — pulsing golden border around the whole screen.
+            if (win.immunityTimer > 0f) {
+                float t = win.immunityTimer / win.REVIVAL_IMMUNITY_SECS;
+                float flicker = 0.3f + 0.55f * (float) Math.abs(Math.sin(glfwGetTime() * 10f));
+                float alpha = t * flicker;  // fades out as immunity expires
+                int immCol = ImGui.colorConvertFloat4ToU32(1f, 0.88f, 0.3f, alpha);
+                float bw = 8f;
+                draw.addRect(bw, bw, screenW - bw, screenH - bw, immCol, 0f, 0, bw);
+                // Small label
+                String immLabel = "PROTECTED  " + (int)Math.ceil(win.immunityTimer) + "s";
+                float lw = ImGui.calcTextSize(immLabel).x;
+                draw.addText(cx - lw/2, screenH - 140f,
+                        ImGui.colorConvertFloat4ToU32(1f, 0.95f, 0.5f, alpha * 1.5f), immLabel);
+            }
+
             // Health bar
             float hpWidth = 200f, hpHeight = 14f;
             float hpX = cx - hpWidth / 2.0f, hpY = screenH - 80f;

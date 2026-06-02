@@ -59,15 +59,17 @@ public class CutsceneManager {
      * Comes BEFORE the normal revival cutscene.
      */
     public static final String[][] KAMUI_AWAKEN = {
-        { "Three times the darkness has taken you." },
-        { "But something remained.",
-          "A part of you that refused to be here." },
-        { "Obito felt it crushed under stone.",
-          "You felt it emptied by death." },
-        { "Your body learns to slip between worlds.",
-          "Between here  -  and the other side." },
+        { "Three times the darkness claimed you.",
+          "Three times the crystal refused to let go." },
+        { "But something else happened at the threshold.",
+          "A part of you stopped coming back." },
+        { "It drifted  -  sideways.",
+          "Into a space that has no name." },
+        { "You feel it now.",
+          "A dimension folded inside your own body." },
         { "KAMUI",
-          "Phase through. Become untouchable." },
+          "Press [ Z ] to phase into the void.",
+          "While inside: nothing can touch you." },
     };
 
     public static final String[][] ENDING = {
@@ -176,6 +178,24 @@ public class CutsceneManager {
     /** ESC: skip the whole thing. */
     public void skip() { end(); }
 
+    // Space double-tap tracking for ending exit
+    private float lastSpaceTapTime = -99f;
+    /**
+     * Called when SPACE is pressed during the ENDING cutscene.
+     * Two taps within 0.6 s on the final slide exits the scene — matching the
+     * on-screen hint "Double-tap [SPACE] to take flight."
+     */
+    public void tapSpaceForEnding() {
+        if (kind != Kind.ENDING) return;
+        boolean onLastSlide = slide >= script.length - 1;
+        if (!onLastSlide) { advance(); return; }   // on earlier slides, advance normally
+        if (age - lastSpaceTapTime <= 0.6f) {
+            end();   // second tap within window — exit and let the player fly
+        } else {
+            lastSpaceTapTime = age;  // first tap — wait for the second
+        }
+    }
+
     private void end() {
         active = false;
         AudioManager.stopContinuous(WIND_SOUND);
@@ -269,11 +289,17 @@ public class CutsceneManager {
             }
         }
 
-        // ENTER prompt — hidden on auto-advance (revival), shown on manual-advance.
+        // ENTER/Space prompt — hidden on auto-advance (revival), shown on manual-advance.
         if (!autoAdvance && typed >= slideChars && slideAge >= SLIDE_MIN_SHOW) {
             float a = 0.35f + 0.35f * (float) Math.sin(promptT * 3.2f);
             boolean last = slide >= script.length - 1;
-            String prompt = last ? "[ ENTER ]  begin" : "[ ENTER ]";
+            String prompt;
+            if (last && kind == Kind.ENDING)
+                prompt = "double-tap  [ SPACE ]  to fly";
+            else if (last)
+                prompt = "[ ENTER ]";
+            else
+                prompt = "[ ENTER ]";
             float tw = ImGui.calcTextSize(prompt).x;
             draw.addText(font, base, (w - tw) * 0.5f, h - bar + 18f,
                     ImGui.colorConvertFloat4ToU32(0.7f, 0.75f, 0.85f, a), prompt);
