@@ -28,7 +28,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME }
+    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN }
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -104,6 +104,16 @@ public class Enemy {
     public  boolean wantsToThrow = false;
     private float throwCooldown  = 0f;
 
+    // ── GUARDIAN special (patrol + left/right/both 3-hit combo) ────────────────
+    /** Facing direction the GUARDIAN controls itself (patrol heading or toward player). */
+    public  float   facingYaw    = 0f;
+    /** Which attack clip to play this swing: attack_left / attack_right / attack (both). */
+    public  String  attackAnim   = "idle";
+    private int     comboIndex   = 0;       // 0 = left, 1 = right, 2 = both → loops
+    private float   swingTimer   = 0f;      // counts down the current ~1.3 s swing
+    private boolean patrolWalking = false;  // true = wandering, false = standing/turning
+    private float   patrolTimer  = 0f;
+
     // ── THROWER special ───────────────────────────────────────────────────────
     // (wantsToThrow also used here; throwCooldown shared)
 
@@ -169,6 +179,12 @@ public class Enemy {
                 dps_    = GameConfig.slimeDamagePerSec;  aggro_ = GameConfig.slimeAggroRange;
                 atk_    = GameConfig.slimeAttackRange;   atkI_  = GameConfig.slimeAttackInterval;
                 cr = 0.6f; hh = 0.5f;  // Slimes are short and wide
+            }
+            case GUARDIAN -> {
+                health_ = GameConfig.guardianHealth; speed_ = GameConfig.guardianSpeed;
+                dps_    = GameConfig.guardianHitDamage; aggro_ = GameConfig.guardianAggroRange;
+                atk_    = GameConfig.guardianAttackRange; atkI_ = GameConfig.guardianAttackTime;
+                cr = 1.1f; hh = 1.4f;  // big stone bruiser (~2.8 blocks tall)
             }
 
             default -> { // THROWER (fallback)
@@ -302,7 +318,88 @@ public class Enemy {
             // ── ZOMBIE — slow shambling melee chaser ──────────────────────────
             case ZOMBIE,SLIME -> tickZombieAI(dt, distToPlayer, leash);
 
+            // ── GUARDIAN — patrols, then a left/right/both melee combo ─────────
+            case GUARDIAN -> tickGuardianAI(dt, distToPlayer, leash, playerCentre);
         }
+    }
+
+    // ─── GUARDIAN ───────────────────────────────────────────────────────────────
+
+    private void tickGuardianAI(float dt, float dist, float leash, Vector3f playerCentre) {
+        switch (state) {
+            case IDLE -> {
+                tickPatrol(dt);
+                if (dist <= aggroRange) { state = State.ALERTED; alertTimer = 0.6f; patrolWalking = false; }
+            }
+            case ALERTED -> {
+                faceToward(playerCentre);
+                alertTimer -= dt;
+                if (alertTimer <= 0f) state = State.CHASE;
+            }
+            case CHASE -> {
+                faceToward(playerCentre);
+                if (dist > leash) { state = State.IDLE; patrolTimer = 0f; patrolWalking = false; break; }
+                if (dist <= attackRange) { state = State.ATTACK; beginSwing(); }
+            }
+            case ATTACK -> {
+                faceToward(playerCentre);
+                swingTimer -= dt;
+                if (swingTimer <= 0f) {
+                    // The blow lands at the END of the swing — only if the player is still in reach.
+                    if (dist <= attackRange * 1.2f) {
+                        boolean both = (comboIndex == 2);
+                        framePlayerDamage = GameConfig.guardianHitDamage * (both ? 2f : 1f);
+                        com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 45f);
+                    }
+                    comboIndex = (comboIndex + 1) % 3;        // left → right → both → loop
+                    if (dist > attackRange * 1.4f) state = State.CHASE;
+                    else beginSwing();                        // chain the next swing
+                }
+            }
+            default -> state = State.CHASE;
+        }
+    }
+
+    /** Start a new swing; picks the animation for the current combo step. */
+    private void beginSwing() {
+        swingTimer = GameConfig.guardianAttackTime;
+        attackAnim = switch (comboIndex) {
+            case 0  -> "attack_left";
+            case 1  -> "attack_right";
+            default -> "attack";        // both arms
+        };
+    }
+
+    /** Idle wandering: alternate resting (with occasional turns) and slow walking. */
+    private void tickPatrol(float dt) {
+        patrolTimer -= dt;
+        if (patrolTimer <= 0f) {
+            if (patrolWalking) {
+                patrolWalking = false;                          // walk → rest
+                patrolTimer   = 2f + (float) Math.random() * 4f;
+                if (Math.random() < 0.6) facingYaw = randomYaw(); // sometimes turn while resting
+            } else {
+                patrolWalking = true;                           // rest → walk a new heading
+                facingYaw     = randomYaw();
+                patrolTimer   = 2f + (float) Math.random() * 3f;
+            }
+        }
+    }
+
+    private void faceToward(Vector3f p) {
+        facingYaw = (float) Math.atan2(p.x - position.x, p.z - position.z);
+    }
+    private static float randomYaw() { return (float) (Math.random() * Math.PI * 2.0); }
+
+    /** Animation the GUARDIAN wants to play this frame (read by Window's render loop). */
+    public String getAnimName() {
+        if (!alive) return "idle";   // golem model has no death clip — just freeze + fade
+        return switch (state) {
+            case ATTACK         -> attackAnim;                       // attack_left / _right / attack
+            case CHASE, ALERTED -> "walk";
+            case IDLE           -> patrolWalking ? "walk" : "idle";
+            default             -> "idle";
+        };
     }
 
     // ─── GOLEM ────────────────────────────────────────────────────────────────
@@ -423,15 +520,26 @@ public class Enemy {
                               float distToTarget, List<Enemy> allEnemies) {
         if (mudTrapTimer > 0f) return;
 
-        boolean shouldMove = switch (state) {
-            case CHASE, ATTACK, SLAMMING -> true;
-            case RETREATING -> true;   // Thrower moves away
-            default         -> false;
-        };
+        // GUARDIAN moves while chasing OR patrol-walking, but stands still while
+        // swinging (ATTACK). Other enemies keep the original behaviour.
+        boolean guardianPatrol = (type == Type.GUARDIAN && state == State.IDLE && patrolWalking);
+        boolean shouldMove;
+        if (type == Type.GUARDIAN) {
+            shouldMove = (state == State.CHASE) || guardianPatrol;
+        } else {
+            shouldMove = switch (state) {
+                case CHASE, ATTACK, SLAMMING, RETREATING -> true;
+                default                                  -> false;
+            };
+        }
         if (!shouldMove) return;
 
         float dx, dz;
-        if (state == State.RETREATING) {
+        if (guardianPatrol) {
+            // Patrol: walk along the guardian's own heading, not toward the player.
+            dx = (float) Math.sin(facingYaw);
+            dz = (float) Math.cos(facingYaw);
+        } else if (state == State.RETREATING) {
             // Move away from player
             dx = position.x - target.x;
             dz = position.z - target.z;
@@ -449,8 +557,9 @@ public class Enemy {
         int underY = (int) Math.floor(position.y - 0.1f);
         int underZ = (int) Math.floor(position.z);
         boolean onMud  = world.getBlock(underX, underY, underZ) == Block.MUD;
-        float   moveSpeed = (state == State.RETREATING)
-                ? GameConfig.throwerRetreatSpeed : speed;
+        float   moveSpeed = guardianPatrol         ? GameConfig.guardianPatrolSpeed
+                          : (state == State.RETREATING) ? GameConfig.throwerRetreatSpeed
+                          : speed;
         float step = moveSpeed * dt * (onMud ? 0.10f : 1.0f);
 
         float nx = position.x + ndx * step;
@@ -481,6 +590,8 @@ public class Enemy {
         }
 
         if ((blockedX || blockedZ) && onGround) {
+            // Patrolling guardian that hits a wall: pick a fresh heading next tick.
+            if (guardianPatrol) patrolTimer = 0f;
             int blockAheadX = (int) Math.floor(position.x + ndx * 0.9f);
             int blockAheadZ = (int) Math.floor(position.z + ndz * 0.9f);
             boolean clear1  = !world.getBlock(blockAheadX, footY + 1, blockAheadZ).isSolid();
@@ -670,6 +781,7 @@ public class Enemy {
             case THROWER -> new float[]{ 0.48f, 0.92f, 0.48f }; // slim and tall — skeleton archer
             case ZOMBIE -> new float[]{ 0.75f, 0.88f, 0.75f }; // stocky, human-sized
             case SLIME   -> new float[]{ 0.85f, 0.85f, 0.85f };
+            case GUARDIAN -> new float[]{ 1.0f, 1.0f, 1.0f };   // native model size (~2.8 blocks tall)
         };
     }
 

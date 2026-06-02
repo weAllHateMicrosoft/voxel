@@ -140,10 +140,12 @@ public class Window {
     // (independent animation time) stored by enemy ID.
     private com.leaf.game.anim.AnimModel enemyAnimModel = null;
     private com.leaf.game.anim.AnimModel slimeAnimModel = null;
+    private com.leaf.game.anim.AnimModel golemAnimModel = null;
     private final java.util.Map<Integer, com.leaf.game.anim.AnimPlayer> enemyAnimPlayers
             = new java.util.HashMap<>();
     /** Edge-detect for P key to spawn enemies. */
     private boolean lastP = false;
+    private boolean lastZeroKey = false;   // debug: spawn a GUARDIAN with [0]
 
     // ── TODO'S TECHNIQUE (J key) ──────────────────────────────────────────────
     float   todoSwapCooldown = 0f;
@@ -667,6 +669,10 @@ public class Window {
                 com.leaf.game.anim.AnimModel.loadFromClasspath("slime");
         if (slimeAnimModelLoaded != null)
             this.slimeAnimModel = slimeAnimModelLoaded;
+        com.leaf.game.anim.AnimModel golemAnimModelLoaded =
+                com.leaf.game.anim.AnimModel.loadFromClasspath("golem");
+        if (golemAnimModelLoaded != null)
+            this.golemAnimModel = golemAnimModelLoaded;
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
@@ -1499,6 +1505,26 @@ public class Window {
                             }
                         }
                         lastP = pHeld;
+
+                        // [0] key — DEV: spawn a GUARDIAN (golem) for testing.
+                        // Drops it at the block you're aiming at, or ~6 blocks in front.
+                        boolean zeroHeld = glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS;
+                        if (zeroHeld && !lastZeroKey) {
+                            RaycastResult ghit = player.getTargetBlock(camera, world);
+                            if (ghit != null && ghit.hit) {
+                                enemyManager.spawnAt(ghit.placeX + 0.5f, ghit.placeY + 1f,
+                                        ghit.placeZ + 0.5f, Enemy.Type.GUARDIAN);
+                            } else {
+                                Vector3f fwd = camera.getLookDirection();
+                                enemyManager.spawnAt(
+                                        player.position.x + fwd.x * 6f,
+                                        player.position.y + 3f,
+                                        player.position.z + fwd.z * 6f,
+                                        Enemy.Type.GUARDIAN);
+                            }
+                            System.out.println("[DEV] Spawned GUARDIAN (golem)");
+                        }
+                        lastZeroKey = zeroHeld;
                         // ── TODO'S TECHNIQUE (J key) ──────────────────────────
                         if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
                         boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS
@@ -2891,8 +2917,11 @@ public class Window {
                             }
 
                             // Pick the right model for the enemy type
-                            com.leaf.game.anim.AnimModel targetModel = (enemy.type == Enemy.Type.SLIME && slimeAnimModel != null)
-                                    ? slimeAnimModel : enemyAnimModel;
+                            boolean isGuardian = enemy.type == Enemy.Type.GUARDIAN;
+                            com.leaf.game.anim.AnimModel targetModel =
+                                    (enemy.type == Enemy.Type.SLIME    && slimeAnimModel != null) ? slimeAnimModel
+                                  : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
+                                  : enemyAnimModel;
 
                             com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
                                     enemy.id, id -> {
@@ -2903,7 +2932,10 @@ public class Window {
 
                             // Decide target animation from AI state
                             String want;
-                            if (!enemy.alive) {
+                            if (isGuardian) {
+                                // The guardian drives its own clip (patrol walk/idle + 3-hit combo).
+                                want = enemy.getAnimName();
+                            } else if (!enemy.alive) {
                                 want = "death";
                             } else if (enemy.state == Enemy.State.CHASE || enemy.state == Enemy.State.RETREATING) {
                                 // ── USE "move" FOR SLIMES, "walk" FOR OTHERS ──
@@ -2916,8 +2948,12 @@ public class Window {
 
                             String cur = ap.getCurrentClip();
                             if (!want.equals(cur)) {
+                                // Guardian attack clips are one-shot (1.3 s swing); everything else loops.
+                                boolean once = isGuardian && want.startsWith("attack");
                                 if ("death".equals(want)) {
                                     ap.play("death", false);
+                                } else if (once) {
+                                    ap.play(want, false);
                                 } else if (cur == null || "idle".equals(cur) || "death".equals(cur)) {
                                     ap.play(want);
                                 } else {
@@ -2927,11 +2963,16 @@ public class Window {
                             ap.tick(rawDeltaTime);
 
                             // Face the player (Y-axis rotation only).
-                            // +PI because Blockbench authors a model's front on the -Z face
-                            // (where the slime's eyes are); without it the model faces away.
-                            float faceDx = player.position.x - enemy.position.x;
-                            float faceDz = player.position.z - enemy.position.z;
-                            float faceY  = (float) Math.atan2(faceDx, faceDz) + (float) Math.PI;
+                            // +PI because Blockbench authors a model's front on the -Z face.
+                            // The guardian controls its own facing (patrol heading / toward player).
+                            float faceY;
+                            if (isGuardian) {
+                                faceY = enemy.facingYaw + (float) Math.PI;
+                            } else {
+                                float faceDx = player.position.x - enemy.position.x;
+                                float faceDz = player.position.z - enemy.position.z;
+                                faceY  = (float) Math.atan2(faceDx, faceDz) + (float) Math.PI;
+                            }
 
                             float[] sv = enemy.renderScaleVec();
                             Matrix4f worldMat = new Matrix4f()

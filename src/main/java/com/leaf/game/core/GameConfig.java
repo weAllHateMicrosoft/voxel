@@ -384,6 +384,17 @@ public class GameConfig {
     /** Fraction of smash-splash damage golems absorb (1.0 = full, 0.5 = half). */
     public static float golemSmashResist     = 0.35f;
 
+    // ── ENEMY: GUARDIAN (golem.bbmodel — patrolling melee bruiser, 3-hit combo) ─
+    public static float guardianHealth       = 600f;  // very high — a wall of stone
+    public static float guardianSpeed        = 2.4f;  // chase speed (purposeful, not fast)
+    public static float guardianPatrolSpeed  = 0.9f;  // slow idle wander
+    public static float guardianAggroRange   = 30f;
+    public static float guardianAttackRange  = 3.4f;  // long reach (big arms)
+    /** Seconds per swing — matches the 1.3 s attack animations. Damage lands on completion. */
+    public static float guardianAttackTime   = 1.3f;
+    /** Damage per single-arm hit; the both-arms swing deals 2×. */
+    public static float guardianHitDamage    = 12f;
+
     // ── ENEMY: THROWER ───────────────────────────────────────────────────────
     public static float throwerHealth         = 95f;
     public static float throwerSpeed          = 4.8f;
