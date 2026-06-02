@@ -111,20 +111,31 @@ public class Window {
     float        immunityTimer = 0f;
     static final float REVIVAL_IMMUNITY_SECS = 4f;
 
-    // ── PRACTICE SESSION (pause-and-teach for complex abilities) ──────────────
+    // ── PRACTICE SESSION — multi-step hands-on ability tutorial ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
-    /** Seconds remaining before the practice auto-dismisses (0 = no session). */
-    float practiceTimer   = 0f;
-    /** True once the player has actually used the ability being practised. */
-    boolean practiceUsed  = false;
-    static final float PRACTICE_TIMEOUT = 40f;
+    /** Per-step list for the active tutorial; null = not running. */
+    java.util.List<AbilityPractice.Step> practiceSteps = null;
+    /** Index into practiceSteps for the current step. */
+    int practiceStepIndex = 0;
+    /** Seconds elapsed on the current step. */
+    float practiceStepAge = 0f;
+    /** Context passed to step lambdas (reused across steps). */
+    final AbilityPractice.StepCtx practiceCtx = new AbilityPractice.StepCtx();
+    /** True once the current step's done() predicate fired once (latch). */
+    boolean practiceStepDone = false;
+    /** Celebration pause: seconds remaining after done() fired before advancing. */
+    float practiceCelebration = 0f;
+    static final float PRACTICE_TIMEOUT = 60f;   // per step
+    static final float PRACTICE_CELEBRATE_SECS = 1.4f;
     /** Queued practice sessions for the current wave (e.g. wave 8 = Seal then Kamui). */
     final java.util.ArrayDeque<Progression.Ability> practiceQueue = new java.util.ArrayDeque<>();
-    /** ENTER edge-detect for the practice tick (so the card-dismiss press can't skip it). */
+    /** ENTER edge-detect (so the card-dismiss ENTER can't immediately skip). */
     private boolean lastPracticeEnter = false;
     /** Set after the wave-9 ending cutscene fires; stops further waves. */
     boolean gameEnded = false;
+    /** Camera yaw snapped each frame for AbilityPractice.spawnDummy. */
+    float lastCameraYaw = 0f;
 
     final ImString chatInput = new ImString(256);
     final List<String> chatHistory = new ArrayList<>();
@@ -533,7 +544,7 @@ public class Window {
                 if (enemyManager != null) enemyManager.getEnemies().forEach(e -> e.alive = false);
                 // If already between waves, fast-forward (dismiss card / practice).
                 showUnlockCard  = false;
-                practiceAbility = null; practiceTimer = 0f;
+                practiceAbility = null; practiceSteps = null;
                 if (enemyManager != null && enemyManager.awaitingNextWave) enemyManager.beginNextWave();
                 System.out.println("[DEV] F9 — skipped wave " + (enemyManager != null ? enemyManager.getWaveNumber() : "?"));
             }
@@ -648,14 +659,60 @@ public class Window {
     private void startNextPractice() {
         Progression.Ability next = practiceQueue.poll();
         if (next != null && player.progression.isUnlocked(next)) {
-            practiceAbility = next;
-            practiceTimer   = PRACTICE_TIMEOUT;
-            practiceUsed    = false;
+            java.util.List<AbilityPractice.Step> steps = AbilityPractice.forAbility(next);
+            if (steps.isEmpty()) {
+                // No tutorial for this ability — keep draining the queue.
+                startNextPractice();
+                return;
+            }
+            practiceAbility    = next;
+            practiceSteps      = steps;
+            practiceStepIndex  = 0;
+            practiceStepAge    = 0f;
+            practiceStepDone   = false;
+            practiceCelebration = 0f;
+            practiceCtx.win    = this;
+            practiceCtx.flag   = false;
+            practiceCtx.snapshot = 0f;
+            // Kill live enemies so the player can focus, pause spawning.
+            enemyManager.getEnemies().forEach(e -> { if (e.type != Enemy.Type.DUMMY) e.alive = false; });
+            enemyManager.wavesEnabled = false;
+            // Run the first step's onEnter.
+            AbilityPractice.Step first = steps.get(0);
+            if (first.onEnter != null) {
+                practiceCtx.stepAge = 0f;
+                first.onEnter.accept(practiceCtx);
+            }
         } else {
-            practiceAbility = null;
-            practiceTimer   = 0f;
-            enemyManager.beginNextWave();
+            endPractice();
         }
+    }
+
+    /** Advance to the next practice step, or finish if all done. */
+    private void advancePracticeStep() {
+        practiceStepIndex++;
+        if (practiceStepIndex >= practiceSteps.size()) {
+            endPractice();
+            return;
+        }
+        practiceStepAge     = 0f;
+        practiceStepDone    = false;
+        practiceCelebration = 0f;
+        practiceCtx.flag    = false;
+        practiceCtx.snapshot = 0f;
+        AbilityPractice.Step step = practiceSteps.get(practiceStepIndex);
+        if (step.onEnter != null) step.onEnter.accept(practiceCtx);
+    }
+
+    /** Finish all practice, remove dummies, resume the wave. */
+    private void endPractice() {
+        practiceAbility = null;
+        practiceSteps   = null;
+        // Remove practice dummies.
+        enemyManager.getEnemies().forEach(e -> { if (e.type == Enemy.Type.DUMMY) e.alive = false; });
+        enemyManager.beginNextWave();
+        enemyManager.wavesEnabled = true;
+        lastPracticeEnter = true;
     }
 
     private void loop() {
@@ -848,9 +905,19 @@ public class Window {
             // ── SCALED DELTA TIME for physics ─────────────────────────────────
             ScreenEffectManager.INSTANCE.tick(rawDeltaTime);
             // Cutscene advances on raw time even though the world below is frozen.
+            boolean cutsceneWasActive = cutscene.isActive();
             if (cutscene.isActive()) {
                 cutscene.update(rawDeltaTime);
-            } else if (deathCutscenePending) {
+            }
+            // Ending cutscene just finished — activate flight immediately so the
+            // player is already flying when the world comes back.
+            if (cutsceneWasActive && !cutscene.isActive()
+                    && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
+                if (player.progression.isUnlocked(Progression.Ability.FLIGHT)) {
+                    player.debugMode = true;   // debugMode is the flight-active flag
+                }
+            }
+            if (!cutscene.isActive() && deathCutscenePending) {
                 // Cutscene just ended — check which kind finished.
                 CutsceneManager.Kind finishedKind = cutscene.getKind();
                 if (finishedKind == CutsceneManager.Kind.KAMUI_AWAKEN) {
@@ -994,7 +1061,7 @@ public class Window {
                             // Fresh run: abilities reset to the starting kit, wave back to 1.
                             player.progression.reset();
                             enemyManager.resetForNewRun();
-                            practiceAbility = null; practiceTimer = 0f; practiceQueue.clear();
+                            practiceAbility = null; practiceSteps = null; practiceQueue.clear();
                             showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
                             deathCutscenePending = false;
                             gameEnded       = false;
@@ -1013,6 +1080,7 @@ public class Window {
                         boolean wasOnGroundAudio = player.isOnGround();
                         boolean wasFlightMode    = player.debugMode;
                         player.update(window, camera, world, deltaTime);
+                        lastCameraYaw = camera.yaw;
                         hud.updateBreaking(deltaTime);
 
                         // ── 3D AUDIO LISTENER ──────────────────────────────────
@@ -1304,33 +1372,40 @@ public class Window {
                             lastCardSpace = en;
                         }
 
-                        // ── PRACTICE SESSION tick ─────────────────────────────
-                        if (practiceAbility != null && practiceTimer > 0f) {
-                            practiceTimer -= deltaTime;
-                            boolean used = switch (practiceAbility) {
-                                case KAMUI -> player.abilities.isKamui;
-                                case SEAL  -> player.seals.getSealCount() > 0;
-                                case STAND -> player.stand.isDeployed();
-                                default    -> false;
-                            };
-                            if (used) practiceUsed = true;
+                        // ── PRACTICE SESSION tick (multi-step) ───────────────
+                        if (practiceAbility != null && practiceSteps != null) {
+                            AbilityPractice.Step step = practiceSteps.get(practiceStepIndex);
+                            practiceStepAge     += deltaTime;
+                            practiceCtx.stepAge  = practiceStepAge;
 
-                            // ENTER skips — but only after 1.2s AND a key release, so the
-                            // card-dismiss press can't kill the session on the opening frame.
-                            boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
-                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-                            boolean canSkip = practiceTimer < PRACTICE_TIMEOUT - 1.2f
-                                    && !lastPracticeEnter && enterNow;
-                            lastPracticeEnter = enterNow;
+                            if (practiceStepDone) {
+                                // Celebration pause: show doneText, then advance.
+                                practiceCelebration -= deltaTime;
+                                if (practiceCelebration <= 0f) advancePracticeStep();
+                            } else {
+                                boolean accomplished = false;
+                                try { accomplished = step.done.test(practiceCtx); }
+                                catch (Exception ignored) {}
 
-                            boolean done = (practiceUsed && practiceTimer < PRACTICE_TIMEOUT - 2f)
-                                    || practiceTimer <= 0f || canSkip;
-                            if (done) {
-                                practiceAbility   = null;
-                                practiceTimer     = 0f;
-                                lastPracticeEnter = true;  // arm for the next queued session
-                                startNextPractice();        // next queued ability, or begin the wave
+                                if (accomplished) {
+                                    practiceStepDone    = true;
+                                    practiceCelebration = step.doneText != null
+                                            ? PRACTICE_CELEBRATE_SECS : 0.3f;
+                                } else if (practiceStepAge > step.timeout) {
+                                    advancePracticeStep();  // timed out on this step
+                                }
+
+                                // ENTER skip with debounce.
+                                boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                        || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                                boolean canSkip  = practiceStepAge > 1.2f
+                                        && !lastPracticeEnter && enterNow;
+                                lastPracticeEnter = enterNow;
+                                if (canSkip) { practiceStepDone = true; practiceCelebration = 0.1f; }
                             }
+                        } else {
+                            lastPracticeEnter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                         }
 
                         // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────

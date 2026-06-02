@@ -36,7 +36,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN }
+    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY }
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -204,6 +204,12 @@ public class Enemy {
                 atk_    = GameConfig.guardianAttackRange; atkI_ = GameConfig.guardianAttackTime;
                 cr = 1.1f; hh = 1.4f;
             }
+            case DUMMY -> {
+                // Practice target: never moves, never attacks, very high HP.
+                health_ = 999f; speed_ = 0f; dps_ = 0f; aggro_ = 0f;
+                atk_    = 0f;   atkI_  = 999f;
+                cr = 0.5f; hh = 1.0f;
+            }
             default -> {
                 health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
                 dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
@@ -321,6 +327,7 @@ public class Enemy {
             case THROWER  -> tickThrowerAI(dt, distToPlayer, leash);
             case ZOMBIE, SLIME -> tickZombieAI(dt, distToPlayer, leash);
             case GUARDIAN -> tickGuardianAI(dt, distToPlayer, leash, playerCentre);
+            case DUMMY -> { /* stationary practice target — no AI */ }
         }
     }
 
@@ -1111,6 +1118,7 @@ public class Enemy {
             case ZOMBIE   -> new float[]{ 0.75f, 0.88f, 0.75f };
             case SLIME    -> new float[]{ 0.85f, 0.85f, 0.85f };
             case GUARDIAN -> new float[]{ 1.0f,  1.0f,  1.0f  };
+            case DUMMY    -> new float[]{ 0.75f, 0.88f, 0.75f };
         };
     }
 

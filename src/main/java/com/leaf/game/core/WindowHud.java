@@ -7,6 +7,7 @@ import com.leaf.game.util.Camera;
 import com.leaf.game.util.RaycastResult;
 import com.leaf.game.world.Block;
 import com.leaf.game.world.Chunk;
+import imgui.ImFont;
 import imgui.ImGui;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -193,93 +194,93 @@ class WindowHud {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  PRACTICE OVERLAY  (pause-and-teach for Kamui / Seal / Manhattan Transfer)
+    //  PRACTICE OVERLAY  — multi-step hands-on ability tutorial
     // ─────────────────────────────────────────────────────────────────────────
     void renderPractice(float w, float h) {
-        Progression.Ability a = win.practiceAbility;
-        if (a == null) return;
+        if (win.practiceAbility == null || win.practiceSteps == null) return;
+        AbilityPractice.Step step = win.practiceSteps.get(win.practiceStepIndex);
+        int totalSteps = win.practiceSteps.size();
+        boolean celebrating = win.practiceStepDone;
 
-        // Step instructions per complex ability
-        String title; String[] steps; String goal;
-        switch (a) {
-            case KAMUI -> {
-                title = "KAMUI";
-                steps = new String[]{
-                    "[ Z ]   -  Press to enter Kamui (phase into another dimension)",
-                    "While inside: you are INVINCIBLE. Enemies pass through you.",
-                    "Left-click while in Kamui to charge an absorption vortex.",
-                    "Press [ Z ] again (or run out of MP) to exit.",
-                };
-                goal = win.practiceUsed ? "Kamui used.  Wave beginning..." : "Try it now  -  press  [ Z ]";
-            }
-            case SEAL -> {
-                title = "MINATO'S SEAL";
-                steps = new String[]{
-                    "[ H ]   -  Throw a teleport seal.  It sticks to any surface.",
-                    "[ B ]   -  Instantly teleport to the seal you're looking at.",
-                    "[ N ]   -  Recall the targeted seal without teleporting.",
-                    "Up to 5 seals active at once  -  set escape routes in advance.",
-                };
-                goal = win.practiceUsed ? "Seal placed.  Wave beginning..." : "Try it now  -  throw a seal with  [ H ]";
-            }
-            case STAND -> {
-                title = "MANHATTAN TRANSFER";
-                steps = new String[]{
-                    "[ X ]   -  Deploy your combat drone above you.",
-                    "         It auto-aims and fires at the nearest enemy.",
-                    "[ TAB ]  -  Enter drone perspective to pilot it yourself.",
-                    "         WASD to fly, Space/Shift for altitude, Left-click to fire.",
-                    "         Requires DUAL LINE-OF-SIGHT: you -> drone, and drone -> target.",
-                };
-                goal = win.practiceUsed ? "Drone deployed.  Wave beginning..." : "Try it now  -  deploy the drone with  [ X ]";
-            }
-            default -> { title = ""; steps = new String[]{}; goal = ""; }
-        }
-
-        // Soft dim  -  world stays visible so player can immediately try the ability
         imgui.ImDrawList draw = ImGui.getForegroundDrawList();
-        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.60f));
+        ImFont font = ImGui.getFont();
+        float base = ImGui.getFontSize();
 
-        // Compact centred card  -  bottom-half so it doesn't cover where enemies might be
-        float cardW = 560f;
-        float cardH = 80f + steps.length * 22f + 50f;
-        float cx = w * 0.5f, cy = h * 0.7f;
-        draw.addRectFilled(cx - cardW/2, cy - cardH/2, cx + cardW/2, cy + cardH/2,
-                ImGui.colorConvertFloat4ToU32(0.04f, 0.05f, 0.10f, 0.92f), 10f);
-        draw.addRect(cx - cardW/2, cy - cardH/2, cx + cardW/2, cy + cardH/2,
-                ImGui.colorConvertFloat4ToU32(0.4f, 0.5f, 0.9f, 0.6f), 10f, 0, 1.5f);
+        // Dim background — world stays visible so the player can act
+        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.50f));
 
-        float ty = cy - cardH/2 + 14f;
-        // Title bar
-        String header = "PRACTICE  -  " + title;
-        float tw2 = ImGui.calcTextSize(header).x;
-        draw.addText(cx - tw2/2, ty, ImGui.colorConvertFloat4ToU32(0.45f, 0.95f, 1.0f, 1f), header);
-        ty += 26f;
+        // Card sits at the bottom quarter of the screen
+        float cardW = Math.min(640f, w - 40f);
+        float cx = w * 0.5f;
+        float lineH = base * 1.45f;
+        // Count instruction lines (split on \n)
+        String[] instrLines = step.instruction.split("\n");
+        float cardH = 18f + lineH              // title row
+                    + instrLines.length * lineH + 8f // instructions
+                    + lineH + 12f;             // goal/skip row
+        float cardY = h - cardH - 28f;
 
-        // Steps
-        for (String step : steps) {
-            draw.addText(cx - cardW/2 + 18f, ty, ImGui.colorConvertFloat4ToU32(0.88f, 0.9f, 0.95f, 0.95f), step);
-            ty += 22f;
+        draw.addRectFilled(cx - cardW/2, cardY, cx + cardW/2, cardY + cardH,
+                ImGui.colorConvertFloat4ToU32(0.03f, 0.04f, 0.10f, 0.93f), 8f);
+        int borderCol = celebrating
+                ? ImGui.colorConvertFloat4ToU32(0.35f, 1.0f, 0.5f, 0.9f)   // green when done
+                : ImGui.colorConvertFloat4ToU32(0.4f,  0.55f, 0.9f, 0.6f);
+        draw.addRect(cx - cardW/2, cardY, cx + cardW/2, cardY + cardH, borderCol, 8f, 0, 1.8f);
+
+        float ty = cardY + 10f;
+
+        // Title + step counter
+        String abilName = win.practiceAbility.label;
+        String progress = totalSteps > 1
+                ? "  (" + (win.practiceStepIndex + 1) + " / " + totalSteps + ")"
+                : "";
+        String header = "PRACTICE  -  " + abilName + progress;
+        if (step.keyHint != null) header += "    [ " + step.keyHint + " ]";
+        float hw = ImGui.calcTextSize(header).x;
+        draw.addText(cx - hw/2, ty, ImGui.colorConvertFloat4ToU32(0.45f, 0.95f, 1.0f, 1f), header);
+        ty += lineH + 2f;
+
+        // Instruction lines
+        for (String line : instrLines) {
+            float lw = ImGui.calcTextSize(line).x;
+            draw.addText(font, base, cx - lw/2, ty,
+                    ImGui.colorConvertFloat4ToU32(0.88f, 0.90f, 0.95f, 0.95f), line);
+            ty += lineH;
         }
         ty += 8f;
 
-        // Goal / confirmation  -  changes colour once used
-        int goalCol = win.practiceUsed
-                ? ImGui.colorConvertFloat4ToU32(0.3f, 1f, 0.4f, 1f)
-                : ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.35f, 1f);
-        float gw = ImGui.calcTextSize(goal).x;
-        draw.addText(cx - gw/2, ty, goalCol, goal);
-        ty += 22f;
+        // Bottom row: celebration OR skip hint
+        if (celebrating && step.doneText != null) {
+            float pulse = 0.7f + 0.3f * (float) Math.sin(glfwGetTime() * 8f);
+            String dt = step.doneText;
+            float dw = ImGui.calcTextSize(dt).x;
+            draw.addText(cx - dw/2, ty,
+                    ImGui.colorConvertFloat4ToU32(0.3f, 1.0f, 0.45f, pulse), dt);
+        } else if (!celebrating) {
+            boolean canSkip = win.practiceStepAge > 1.2f;
+            String skipTxt = canSkip ? "[ ENTER ]  skip this step" : "Try the ability above...";
+            float sw = ImGui.calcTextSize(skipTxt).x;
+            draw.addText(cx - sw/2, ty,
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.7f), skipTxt);
+        }
 
-        // Timer + skip hint (input handled in the Window game-loop tick, not here,
-        // so the ENTER that dismissed the unlock card can't kill this on frame 1).
-        int secs = Math.max(0, (int) win.practiceTimer);
-        boolean canSkipNow = win.practiceTimer < Window.PRACTICE_TIMEOUT - 1.2f;
-        String skip = canSkipNow
-                ? "Auto-continues in " + secs + "s    -    [ ENTER ] to skip"
-                : "Try the ability above to continue...";
-        float sw2 = ImGui.calcTextSize(skip).x;
-        draw.addText(cx - sw2/2, ty, ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.8f), skip);
+        // Dummy HP bar — shown above the card if a dummy is alive
+        com.leaf.game.entity.Enemy dummy = win.practiceCtx.dummy();
+        if (dummy != null && dummy.alive) {
+            float barW = 180f, barH = 12f;
+            float bx = cx - barW/2, by = cardY - barH - 18f;
+            float frac = Math.max(0f, dummy.health / dummy.maxHealth);
+            draw.addRectFilled(bx, by, bx + barW, by + barH,
+                    ImGui.colorConvertFloat4ToU32(0.15f, 0.05f, 0.05f, 0.85f), 4f);
+            draw.addRectFilled(bx, by, bx + barW * frac, by + barH,
+                    ImGui.colorConvertFloat4ToU32(0.9f, 0.25f, 0.25f, 0.9f), 4f);
+            draw.addRect(bx, by, bx + barW, by + barH,
+                    ImGui.colorConvertFloat4ToU32(0.5f, 0.2f, 0.2f, 0.6f), 4f, 0, 1.2f);
+            String dLabel = "DUMMY  HP";
+            float dlw = ImGui.calcTextSize(dLabel).x;
+            draw.addText(cx - dlw/2, by - 16f,
+                    ImGui.colorConvertFloat4ToU32(0.75f, 0.55f, 0.55f, 0.7f), dLabel);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

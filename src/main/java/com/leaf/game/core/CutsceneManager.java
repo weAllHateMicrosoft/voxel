@@ -289,26 +289,29 @@ public class CutsceneManager {
             }
         }
 
-        // ENTER/Space prompt — hidden on auto-advance (revival), shown on manual-advance.
+        // ENTER/Space prompt — drawn ABOVE the bottom letterbox bar so it's actually visible.
+        // Hidden on auto-advance (revival cutscene doesn't need a prompt).
         if (!autoAdvance && typed >= slideChars && slideAge >= SLIDE_MIN_SHOW) {
-            float a = 0.35f + 0.35f * (float) Math.sin(promptT * 3.2f);
+            float a = 0.5f + 0.4f * (float) Math.sin(promptT * 3.5f);   // brighter flash
             boolean last = slide >= script.length - 1;
-            String prompt;
-            if (last && kind == Kind.ENDING)
-                prompt = "double-tap  [ SPACE ]  to fly";
-            else if (last)
-                prompt = "[ ENTER ]";
-            else
-                prompt = "[ ENTER ]";
-            float tw = ImGui.calcTextSize(prompt).x;
-            draw.addText(font, base, (w - tw) * 0.5f, h - bar + 18f,
-                    ImGui.colorConvertFloat4ToU32(0.7f, 0.75f, 0.85f, a), prompt);
+            String prompt = (last && kind == Kind.ENDING)
+                    ? "double-tap  [ SPACE ]  to fly"
+                    : "[ ENTER ]";
+            float tw = ImGui.calcTextSize(prompt).x * 1.2f;   // scaled up
+            float px = (w - tw) * 0.5f;
+            float py = h - bar - 36f;  // above the bar, not inside it
+            // Shadow
+            draw.addText(font, base * 1.2f, px + 2, py + 2,
+                    ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a * 0.9f), prompt);
+            // Bright text
+            draw.addText(font, base * 1.2f, px, py,
+                    ImGui.colorConvertFloat4ToU32(0.9f, 0.93f, 1.0f, a), prompt);
         }
 
-        // Skip hint — only on manual cutscenes, not revival.
+        // Skip hint — inside the bar (small, unobtrusive), not on revival.
         if (!autoAdvance) {
-            draw.addText(font, base, 16f, h - bar + 18f,
-                    ImGui.colorConvertFloat4ToU32(0.5f, 0.52f, 0.6f, 0.6f), "[ESC] skip");
+            draw.addText(font, base, 14f, h - bar + 10f,
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.55f), "[ESC] skip");
         }
     }
 }
