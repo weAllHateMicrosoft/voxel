@@ -125,7 +125,21 @@ public class AbilityPractice {
                 .forEach(e -> e.alive = false);
     }
 
-    /** Spawn N dummies in a rough arc in front of the player. */
+    /** Scan downward from player height to find the surface Y at (px, pz). */
+    private static float groundY(StepCtx ctx, float px, float pz) {
+        int bx = (int) Math.floor(px);
+        int bz = (int) Math.floor(pz);
+        int startY = (int) Math.floor(ctx.win.player.position.y) + 4;
+        for (int by = Math.min(startY, com.leaf.game.world.Chunk.HEIGHT - 2); by >= 1; by--) {
+            if (ctx.win.world.getBlock(bx, by, bz).isSolid()
+                    && !ctx.win.world.getBlock(bx, by + 1, bz).isSolid()) {
+                return by + 1.5f;
+            }
+        }
+        return ctx.win.player.position.y + 1f; // fallback
+    }
+
+    /** Spawn N dummies in a rough arc in front of the player, always above ground. */
     public static void spawnDummies(StepCtx ctx, int count) {
         clearDummies(ctx);
         float yaw = ctx.win.lastCameraYaw;
@@ -134,11 +148,11 @@ public class AbilityPractice {
             float dist  = 5f + i * 1.2f;
             float px = ctx.win.player.position.x + (float)Math.sin(angle) * dist;
             float pz = ctx.win.player.position.z + (float)Math.cos(angle) * dist;
-            ctx.win.enemyManager.spawnAt(px, ctx.win.player.position.y + 1f, pz, Type.DUMMY);
+            ctx.win.enemyManager.spawnAt(px, groundY(ctx, px, pz), pz, Type.DUMMY);
         }
     }
 
-    /** Spawn N zombies spread in front of the player (for quagmire / combat tests). */
+    /** Spawn N zombies spread in front of the player, always above ground. */
     public static void spawnZombies(StepCtx ctx, int count) {
         clearDummies(ctx);
         float yaw = ctx.win.lastCameraYaw;
@@ -147,7 +161,7 @@ public class AbilityPractice {
             float dist  = 10f;
             float px = ctx.win.player.position.x + (float)Math.sin(angle) * dist;
             float pz = ctx.win.player.position.z + (float)Math.cos(angle) * dist;
-            ctx.win.enemyManager.spawnAt(px, ctx.win.player.position.y + 1f, pz, Type.ZOMBIE);
+            ctx.win.enemyManager.spawnAt(px, groundY(ctx, px, pz), pz, Type.ZOMBIE);
         }
     }
 
@@ -183,26 +197,44 @@ public class AbilityPractice {
 
         // ── WAVE 0: SNIPE ─────────────────────────────────────────────────────
         case SNIPE -> {
-            s.add(Step.of("SNIPE  -  HOLD to charge, release to fire")
-                .instr("HOLD  [ C ]  — do NOT just click. Keep it held to charge.\n" +
-                       "The longer you hold, the bigger the blast.\n" +
-                       "Then RELEASE  [ C ]  to fire.\n\n" +
-                       "The MANA bar (blue) drains while charging.\n" +
-                       "The  [ C ]  cooldown icon resets between shots.\n" +
-                       "Fire  3 shots.")
-                .key("HOLD C, release")
+            s.add(Step.of("SNIPE  -  HOLD [ C ]  to charge, release to fire")
+                .instr("HOLD  [ C ]  — keep it pressed. Do NOT tap and release.\n" +
+                       "A crystal bolt charges while you hold. Release to fire.\n" +
+                       "Longer hold = bigger blast.\n\n" +
+                       "MANA bar (blue) drains while charging.\n" +
+                       "Fire  3  charged shots.")
+                .key("HOLD C → release")
                 .need(3)
                 .manaArrow().cooldownArrow()
                 .setup(ctx -> spawnDummies(ctx, 2))
-                .when(ctx -> {
-                    float frac = ctx.win.player.attacks.getSnipeIconFrac();
-                    if (!ctx.flag) { ctx.snapshot = frac; ctx.flag = true; return false; }
-                    if (frac < ctx.snapshot - 0.25f && ctx.snapshot > 0.2f) {
-                        ctx.snapshot = frac; return true;
+                .tick(ctx -> {
+                    // Warn if player fires with near-zero charge (quick click, not hold)
+                    float charge = ctx.win.player.attacks.getChargeFrac();
+                    float icon   = ctx.win.player.attacks.getSnipeIconFrac();
+                    // When not building charge, track the icon to detect a quick-fire drop
+                    if (charge < 0.05f) {
+                        if (!ctx.flag) { ctx.snapshot = icon; ctx.flag = true; }
+                        else if (icon < ctx.snapshot - 0.3f && ctx.snapshot > 0.6f) {
+                            ctx.win.practiceWarnText  = "HOLD it! Keep  [ C ]  pressed, then release!";
+                            ctx.win.practiceWarnTimer = 2.5f;
+                            ctx.flag = false; ctx.snapshot = icon;
+                        } else { ctx.snapshot = icon; }
+                    } else {
+                        ctx.flag = false; // currently charging — reset
                     }
-                    ctx.snapshot = frac; return false;
                 })
-                .win("Shot fired!")
+                .when(ctx -> {
+                    // Count as success only when a CHARGED shot fires (chargeFrac ≥ 0.2)
+                    float frac = ctx.win.player.attacks.getSnipeIconFrac();
+                    // snapshot2 = last frac value (use a secondary track via stepAge as a proxy)
+                    if (!ctx.flag) { ctx.snapshot = frac; ctx.flag = true; return false; }
+                    boolean charged = ctx.win.player.attacks.getChargeFrac() > 0.15f;
+                    boolean fired   = frac < ctx.snapshot - 0.3f && ctx.snapshot > 0.5f;
+                    boolean ok = charged && fired;
+                    ctx.snapshot = frac;
+                    return ok;
+                })
+                .win("Good shot!")
                 .tout(120f).build());
         }
 
@@ -260,21 +292,35 @@ public class AbilityPractice {
 
         // ── WAVE 3: LIGHTNING ────────────────────────────────────────────────
         case LIGHTNING -> {
-            s.add(Step.of("LIGHTNING  -  single target")
-                .instr("Aim at an enemy and press  [ U ]  to call a lightning strike.\n" +
-                       "Do it  2 times.")
-                .key("U")
+            s.add(Step.of("LIGHTNING  -  HOLD [ U ] to charge, release to strike")
+                .instr("HOLD  [ U ]  — keep it held to charge a storm.\n" +
+                       "Release to call a lightning strike on the aimed enemy.\n" +
+                       "Do NOT just click  -  hold until you hear the thunder build up.\n" +
+                       "Strike  2  times.")
+                .key("HOLD U → release")
                 .need(2)
                 .cooldownArrow()
                 .setup(ctx -> spawnDummies(ctx, 2))
+                .tick(ctx -> {
+                    // Warn if player taps U without charging
+                    if (!ctx.win.player.lightning.isCharging()
+                            && ctx.win.player.lightning.getCooldownFrac() < 0.98f
+                            && ctx.win.player.lightning.getCooldownFrac() > 0.01f) {
+                        // Cooldown just started = strike just fired without much charge
+                        if (ctx.win.player.lightning.getChargeFrac() < 0.1f) {
+                            ctx.win.practiceWarnText  = "HOLD  [ U ]  to charge! Don't click!";
+                            ctx.win.practiceWarnTimer = 2.5f;
+                        }
+                    }
+                })
                 .when(ctx -> ctx.dummyHpDropped())
                 .win("Strike!")
-                .tout(60f).build());
-            s.add(Step.of("LIGHTNING  -  area burst")
-                .instr("Double-tap  [ U ]  quickly to unleash an area burst.\n" +
-                       "It hits everything nearby at once.\n" +
-                       "Do it  2 times  -  targets are grouped close together.")
-                .key("U U")
+                .tout(90f).build());
+            s.add(Step.of("LIGHTNING  -  area burst  (double-tap U)")
+                .instr("Hold  [ U ]  briefly, release  -  then quickly tap  [ U ]  again.\n" +
+                       "This fires an area burst that hits every nearby enemy at once.\n" +
+                       "Do it  2 times.")
+                .key("U … U")
                 .need(2)
                 .setup(ctx -> spawnDummies(ctx, 5))
                 .when(ctx -> {
@@ -284,7 +330,7 @@ public class AbilityPractice {
                     return flashed >= 3;
                 })
                 .win("Area burst!")
-                .tout(60f).build());
+                .tout(90f).build());
         }
         case HEAL -> {
             s.add(Step.of("HEAL  -  HOLD to channel")
@@ -357,14 +403,48 @@ public class AbilityPractice {
 
         // ── WAVE 6: PILLAR + CANNONBALL ──────────────────────────────────────
         case PILLAR -> {
-            s.add(Step.of("STONE PILLAR")
-                .instr("Stand on solid ground and press  [ K ].\n" +
-                       "A stone spire erupts beneath you and launches you skyward.")
+            s.add(Step.of("STONE PILLAR  -  launch yourself skyward")
+                .instr("Stand on stone or dirt and press  [ K ].\n" +
+                       "A spire erupts beneath you and launches you into the air.\n\n" +
+                       "If  [ K ]  doesn't work: the ground under you is not solid enough.\n" +
+                       "Move to a stone or dirt surface, then try again.")
                 .key("K")
                 .need(1)
+                .tick(ctx -> {
+                    // Check if pillar failed — player pressed K but didn't launch
+                    // Detect: no pillar cooldown started, player is grounded, K recently pressed
+                    // (The ability itself doesn't expose a failure flag, so watch for K press + no launch)
+                    if (!ctx.win.player.abilities.isPillaring
+                            && ctx.win.player.isOnGround()
+                            && ctx.win.player.abilities.getPillarCooldownFrac() > 0.99f
+                            && ctx.stepAge > 0.3f) {
+                        // Check block density under player to give accurate feedback
+                        // (re-check the same condition the ability uses)
+                        org.joml.Vector3f pos = ctx.win.player.position;
+                        int cx2 = (int) Math.floor(pos.x);
+                        int cz2 = (int) Math.floor(pos.z);
+                        int sy  = (int) Math.floor(pos.y) - 1;
+                        boolean hasSolid = sy >= 0 && ctx.win.world.getBlock(cx2, sy, cz2).isSolid();
+                        if (!hasSolid) {
+                            ctx.win.practiceWarnText  = "Ground not solid here  -  move to stone or dirt!";
+                            ctx.win.practiceWarnTimer = 2.0f;
+                        }
+                    }
+                })
                 .when(ctx -> ctx.win.player.abilities.getPillarCooldownFrac() < 0.92f)
                 .win("Launched!")
                 .tout(60f).build());
+
+            s.add(Step.of("STONE PILLAR  -  fall and GROUND SLAM")
+                .instr("You are high in the air!\n" +
+                       "While falling, hold  [ SHIFT ]  to charge a ground slam.\n" +
+                       "Keep SHIFT held until you crash into the ground.\n" +
+                       "It craters the terrain and damages everything nearby.")
+                .key("SHIFT  (in air)")
+                .need(1)
+                .when(ctx -> ctx.win.player.smashImpactX != Integer.MIN_VALUE)
+                .win("Ground slam!")
+                .tout(20f).build());
         }
         case CANNONBALL -> {
             s.add(Step.of("CANNONBALL")
@@ -480,16 +560,17 @@ public class AbilityPractice {
                 .win("Seal placed!")
                 .tout(90f).build());
 
-            s.add(Step.of("MINATO'S SEAL  -  warp")
+            s.add(Step.of("MINATO'S SEAL  -  warp to a seal")
                 .instr("Look at one of your seals and press  [ B ]  to warp there instantly.\n" +
                        "Do this  2 times  from different spots.")
                 .key("B")
                 .need(2)
                 .when(ctx -> {
-                    float frac = ctx.win.player.abilities.getBlinkCooldownFrac();
-                    if (!ctx.flag) { ctx.snapshot = frac; ctx.flag = true; return false; }
-                    boolean fired = frac < ctx.snapshot - 0.1f && ctx.snapshot > 0.9f;
-                    ctx.snapshot = frac; return fired;
+                    // teleportFlash is set when a seal warp fires; detect its leading edge
+                    float flash = ctx.win.player.seals.teleportFlash;
+                    boolean justWarped = flash > 0.05f && ctx.snapshot <= 0.05f;
+                    ctx.snapshot = flash;
+                    return justWarped;
                 })
                 .win("Warped!")
                 .tout(90f).build());

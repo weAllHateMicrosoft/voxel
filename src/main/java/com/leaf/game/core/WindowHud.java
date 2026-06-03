@@ -261,6 +261,15 @@ class WindowHud {
             ty += lineH;
         }
 
+        // Warning text (e.g. "HOLD it! Don't click!") — shown in red above skip row
+        if (win.practiceWarnText != null && win.practiceWarnTimer > 0f) {
+            float pulse = 0.75f + 0.25f * (float) Math.sin(glfwGetTime() * 10f);
+            float ww = ImGui.calcTextSize(win.practiceWarnText).x;
+            draw.addText(font, base * 1.05f, cx - ww/2, ty,
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.25f, pulse), win.practiceWarnText);
+            ty += lineH;
+        }
+
         // Celebration OR skip/prompt row
         if (celebrating && step.doneText != null) {
             float pulse = 0.7f + 0.3f * (float) Math.sin(glfwGetTime() * 8f);

@@ -130,6 +130,9 @@ public class Window {
     float practiceCelebration = 0f;
     static final float PRACTICE_TIMEOUT = 60f;   // per step
     static final float PRACTICE_CELEBRATE_SECS = 1.4f;
+    /** Short warning shown at the top of the practice card; cleared when timer expires. */
+    String practiceWarnText  = null;
+    float  practiceWarnTimer = 0f;
     /** Queued practice sessions for the current wave (e.g. wave 8 = Seal then Kamui). */
     final java.util.ArrayDeque<Progression.Ability> practiceQueue = new java.util.ArrayDeque<>();
     /** ENTER edge-detect (so the card-dismiss ENTER can't immediately skip). */
@@ -1377,6 +1380,9 @@ public class Window {
                         }
 
                         // ── PRACTICE SESSION tick (multi-step) ───────────────
+                        if (practiceWarnTimer > 0f) practiceWarnTimer -= deltaTime;
+                        if (practiceWarnTimer <= 0f) practiceWarnText = null;
+
                         if (practiceAbility != null && practiceSteps != null) {
                             AbilityPractice.Step step = practiceSteps.get(practiceStepIndex);
                             practiceStepAge     += deltaTime;
