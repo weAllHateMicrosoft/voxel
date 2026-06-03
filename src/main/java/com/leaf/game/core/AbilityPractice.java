@@ -125,18 +125,23 @@ public class AbilityPractice {
                 .forEach(e -> e.alive = false);
     }
 
-    /** Scan downward from player height to find the surface Y at (px, pz). */
+    /**
+     * Scan downward from the top of the world to find the highest open-surface Y
+     * at (px, pz): a solid block with air directly above it.
+     * Returns the Y coordinate at which a standing entity won't be inside geometry.
+     * Falls back to player Y if the column is entirely solid (shouldn't happen in-game).
+     */
     private static float groundY(StepCtx ctx, float px, float pz) {
         int bx = (int) Math.floor(px);
         int bz = (int) Math.floor(pz);
-        int startY = (int) Math.floor(ctx.win.player.position.y) + 4;
-        for (int by = Math.min(startY, com.leaf.game.world.Chunk.HEIGHT - 2); by >= 1; by--) {
+        for (int by = com.leaf.game.world.Chunk.HEIGHT - 2; by >= 1; by--) {
             if (ctx.win.world.getBlock(bx, by, bz).isSolid()
-                    && !ctx.win.world.getBlock(bx, by + 1, bz).isSolid()) {
-                return by + 1.5f;
+                    && !ctx.win.world.getBlock(bx, by + 1, bz).isSolid()
+                    && !ctx.win.world.getBlock(bx, by + 2, bz).isSolid()) {
+                return by + 1.0f;  // stand on top of this block
             }
         }
-        return ctx.win.player.position.y + 1f; // fallback
+        return ctx.win.player.position.y + 1f; // fallback (all solid?)
     }
 
     /** Spawn N dummies in a rough arc in front of the player, always above ground. */
@@ -316,12 +321,12 @@ public class AbilityPractice {
                 .when(ctx -> ctx.dummyHpDropped())
                 .win("Strike!")
                 .tout(90f).build());
-            s.add(Step.of("LIGHTNING  -  area burst  (double-tap U)")
-                .instr("Hold  [ U ]  briefly, release  -  then quickly tap  [ U ]  again.\n" +
-                       "This fires an area burst that hits every nearby enemy at once.\n" +
-                       "Do it  2 times.")
-                .key("U … U")
-                .need(2)
+            s.add(Step.of("LIGHTNING  -  area burst")
+                .instr("Double-tap  [ U ]  to fire an area burst.\n" +
+                       "It hits every enemy nearby at once.\n" +
+                       "Do it once  -  targets are grouped close together.")
+                .key("U  U")
+                .need(1)
                 .setup(ctx -> spawnDummies(ctx, 5))
                 .when(ctx -> {
                     long flashed = ctx.win.enemyManager.getEnemies().stream()
@@ -330,7 +335,7 @@ public class AbilityPractice {
                     return flashed >= 3;
                 })
                 .win("Area burst!")
-                .tout(90f).build());
+                .tout(60f).build());
         }
         case HEAL -> {
             s.add(Step.of("HEAL  -  HOLD to channel")
@@ -435,12 +440,12 @@ public class AbilityPractice {
                 .win("Launched!")
                 .tout(60f).build());
 
-            s.add(Step.of("STONE PILLAR  -  fall and GROUND SLAM")
-                .instr("You are high in the air!\n" +
-                       "While falling, hold  [ SHIFT ]  to charge a ground slam.\n" +
-                       "Keep SHIFT held until you crash into the ground.\n" +
-                       "It craters the terrain and damages everything nearby.")
-                .key("SHIFT  (in air)")
+            s.add(Step.of("STONE PILLAR  -  GROUND SLAM on the way down")
+                .instr("You are in the air!\n" +
+                       "While falling, tap  [ SHIFT ]  once.\n" +
+                       "You will slam into the ground, crater the terrain,\n" +
+                       "and damage everything nearby.")
+                .key("SHIFT  (tap once, in air)")
                 .need(1)
                 .when(ctx -> ctx.win.player.smashImpactX != Integer.MIN_VALUE)
                 .win("Ground slam!")
@@ -462,25 +467,24 @@ public class AbilityPractice {
         // ── WAVE 7: STAND (MANHATTAN TRANSFER) ────────────────────────────────
         case STAND -> {
             s.add(Step.of("MANHATTAN TRANSFER  -  deploy the drone")
-                .instr("Manhattan Transfer is a combat drone  -  a floating gun you control.\n" +
-                       "It can reach angles you cannot aim at directly.\n\n" +
-                       "Press  [ X ]  to deploy the drone above you.")
+                .instr("Manhattan Transfer is a combat drone.\n" +
+                       "Press  [ X ]  to deploy it above you.")
                 .key("X")
                 .need(1)
                 .setup(ctx -> {
+                    // Spawn dummy on solid ground to the player's right
                     float yaw = ctx.win.lastCameraYaw + (float)Math.PI * 0.5f;
                     float px  = ctx.win.player.position.x + (float)Math.sin(yaw) * 12f;
                     float pz  = ctx.win.player.position.z + (float)Math.cos(yaw) * 12f;
                     clearDummies(ctx);
-                    ctx.win.enemyManager.spawnAt(px, ctx.win.player.position.y + 1f, pz, Type.DUMMY);
+                    ctx.win.enemyManager.spawnAt(px, groundY(ctx, px, pz), pz, Type.DUMMY);
                 })
                 .when(ctx -> ctx.win.player.stand.isDeployed())
                 .win("Drone deployed!")
                 .tout(60f).build());
 
-            s.add(Step.of("MANHATTAN TRANSFER  -  pilot it")
-                .instr("The target is off to the side  -  no direct line of sight from you.\n" +
-                       "Press  [ TAB ]  to take control of the drone.\n" +
+            s.add(Step.of("MANHATTAN TRANSFER  -  enter drone view")
+                .instr("Press  [ TAB ]  to take control of the drone.\n" +
                        "WASD = fly, SPACE = up, SHIFT = down.\n" +
                        "Fly until you can see the target.")
                 .key("TAB")
@@ -489,26 +493,14 @@ public class AbilityPractice {
                 .win("Drone view active!")
                 .tout(60f).build());
 
-            s.add(Step.of("MANHATTAN TRANSFER  -  fire from the drone")
-                .instr("From the drone, LEFT-CLICK to fire at the target.\n" +
-                       "The shot travels from the DRONE, not from you.\n" +
-                       "This is the redirect  -  it bypasses walls and corners.\n" +
-                       "Hit the target  3 times.")
-                .key("LMB")
-                .need(3)
+            s.add(Step.of("MANHATTAN TRANSFER  -  fire through the drone")
+                .instr("Aim at the target and press  [ C ]  to fire through the drone.\n" +
+                       "The shot originates from the drone, not from you.\n" +
+                       "Hit the target once.")
+                .key("C")
+                .need(1)
                 .when(ctx -> ctx.dummyHpDropped())
                 .win("Hit!")
-                .tout(90f).build());
-
-            s.add(Step.of("MANHATTAN TRANSFER  -  auto-fire")
-                .instr("Press  [ TAB ]  to exit drone view.\n" +
-                       "The drone will now auto-fire at the nearest enemy by itself.\n" +
-                       "Let it score  2 more hits.")
-                .key("TAB to exit")
-                .need(2)
-                .when(ctx -> !ctx.win.player.stand.isInStandPerspective()
-                             && ctx.dummyHpDropped())
-                .win("Auto-fire!")
                 .tout(60f).build());
         }
 
