@@ -139,13 +139,21 @@ public class ModelRenderer {
         return new Mesh(verts, idx, true);
     }
 
-    /** Lazily load+cache a model texture from the classpath. Returns null if missing. */
+    /** Lazily load+cache a model texture from the classpath. Returns null if missing.
+     *  Model textures are pixel-art (32–64 px) so we override to GL_NEAREST to keep
+     *  them crisp — Texture.load() defaults to GL_LINEAR which blurs them. */
     private static Texture getTexture(String classpathPath) {
         Texture t = textureCache.get(classpathPath);
         if (t != null) return t;
         if (texMisses.contains(classpathPath)) return null;
         try {
             t = Texture.load(classpathPath);
+            // Override the bilinear filtering that Texture.load() sets by default.
+            // These are tiny pixel-art textures — GL_LINEAR blurs them noticeably.
+            glBindTexture(GL_TEXTURE_2D, t.getId());
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glBindTexture(GL_TEXTURE_2D, 0);
             textureCache.put(classpathPath, t);
             return t;
         } catch (Exception e) {

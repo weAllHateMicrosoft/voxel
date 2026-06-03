@@ -4,11 +4,11 @@ import imgui.ImFont;
 import imgui.ImGui;
 
 /**
- * CutsceneManager — in-engine letterbox text cutscenes for DESCENT.
+ * CutsceneManager  -  in-engine letterbox text cutscenes for DESCENT.
  *
  * Cinematic-on-a-budget: black letterbox bars, a dimmed view of the world behind,
  * text that types in character-by-character, and a wind bed howling underneath.
- * No video files, no extra dependencies — and the ending can show live run stats.
+ * No video files, no extra dependencies  -  and the ending can show live run stats.
  *
  * ── HOW TO EDIT THE CUTSCENES ────────────────────────────────────────────────
  *  Everything you'd want to change is right here at the top:
@@ -33,23 +33,55 @@ public class CutsceneManager {
         { "They were already here when you arrived.",
           "They have always been here.",
           "Waiting." },
-        { "The crystal is warm in your hands.",
-          "It knows you are afraid.",
-          "It will teach you to survive." },
+        { "The crystal bonds with you.",
+          "Watch the blue bar beneath your health. That is your MANA.",
+          "Every ability you learn will cost it.  It refills on its own." },
+        { "Survive each wave and the crystal teaches you something new.",
+          "Press [ F1 ] anytime to review what you have learned." },
         { "DESCENT",
           "Survive.   Learn.   Escape." },
     };
 
+    /**
+     * Played on every death before the player is revived.
+     * Auto-advances: no ENTER needed, the last slide fades out and the
+     * caller restores the player automatically when isActive() returns false.
+     */
+    public static final String[][] REVIVAL = {
+        { "The crystal catches you.",
+          "It is not done with you yet." },
+        { "You feel cold stone  -  and then warmth.",
+          "You are back." },
+    };
+
+    /**
+     * Played when the 3rd death triggers the Kamui awakening.
+     * Comes BEFORE the normal revival cutscene.
+     */
+    public static final String[][] KAMUI_AWAKEN = {
+        { "Three times the darkness claimed you.",
+          "Three times the crystal refused to let go." },
+        { "But something else happened at the threshold.",
+          "A part of you stopped coming back." },
+        { "It drifted  -  sideways.",
+          "Into a space that has no name." },
+        { "You feel it now.",
+          "A dimension folded inside your own body." },
+        { "KAMUI",
+          "Press [ Z ] to phase into the void.",
+          "While inside: nothing can touch you." },
+    };
+
     public static final String[][] ENDING = {
         { "You survived.",
-          "Every wave. Every hunter. Every thing it sent." },
-        { "And now —",
-          "the sky opens." },
-        { "FLIGHT.",
-          "The last thing the crystal ever gives." },
+          "Every wave. Every hunter. Everything it sent." },
+        { "And now  -  the sky opens.",
+          "FLIGHT. The last thing the crystal ever gives." },
         { "The mountain has nothing left to hold you." },
+        { "Double-tap  [ SPACE ]  to take flight.",
+          "The world is yours." },
         { "DESCENT",
-          "Go anywhere." },
+          "You are free.  Go anywhere." },
     };
 
     /** Typewriter speed (characters revealed per second). */
@@ -60,56 +92,109 @@ public class CutsceneManager {
 
     // ═══════════════════════════════════════════════════════════════════════
 
+    /** Identifies which script is currently running — read by Window to know what to do on end. */
+    public enum Kind { INTRO, REVIVAL, KAMUI_AWAKEN, ENDING }
+
     private String[][] script = null;
     private int     slide      = 0;
-    private float   typed      = 0f;   // characters revealed on the current slide so far
-    private int     slideChars = 0;    // total characters on the current slide
+    private float   typed      = 0f;
+    private int     slideChars = 0;
     private boolean active     = false;
-    private boolean ending     = false;
-    private float   windFade   = 0f;   // 0→1 fade-in for the wind bed
-    private float   age        = 0f;   // total seconds the cutscene has run (for the glow pulse)
-    private float   promptT    = 0f;   // blink timer for the "[SPACE]" prompt
+    private Kind    kind       = Kind.INTRO;
+    /**
+     * When true, the cutscene auto-advances each slide after a fixed pause
+     * (used for revival — player shouldn't need to press ENTER just to respawn).
+     */
+    private boolean autoAdvance = false;
+    private static final float AUTO_SLIDE_PAUSE = 2.2f;  // seconds per slide in auto mode
 
-    /** Optional stat lines shown on the ENDING (set by Window before startEnding). */
+    private static final float SLIDE_MIN_SHOW = 0.9f;
+    private float   slideAge   = 0f;
+    private float   windFade   = 0f;
+    private float   age        = 0f;
+    private float   promptT    = 0f;
+
+    /** Optional stat line shown on the ENDING. */
     public String endingStat = null;
 
-    public void startIntro()  { begin(INTRO,  false); }
-    public void startEnding() { begin(ENDING, true);  }
+    public void startIntro()       { begin(INTRO,        Kind.INTRO,       false); }
+    public void startRevival()     { begin(REVIVAL,      Kind.REVIVAL,     true);  }
+    public void startKamuiAwaken() { begin(KAMUI_AWAKEN, Kind.KAMUI_AWAKEN,false); }
+    public void startEnding()      { begin(ENDING,       Kind.ENDING,      false); }
 
-    private void begin(String[][] s, boolean isEnding) {
-        script = s; slide = 0; typed = 0f; active = true; ending = isEnding;
-        windFade = 0f; age = 0f; promptT = 0f;
+    private void begin(String[][] s, Kind k, boolean auto) {
+        script = s; slide = 0; typed = 0f; active = true; kind = k; autoAdvance = auto;
+        windFade = 0f; age = 0f; promptT = 0f; slideAge = 0f;
         slideChars = charCount(0);
-        AudioManager.playContinuous(WIND_SOUND, 0f); // starts silent, update() fades it in
+        AudioManager.playContinuous(WIND_SOUND, 0f);
     }
 
-    public boolean isActive()  { return active; }
-    public boolean wasEnding()  { return ending; }
+    public boolean isActive()   { return active; }
+    public Kind    getKind()    { return kind;   }
+    @Deprecated
+    public boolean wasEnding()  { return kind == Kind.ENDING; }
 
-    // ── Per-frame update (raw dt; runs while the world is frozen) ─────────────
+    // ── Per-frame update ──────────────────────────────────────────────────────
     public void update(float dt) {
         if (!active) return;
-        age     += dt;
-        promptT += dt;
-        windFade = Math.min(1f, windFade + dt * 0.6f);
+        age      += dt;
+        promptT  += dt;
+        slideAge += dt;
+        windFade  = Math.min(1f, windFade + dt * 0.6f);
         AudioManager.setContinuousVolume(WIND_SOUND, WIND_VOLUME * windFade);
         if (typed < slideChars) typed = Math.min(slideChars, typed + CPS * dt);
+
+        // Auto-advance mode: scroll through slides automatically (revival cutscene).
+        if (autoAdvance && typed >= slideChars && slideAge >= AUTO_SLIDE_PAUSE) {
+            slide++;
+            if (slide >= script.length) { end(); return; }
+            typed = 0f; slideAge = 0f;
+            slideChars = charCount(slide);
+        }
     }
 
-    /** SPACE/ENTER: complete the current line, or move to the next slide. */
+    /**
+     * ENTER: complete the current typewriter, or move to the next slide.
+     * A per-slide minimum display time prevents accidental skipping  -  the
+     * player often has keys held from gameplay when a cutscene opens.
+     */
     public void advance() {
         if (!active) return;
-        if (typed < slideChars) { typed = slideChars; return; }  // reveal the rest first
+        // First press finishes typing; only then (and after min-show time) advance.
+        if (typed < slideChars) {
+            if (slideAge < SLIDE_MIN_SHOW * 0.4f) return; // too soon  -  ignore
+            typed = slideChars;
+            return;
+        }
+        if (slideAge < SLIDE_MIN_SHOW) return;  // must have been visible long enough
         slide++;
         if (slide >= script.length) { end(); return; }
-        typed = 0f;
+        typed = 0f; slideAge = 0f;
         slideChars = charCount(slide);
         promptT = 0f;
-        AudioManager.play("cystal_click", 0.4f);                 // soft page-turn
+        AudioManager.play("cystal_click", 0.4f);
     }
 
     /** ESC: skip the whole thing. */
     public void skip() { end(); }
+
+    // Space double-tap tracking for ending exit
+    private float lastSpaceTapTime = -99f;
+    /**
+     * Called when SPACE is pressed during the ENDING cutscene.
+     * Two taps within 0.6 s on the final slide exits the scene — matching the
+     * on-screen hint "Double-tap [SPACE] to take flight."
+     */
+    public void tapSpaceForEnding() {
+        if (kind != Kind.ENDING) return;
+        boolean onLastSlide = slide >= script.length - 1;
+        if (!onLastSlide) { advance(); return; }   // on earlier slides, advance normally
+        if (age - lastSpaceTapTime <= 0.6f) {
+            end();   // second tap within window — exit and let the player fly
+        } else {
+            lastSpaceTapTime = age;  // first tap — wait for the second
+        }
+    }
 
     private void end() {
         active = false;
@@ -183,25 +268,50 @@ public class CutsceneManager {
             y += size + gap;
         }
 
-        // Optional stat line on the ending (e.g. "You remember 84 faces.").
-        if (ending && endingStat != null && typed >= slideChars) {
+        // Optional stat line on the ending.
+        if (kind == Kind.ENDING && endingStat != null && typed >= slideChars) {
             float tw = ImGui.calcTextSize(endingStat).x;
             draw.addText(font, base, (w - tw) * 0.5f, h - bar - 40f,
                     ImGui.colorConvertFloat4ToU32(0.8f, 0.6f, 0.55f, 0.95f), endingStat);
         }
 
-        // "[ SPACE ]" prompt, blinking, once the current slide has finished typing.
-        if (typed >= slideChars) {
-            float a = 0.35f + 0.35f * (float) Math.sin(promptT * 3.2f);
-            boolean last = slide >= script.length - 1;
-            String prompt = last ? "[ SPACE ]  begin" : "[ SPACE ]";
-            float tw = ImGui.calcTextSize(prompt).x;
-            draw.addText(font, base, (w - tw) * 0.5f, h - bar + 18f,
-                    ImGui.colorConvertFloat4ToU32(0.7f, 0.75f, 0.85f, a), prompt);
+        // Crystal glow effect: a pulsing radial bloom in the centre of the screen.
+        // Shown on REVIVAL (warm amber) and KAMUI_AWAKEN (cold purple/void).
+        if (kind == Kind.REVIVAL || kind == Kind.KAMUI_AWAKEN) {
+            float pulse = 0.18f + 0.12f * (float) Math.sin(age * 4.5f);
+            boolean revival = (kind == Kind.REVIVAL);
+            int glowCol = revival
+                ? ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, pulse)   // warm crystal amber
+                : ImGui.colorConvertFloat4ToU32(0.55f, 0.0f, 0.9f,  pulse);  // void purple
+            // Layered bloom — bigger & softer each pass
+            for (int r = 220; r >= 40; r -= 30) {
+                draw.addCircleFilled(w * 0.5f, h * 0.5f, r, glowCol, 48);
+            }
         }
 
-        // Unobtrusive skip hint in the corner.
-        draw.addText(font, base, 16f, h - bar + 18f,
-                ImGui.colorConvertFloat4ToU32(0.5f, 0.52f, 0.6f, 0.6f), "[ESC] skip");
+        // ENTER/Space prompt — drawn ABOVE the bottom letterbox bar so it's actually visible.
+        // Hidden on auto-advance (revival cutscene doesn't need a prompt).
+        if (!autoAdvance && typed >= slideChars && slideAge >= SLIDE_MIN_SHOW) {
+            float a = 0.5f + 0.4f * (float) Math.sin(promptT * 3.5f);   // brighter flash
+            boolean last = slide >= script.length - 1;
+            String prompt = (last && kind == Kind.ENDING)
+                    ? "double-tap  [ SPACE ]  to fly"
+                    : "[ ENTER ]";
+            float tw = ImGui.calcTextSize(prompt).x * 1.2f;   // scaled up
+            float px = (w - tw) * 0.5f;
+            float py = h - bar - 36f;  // above the bar, not inside it
+            // Shadow
+            draw.addText(font, base * 1.2f, px + 2, py + 2,
+                    ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a * 0.9f), prompt);
+            // Bright text
+            draw.addText(font, base * 1.2f, px, py,
+                    ImGui.colorConvertFloat4ToU32(0.9f, 0.93f, 1.0f, a), prompt);
+        }
+
+        // Skip hint — inside the bar (small, unobtrusive), not on revival.
+        if (!autoAdvance) {
+            draw.addText(font, base, 14f, h - bar + 10f,
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.55f), "[ESC] skip");
+        }
     }
 }

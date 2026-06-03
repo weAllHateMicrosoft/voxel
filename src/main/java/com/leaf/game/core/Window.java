@@ -94,32 +94,54 @@ public class Window {
 
     /** Counts down after the player takes damage; HUD pulses the health bar red. */
     float damageFlashTimer = 0f;
-<<<<<<< HEAD
 
     // ── DEATH SCREEN ──────────────────────────────────────────────────────────
     boolean      showDeathScreen     = false;
     String[]     deathScreenLines    = null;
     private boolean lastDeathEnter   = false;
 
-    // ── PRACTICE SESSION (pause-and-teach for complex abilities) ──────────────
+    /**
+     * Set when the player dies and a cutscene sequence is pending.
+     * KAMUI_AWAKEN plays first (on 3rd death), then REVIVAL auto-plays, then
+     * Window restores the player automatically when the revival ends.
+     * While any death cutscene is active: player update is frozen (same gate as showDeathScreen).
+     */
+    boolean      deathCutscenePending  = false;
+    /** Set when the 3rd death fires the Kamui awakening; consumed once revival ends. */
+    private boolean kamuiJustUnlockedThisRevival = false;
+    /** Seconds of post-revival immunity remaining (player is invincible, flickers). */
+    float        immunityTimer = 0f;
+    static final float REVIVAL_IMMUNITY_SECS = 4f;
+
+    // ── PRACTICE SESSION — multi-step hands-on ability tutorial ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
-    /** Seconds remaining before the practice auto-dismisses (0 = no session). */
-    float practiceTimer   = 0f;
-    /** True once the player has actually used the ability being practised. */
-    boolean practiceUsed  = false;
-    static final float PRACTICE_TIMEOUT = 40f;
-    /**
-     * Edge-detect for ENTER inside the practice tick.
-     * Prevents the same keypress that dismissed the unlock card from instantly
-     * killing the practice session — ENTER must be RELEASED between the two.
-     */
+    /** Per-step list for the active tutorial; null = not running. */
+    java.util.List<AbilityPractice.Step> practiceSteps = null;
+    /** Index into practiceSteps for the current step. */
+    int practiceStepIndex = 0;
+    /** Seconds elapsed on the current step. */
+    float practiceStepAge = 0f;
+    /** Context passed to step lambdas (reused across steps). */
+    final AbilityPractice.StepCtx practiceCtx = new AbilityPractice.StepCtx();
+    /** True once the current step's done() predicate fired once (latch). */
+    boolean practiceStepDone = false;
+    /** Celebration pause: seconds remaining after done() fired before advancing. */
+    float practiceCelebration = 0f;
+    static final float PRACTICE_TIMEOUT = 60f;   // per step
+    static final float PRACTICE_CELEBRATE_SECS = 1.4f;
+    /** Short warning shown at the top of the practice card; cleared when timer expires. */
+    String practiceWarnText  = null;
+    float  practiceWarnTimer = 0f;
+    /** Queued practice sessions for the current wave (e.g. wave 8 = Seal then Kamui). */
+    final java.util.ArrayDeque<Progression.Ability> practiceQueue = new java.util.ArrayDeque<>();
+    /** ENTER edge-detect (so the card-dismiss ENTER can't immediately skip). */
     private boolean lastPracticeEnter = false;
-
-    /** Set after the wave-9 ending cutscene fires; stops wave spawning. */
+    /** Set after the wave-9 ending cutscene fires; stops further waves. */
     boolean gameEnded = false;
-=======
->>>>>>> parent of ef87356 (Added practice sessions)
+    /** Camera yaw snapped each frame for AbilityPractice.spawnDummy. */
+    float lastCameraYaw = 0f;
+
     final ImString chatInput = new ImString(256);
     final List<String> chatHistory = new ArrayList<>();
     final ImString seedInput = new ImString(32);
@@ -145,10 +167,12 @@ public class Window {
     // (independent animation time) stored by enemy ID.
     private com.leaf.game.anim.AnimModel enemyAnimModel = null;
     private com.leaf.game.anim.AnimModel slimeAnimModel = null;
+    private com.leaf.game.anim.AnimModel golemAnimModel = null;
     private final java.util.Map<Integer, com.leaf.game.anim.AnimPlayer> enemyAnimPlayers
             = new java.util.HashMap<>();
     /** Edge-detect for P key to spawn enemies. */
     private boolean lastP = false;
+    private boolean lastZeroKey = false;   // debug: spawn a GUARDIAN with [0]
 
     // ── TODO'S TECHNIQUE (J key) ──────────────────────────────────────────────
     float   todoSwapCooldown = 0f;
@@ -436,11 +460,15 @@ public class Window {
         glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
             if (!networkInitialized || isPreloading) return;
 
-            // ── CUTSCENE swallows input: SPACE/ENTER advances, ESC skips ──────
+            // ── CUTSCENE swallows input: ENTER advances, ESC skips.
+            // On the ENDING last slide: double-tap SPACE exits (matches the on-screen hint).
             if (cutscene.isActive()) {
-                if (action == GLFW_RELEASE) {
+                if (action == GLFW_PRESS) {
                     if (key == GLFW_KEY_ESCAPE) cutscene.skip();
-                    else if (key == GLFW_KEY_SPACE || key == GLFW_KEY_ENTER) cutscene.advance();
+                    else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) cutscene.advance();
+                    else if (key == GLFW_KEY_SPACE && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
+                        cutscene.tapSpaceForEnding();  // double-tap exits ending
+                    }
                 }
                 return;
             }
@@ -513,6 +541,17 @@ public class Window {
             // F6 — teleport to "Rotating Rooms" entrance
             if (key == GLFW_KEY_F6 && action == GLFW_RELEASE && !showChat) {
                 lastF6 = false; // edge detected in loop
+            }
+
+            // F9 — DEV: instantly clear the current wave / force the next wave
+            if (key == GLFW_KEY_F9 && action == GLFW_RELEASE) {
+                // Kill all alive enemies so the wave-clear detector fires next tick.
+                if (enemyManager != null) enemyManager.getEnemies().forEach(e -> e.alive = false);
+                // If already between waves, fast-forward (dismiss card / practice).
+                showUnlockCard  = false;
+                practiceAbility = null; practiceSteps = null;
+                if (enemyManager != null && enemyManager.awaitingNextWave) enemyManager.beginNextWave();
+                System.out.println("[DEV] F9 — skipped wave " + (enemyManager != null ? enemyManager.getWaveNumber() : "?"));
             }
 
             // T opens chat (release event only, so holding T for time-dilation is safe
@@ -621,6 +660,70 @@ public class Window {
         isPreloading       = true;
     }
 
+    /** Begin the next queued practice session, or start the next wave if the queue is empty. */
+    private void startNextPractice() {
+        Progression.Ability next = practiceQueue.poll();
+        if (next != null && player.progression.isUnlocked(next)) {
+            java.util.List<AbilityPractice.Step> steps = AbilityPractice.forAbility(next);
+            if (steps.isEmpty()) {
+                // No tutorial for this ability — keep draining the queue.
+                startNextPractice();
+                return;
+            }
+            practiceAbility    = next;
+            practiceSteps      = steps;
+            practiceStepIndex  = 0;
+            practiceStepAge    = 0f;
+            practiceStepDone   = false;
+            practiceCelebration = 0f;
+            practiceCtx.win      = this;
+            practiceCtx.flag     = false;
+            practiceCtx.snapshot = 0f;
+            practiceCtx.counter  = 0;
+            // Kill live enemies so the player can focus, pause spawning.
+            enemyManager.getEnemies().forEach(e -> { if (e.type != Enemy.Type.DUMMY) e.alive = false; });
+            enemyManager.wavesEnabled = false;
+            // Run the first step's onEnter.
+            AbilityPractice.Step first = steps.get(0);
+            practiceCtx.required = first.required;
+            if (first.onEnter != null) {
+                practiceCtx.stepAge = 0f;
+                first.onEnter.accept(practiceCtx);
+            }
+        } else {
+            endPractice();
+        }
+    }
+
+    /** Advance to the next practice step, or finish if all done. */
+    private void advancePracticeStep() {
+        practiceStepIndex++;
+        if (practiceStepIndex >= practiceSteps.size()) {
+            endPractice();
+            return;
+        }
+        practiceStepAge     = 0f;
+        practiceStepDone    = false;
+        practiceCelebration = 0f;
+        practiceCtx.flag     = false;
+        practiceCtx.snapshot = 0f;
+        practiceCtx.counter  = 0;
+        AbilityPractice.Step step = practiceSteps.get(practiceStepIndex);
+        practiceCtx.required = step.required;
+        if (step.onEnter != null) step.onEnter.accept(practiceCtx);
+    }
+
+    /** Finish all practice, remove dummies, resume the wave. */
+    private void endPractice() {
+        practiceAbility = null;
+        practiceSteps   = null;
+        // Remove practice dummies.
+        enemyManager.getEnemies().forEach(e -> { if (e.type == Enemy.Type.DUMMY) e.alive = false; });
+        enemyManager.beginNextWave();
+        enemyManager.wavesEnabled = true;
+        lastPracticeEnter = true;
+    }
+
     private void loop() {
         // ── MAC OS CRASH FIX ──────────────────────────────────────────────
         // Flush the window creation events and give macOS 150ms to finish
@@ -646,6 +749,10 @@ public class Window {
                 com.leaf.game.anim.AnimModel.loadFromClasspath("slime");
         if (slimeAnimModelLoaded != null)
             this.slimeAnimModel = slimeAnimModelLoaded;
+        com.leaf.game.anim.AnimModel golemAnimModelLoaded =
+                com.leaf.game.anim.AnimModel.loadFromClasspath("golem");
+        if (golemAnimModelLoaded != null)
+            this.golemAnimModel = golemAnimModelLoaded;
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
@@ -807,7 +914,50 @@ public class Window {
             // ── SCALED DELTA TIME for physics ─────────────────────────────────
             ScreenEffectManager.INSTANCE.tick(rawDeltaTime);
             // Cutscene advances on raw time even though the world below is frozen.
-            if (cutscene.isActive()) cutscene.update(rawDeltaTime);
+            boolean cutsceneWasActive = cutscene.isActive();
+            if (cutscene.isActive()) {
+                cutscene.update(rawDeltaTime);
+            }
+            // Ending cutscene just finished — activate flight immediately so the
+            // player is already flying when the world comes back.
+            if (cutsceneWasActive && !cutscene.isActive()
+                    && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
+                if (player.progression.isUnlocked(Progression.Ability.FLIGHT)) {
+                    player.debugMode = true;   // debugMode is the flight-active flag
+                }
+            }
+            if (!cutscene.isActive() && deathCutscenePending) {
+                // Cutscene just ended — check which kind finished.
+                CutsceneManager.Kind finishedKind = cutscene.getKind();
+                if (finishedKind == CutsceneManager.Kind.KAMUI_AWAKEN) {
+                    // Kamui awakening done: chain into revival, then queue Kamui practice.
+                    cutscene.startRevival();
+                } else if (finishedKind == CutsceneManager.Kind.REVIVAL) {
+                    // Revival done — restore at SPAWN with full HP and immunity.
+                    deathCutscenePending = false;
+                    player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
+                    player.setVelocityY(0f);
+                    player.health = player.maxHealth;   // full HP — crystal fully healed you
+                    player.mana   = player.maxMana;
+                    player.abilities.isKamui          = false;
+                    player.abilities.kamuiAutoExited  = false;
+                    player.abilities.absorptionCharge = 0f;
+                    player.abilities.isDashing        = false;
+                    immunityTimer = REVIVAL_IMMUNITY_SECS;   // 4 s of invincibility
+                    ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f);
+                    // If Kamui was JUST awakened this death (one-shot flag in RunRecords),
+                    // show its practice tutorial. Never show again on subsequent deaths.
+                    if (kamuiJustUnlockedThisRevival) {
+                        kamuiJustUnlockedThisRevival = false;
+                        practiceQueue.clear();
+                        practiceQueue.add(Progression.Ability.KAMUI);
+                        lastPracticeEnter = true;
+                        startNextPractice();
+                    }
+                }
+            }
+            // Tick immunity — block incoming damage while it's active.
+            if (immunityTimer > 0f) immunityTimer -= rawDeltaTime;
             if (damageFlashTimer > 0f) damageFlashTimer -= rawDeltaTime;
             float deltaTime = rawDeltaTime * tc.getScale()
                     * ScreenEffectManager.INSTANCE.getHitStopScale();
@@ -902,7 +1052,6 @@ public class Window {
                         }
                     }
 
-<<<<<<< HEAD
                     // ── DEATH SCREEN — restart on ENTER ──────────────────────
                     // Must be OUTSIDE the !showDeathScreen gate so ENTER is reachable.
                     if (showDeathScreen) {
@@ -919,11 +1068,13 @@ public class Window {
                             player.abilities.absorptionCharge = 0f;
                             player.abilities.isDashing        = false;
                             player.abilities.isCannonballing  = false;
-                            enemyManager.resetForNewRun();          // resets wave to 0 + clears enemies
-                            practiceAbility   = null; practiceTimer = 0f;
-                            showUnlockCard    = false; lastCardSpace = false;
-                            lastPracticeEnter = false;
-                            gameEnded         = false;
+                            // Fresh run: abilities reset to the starting kit, wave back to 1.
+                            player.progression.reset();
+                            enemyManager.resetForNewRun();
+                            practiceAbility = null; practiceSteps = null; practiceQueue.clear();
+                            showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
+                            deathCutscenePending = false;
+                            gameEnded       = false;
                             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
                             AudioManager.stopContinuous("kamui_duration");
                             AudioManager.stopContinuous("kamui_distortion");
@@ -931,10 +1082,7 @@ public class Window {
                         lastDeathEnter = en;
                     }
 
-                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen) {
-=======
-                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive()) {
->>>>>>> parent of ef87356 (Added practice sessions)
+                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending) {
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
                         // Save state BEFORE update so we can detect transitions.
                         // player.update() resets highestY on landing and toggles debugMode.
@@ -942,6 +1090,7 @@ public class Window {
                         boolean wasOnGroundAudio = player.isOnGround();
                         boolean wasFlightMode    = player.debugMode;
                         player.update(window, camera, world, deltaTime);
+                        lastCameraYaw = camera.yaw;
                         hud.updateBreaking(deltaTime);
 
                         // ── 3D AUDIO LISTENER ──────────────────────────────────
@@ -1145,107 +1294,139 @@ public class Window {
 
                         // Update all enemies (gravity, AI, death fade, etc.)
                         enemyManager.update(deltaTime, world, player.position);
+
+                        // ── PROCESS GOLEM BLOCK BREAKING ──
+                        for (Enemy e : enemyManager.getEnemies()) {
+                            if (e.pendingBlockBreak) {
+                                e.pendingBlockBreak = false;
+
+                                // Golems smash a 2-block high hole through the wall
+                                for (int dy = 0; dy <= 1; dy++) {
+                                    int bx = e.breakX;
+                                    int by = e.breakY + dy;
+                                    int bz = e.breakZ;
+                                    Block b = world.getBlock(bx, by, bz);
+
+                                    // Don't let them break indestructible terrain
+                                    if (b.isSolid() && b != Block.STAR_IRON && b != Block.MEGALITH && b != Block.MEGALITH_CARVED) {
+                                        world.setBlock(bx, by, bz, Block.AIR);
+                                        world.rebuildChunkAt(bx, by, bz);
+
+                                        // Spawn flying debris
+                                        Vector3f ejectVel = new Vector3f(
+                                                (float)(shakeRng.nextFloat() - 0.5f) * 6f,
+                                                3f + shakeRng.nextFloat() * 4f,
+                                                (float)(shakeRng.nextFloat() - 0.5f) * 6f);
+                                        droppedItems.add(new DroppedItem(bx, by, bz, b, ejectVel));
+                                    }
+                                }
+                                // Play massive sound and shake the screen!
+                                AudioManager.playAt("ground_smash", e.position, (Vector3f)null, 40f);
+                                activeShakeDuration = 0.25f;
+                                activeShakeAmplitude = 0.15f;
+                                smashShakeTimer = Math.max(smashShakeTimer, activeShakeDuration);
+                            }
+                        }
                         if (tutorial != null) tutorial.update(deltaTime);
 
-                        // ── WAVE CLEARED → unlock ability + show card ─────────
-<<<<<<< HEAD
+                        // ── WAVE CLEARED → ending / unlock card ───────────────
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
                             int waveJustCleared = enemyManager.lastClearedWave;
 
-                            // ── WAVE 9 = FLIGHT = GAME ENDING ────────────────────
-                            if (waveJustCleared == 9 && !gameEnded) {
-                                player.progression.unlockForWave(9);       // grants FLIGHT
+                            if (waveJustCleared >= Progression.ENDING_WAVE && !gameEnded) {
+                                // ── WAVE 10 = FLIGHT = THE ENDING ─────────────
+                                player.progression.unlockForWave(Progression.ENDING_WAVE); // grant FLIGHT
                                 float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
                                 int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
                                 cutscene.endingStat = String.format(
-                                        "Enemies defeated: %d     Time: %d:%02d",
+                                        "Enemies defeated: %d      Time: %d:%02d",
                                         enemyManager.totalKills, em, es);
                                 cutscene.startEnding();
-                                enemyManager.wavesEnabled = false;   // no more waves
-                                enemyManager.beginNextWave();         // clear awaitingNextWave
+                                enemyManager.wavesEnabled = false;  // world is yours now — no more waves
+                                enemyManager.beginNextWave();        // clear the awaiting flag
                                 gameEnded = true;
                             } else {
-
-=======
-                        if (enemyManager.awaitingNextWave && !showUnlockCard) {
->>>>>>> parent of ef87356 (Added practice sessions)
-                            java.util.List<Progression.Ability> gained =
-                                    player.progression.unlockForWave(enemyManager.lastClearedWave);
-                            if (gained.isEmpty()) {
-                                // Nothing new (replaying an early wave) — straight into the next.
-                                enemyManager.beginNextWave();
-                            } else {
-                                unlockCardWave      = enemyManager.lastClearedWave;
-                                unlockCardAbilities = gained;
-                                showUnlockCard      = true;
-                                AudioManager.play("seal_collect"); // brief unlock chime
-                            }
-                            } // end else (non-ending wave)
-                        }
-                        // Dismiss the card with SPACE → the next wave begins.
-                        if (showUnlockCard) {
-                            boolean sp = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
-                            if (sp && !lastCardSpace) {
-                                showUnlockCard = false;
-<<<<<<< HEAD
-                                // Practice is triggered by WAVE NUMBER, not unlock list,
-                                // so it fires on every run (not just the first time).
-                                Progression.Ability practiceCandidate = switch (enemyManager.lastClearedWave) {
-                                    case 7 -> Progression.Ability.STAND;
-                                    case 8 -> Progression.Ability.KAMUI; // wave 8 has both; Kamui is the harder one
-                                    default -> null;
-                                };
-                                // Only run practice if the ability is actually unlocked
-                                if (practiceCandidate != null && player.progression.isUnlocked(practiceCandidate)) {
-                                    practiceAbility = practiceCandidate;
-                                    practiceTimer   = PRACTICE_TIMEOUT;
-                                    practiceUsed    = false;
+                                // Normal wave: unlock this tier and ALWAYS show the card
+                                // (abilities reset each run, so there's always something new).
+                                java.util.List<Progression.Ability> gained =
+                                        player.progression.unlockForWave(waveJustCleared);
+                                if (gained.isEmpty()) gained = player.progression.abilitiesForWave(waveJustCleared);
+                                if (gained.isEmpty()) {
+                                    enemyManager.beginNextWave();   // no tier (shouldn't happen ≤ wave 9)
                                 } else {
-                                    enemyManager.beginNextWave();
+                                    unlockCardWave      = waveJustCleared;
+                                    unlockCardAbilities = gained;
+                                    showUnlockCard      = true;
+                                    AudioManager.play("seal_collect");
                                 }
+                            }
+                        }
+
+                        // Dismiss the card with ENTER → queue practice (complex abilities) or next wave.
+                        if (showUnlockCard) {
+                            boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                            if (en && !lastCardSpace) {
+                                showUnlockCard = false;
+                                // Every wave unlocked gets a practice session now.
+                                practiceQueue.clear();
+                                for (Progression.Ability a : unlockCardAbilities) {
+                                    practiceQueue.add(a);
+                                }
+                                lastPracticeEnter = true;
+                                startNextPractice();
                             }
                             lastCardSpace = en;
                         }
 
-                        // ── PRACTICE SESSION tick ─────────────────────────────
-                        if (practiceAbility != null && practiceTimer > 0f) {
-                            practiceTimer -= deltaTime;
+                        // ── PRACTICE SESSION tick (multi-step) ───────────────
+                        if (practiceWarnTimer > 0f) practiceWarnTimer -= deltaTime;
+                        if (practiceWarnTimer <= 0f) practiceWarnText = null;
 
-                            boolean used = switch (practiceAbility) {
-                                case KAMUI -> player.abilities.isKamui;
-                                case SEAL  -> player.seals.getSealCount() > 0;
-                                case STAND -> player.stand.isDeployed();
-                                default    -> false;
-                            };
-                            if (used) practiceUsed = true;
+                        if (practiceAbility != null && practiceSteps != null) {
+                            AbilityPractice.Step step = practiceSteps.get(practiceStepIndex);
+                            practiceStepAge     += deltaTime;
+                            practiceCtx.stepAge  = practiceStepAge;
 
-                            // ENTER can skip only after 1.2 s AND the key was released at
-                            // least once — prevents the card-dismiss ENTER from killing the
-                            // session on the very same frame it opens.
-                            boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
-                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-                            boolean canSkip = practiceTimer < PRACTICE_TIMEOUT - 1.2f
-                                    && !lastPracticeEnter && enterNow;
-                            lastPracticeEnter = enterNow;
+                            // Run optional per-frame tick logic (e.g. move NPCs).
+                            if (step.onTick != null) {
+                                try { step.onTick.accept(practiceCtx); } catch (Exception ignored) {}
+                            }
 
-                            boolean done = (practiceUsed && practiceTimer < PRACTICE_TIMEOUT - 2f)
-                                    || practiceTimer <= 0f
-                                    || canSkip;
-                            if (done) {
-                                practiceAbility   = null;
-                                practiceTimer     = 0f;
-                                lastPracticeEnter = true; // arm: next card dismiss won't skip its practice
-                                enemyManager.beginNextWave();
+                            if (practiceStepDone) {
+                                // Celebration pause before advancing.
+                                practiceCelebration -= deltaTime;
+                                if (practiceCelebration <= 0f) advancePracticeStep();
+                            } else {
+                                // Run the done() predicate — counts up to step.required.
+                                boolean oneAction = false;
+                                try { oneAction = step.done.test(practiceCtx); }
+                                catch (Exception ignored) {}
+
+                                if (oneAction) {
+                                    practiceCtx.counter++;
+                                    practiceCtx.flag = false; // reset latch for next count
+                                    if (practiceCtx.counter >= step.required) {
+                                        practiceStepDone    = true;
+                                        practiceCelebration = step.doneText != null
+                                                ? PRACTICE_CELEBRATE_SECS : 0.3f;
+                                    }
+                                } else if (practiceStepAge > step.timeout) {
+                                    advancePracticeStep(); // safety timeout
+                                }
+
+                                // ENTER skip — only for steps that explicitly allow it.
+                                boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                        || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                                boolean canSkip  = step.allowSkip
+                                        && practiceStepAge > 1.2f
+                                        && !lastPracticeEnter && enterNow;
+                                lastPracticeEnter = enterNow;
+                                if (canSkip) { practiceStepDone = true; practiceCelebration = 0.1f; }
                             }
                         } else {
-                            // Track ENTER state even when no session is active
                             lastPracticeEnter = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
                                     || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-=======
-                                enemyManager.beginNextWave();
-                            }
-                            lastCardSpace = sp;
->>>>>>> parent of ef87356 (Added practice sessions)
                         }
 
                         // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────
@@ -1329,8 +1510,8 @@ public class Window {
 
                         // ── DRAIN remaining enemy damage into player health ────
                         if (enemyManager.pendingPlayerDamage > 0f) {
-                            if (player.abilities.isKamui) {
-                                // Kamui = invincible — absorb damage with no effect
+                            if (player.abilities.isKamui || immunityTimer > 0f) {
+                                // Kamui / revival immunity = invincible
                                 enemyManager.pendingPlayerDamage = 0f;
                             } else {
                                 // ── DAMAGE ALERT — so a hit never comes "from nowhere" ──
@@ -1344,17 +1525,29 @@ public class Window {
                                 player.health -= dmg;
                                 enemyManager.pendingPlayerDamage = 0f;
                                 if (player.health <= 0f) {
-                                    System.out.println("You died! Respawning at spawn point.");
-                                    player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
-                                    player.setVelocityY(0f);
-                                    player.health = player.maxHealth;
-                                    // Reset Kamui / lightning state on death
-                                    player.abilities.isKamui       = false;
-                                    player.abilities.kamuiAutoExited = false;
-                                    player.abilities.absorptionCharge = 0f;
-                                    AudioManager.play("kamui_exit");
-                                    AudioManager.stopContinuous("kamui_duration");
-                                    AudioManager.stopContinuous("kamui_distortion");
+                                    player.health = 0f;  // clamp; actual reset happens on restart
+                                    if (!showDeathScreen && !deathCutscenePending) {
+                                        AudioManager.stopContinuous("kamui_duration");
+                                        AudioManager.stopContinuous("kamui_distortion");
+
+                                        // Record death — this also checks if it's the 3rd
+                                        // (Kamui awakening) and persists the flag.
+                                        deathScreenLines = RunRecords.INSTANCE.recordDeath(
+                                                enemyManager.getWaveNumber(),
+                                                (float) org.lwjgl.glfw.GLFW.glfwGetTime());
+
+                                        deathCutscenePending = true;
+
+                                        // 3rd death: play Kamui awakening first, then revival.
+                                        if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
+                                            player.progression.grantKamui();
+                                            kamuiJustUnlockedThisRevival = true; // shows tutorial once after revival
+                                            cutscene.startKamuiAwaken();
+                                        } else {
+                                            cutscene.startRevival();
+                                        }
+                                        ScreenEffectManager.INSTANCE.desaturate(0.7f, 1.5f);
+                                    }
                                 }
                             }
                         }
@@ -1499,6 +1692,26 @@ public class Window {
                             }
                         }
                         lastP = pHeld;
+
+                        // [0] key — DEV: spawn a GUARDIAN (golem) for testing.
+                        // Drops it at the block you're aiming at, or ~6 blocks in front.
+                        boolean zeroHeld = glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS;
+                        if (zeroHeld && !lastZeroKey) {
+                            RaycastResult ghit = player.getTargetBlock(camera, world);
+                            if (ghit != null && ghit.hit) {
+                                enemyManager.spawnAt(ghit.placeX + 0.5f, ghit.placeY + 1f,
+                                        ghit.placeZ + 0.5f, Enemy.Type.GUARDIAN);
+                            } else {
+                                Vector3f fwd = camera.getLookDirection();
+                                enemyManager.spawnAt(
+                                        player.position.x + fwd.x * 6f,
+                                        player.position.y + 3f,
+                                        player.position.z + fwd.z * 6f,
+                                        Enemy.Type.GUARDIAN);
+                            }
+                            System.out.println("[DEV] Spawned GUARDIAN (golem)");
+                        }
+                        lastZeroKey = zeroHeld;
                         // ── TODO'S TECHNIQUE (J key) ──────────────────────────
                         if (todoSwapCooldown > 0f) todoSwapCooldown -= deltaTime;
                         boolean jHeld = glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS
@@ -1740,42 +1953,14 @@ public class Window {
                                     scale *= (0.7f + 0.3f * blockBonus);
                                     Vector3f lookDir = camera.getLookDirection();
 
-                                    // ── Spawn from ground 2.5 blocks in front ────
-                                    float hdLen = (float) Math.sqrt(
-                                            lookDir.x * lookDir.x + lookDir.z * lookDir.z);
-                                    float nhx = hdLen > 0.001f ? lookDir.x / hdLen : 0f;
-                                    float nhz = hdLen > 0.001f ? lookDir.z / hdLen : 1f;
-                                    float fpx = player.position.x + nhx * 2.5f;
-                                    float fpz = player.position.z + nhz * 2.5f;
-
-                                    // Scan downward to find solid ground at that column
-                                    int groundSpawnY = (int) Math.floor(player.position.y);
-                                    int fpBx = (int) Math.floor(fpx);
-                                    int fpBz = (int) Math.floor(fpz);
-                                    for (int sy = (int) Math.floor(player.position.y) + 3; sy >= 0; sy--) {
-                                        if (world.getBlock(fpBx, sy, fpBz).isSolid()) {
-                                            groundSpawnY = sy + 1;
-                                            break;
-                                        }
-                                    }
-                                    // Raise spawn 1 block above the surface so the ball clears the ground
-                                    Vector3f firePos = new Vector3f(fpx, (float) groundSpawnY + 1.0f, fpz);
-
-                                    // ── Aim from ground point toward player's look target ──
-                                    Vector3f eyePos2 = new Vector3f(player.position.x,
-                                            player.position.y + 1.6f, player.position.z);
-                                    Vector3f aimTarget = new Vector3f(eyePos2)
-                                            .add(new Vector3f(lookDir).mul(60f));
-                                    Vector3f fireDir = new Vector3f(aimTarget).sub(firePos);
-                                    float fireDirLen = fireDir.length();
-                                    if (fireDirLen > 0.001f) fireDir.div(fireDirLen);
-                                    // Guarantee a minimum loft so the ball never immediately hits the ground
-                                    if (fireDir.y < 0.12f) {
-                                        fireDir.y = 0.12f;
-                                        float hLen = (float)Math.sqrt(fireDir.x*fireDir.x + fireDir.z*fireDir.z);
-                                        if (hLen > 0f) { fireDir.x /= hLen; fireDir.z /= hLen; }
-                                        fireDir.normalize();
-                                    }
+                                    // ── Fire from eye in exact look direction ─────
+                                    // (Previously spawned from the ground — user requested
+                                    //  it fires wherever you aim, like a normal projectile)
+                                    Vector3f firePos = new Vector3f(
+                                            player.position.x + lookDir.x * 1.2f,
+                                            player.position.y + 1.6f + lookDir.y * 1.2f,
+                                            player.position.z + lookDir.z * 1.2f);
+                                    Vector3f fireDir = new Vector3f(lookDir); // already normalised
                                     Vector3f fireVel = new Vector3f(fireDir).mul(speed);
                                     stoneShotList.add(new ActiveStoneShot(firePos, fireVel, scale, chargeF));
                                     AudioManager.stopContinuous("charging");
@@ -2919,8 +3104,12 @@ public class Window {
                             }
 
                             // Pick the right model for the enemy type
-                            com.leaf.game.anim.AnimModel targetModel = (enemy.type == Enemy.Type.SLIME && slimeAnimModel != null)
-                                    ? slimeAnimModel : enemyAnimModel;
+                            boolean isGuardian = enemy.type == Enemy.Type.GUARDIAN || enemy.type == Enemy.Type.GOLEM;
+
+                            com.leaf.game.anim.AnimModel targetModel =
+                                    (enemy.type == Enemy.Type.SLIME    && slimeAnimModel != null) ? slimeAnimModel
+                                            : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
+                                              : enemyAnimModel;
 
                             com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
                                     enemy.id, id -> {
@@ -2931,7 +3120,10 @@ public class Window {
 
                             // Decide target animation from AI state
                             String want;
-                            if (!enemy.alive) {
+                            if (isGuardian) {
+                                // The guardian drives its own clip (patrol walk/idle + 3-hit combo).
+                                want = enemy.getAnimName();
+                            } else if (!enemy.alive) {
                                 want = "death";
                             } else if (enemy.state == Enemy.State.CHASE || enemy.state == Enemy.State.RETREATING) {
                                 // ── USE "move" FOR SLIMES, "walk" FOR OTHERS ──
@@ -2944,8 +3136,12 @@ public class Window {
 
                             String cur = ap.getCurrentClip();
                             if (!want.equals(cur)) {
+                                // Guardian attack clips are one-shot (1.3 s swing); everything else loops.
+                                boolean once = isGuardian && want.startsWith("attack");
                                 if ("death".equals(want)) {
                                     ap.play("death", false);
+                                } else if (once) {
+                                    ap.play(want, false);
                                 } else if (cur == null || "idle".equals(cur) || "death".equals(cur)) {
                                     ap.play(want);
                                 } else {
@@ -2955,11 +3151,17 @@ public class Window {
                             ap.tick(rawDeltaTime);
 
                             // Face the player (Y-axis rotation only).
-                            // +PI because Blockbench authors a model's front on the -Z face
-                            // (where the slime's eyes are); without it the model faces away.
-                            float faceDx = player.position.x - enemy.position.x;
-                            float faceDz = player.position.z - enemy.position.z;
-                            float faceY  = (float) Math.atan2(faceDx, faceDz) + (float) Math.PI;
+                            // The golem's front is on the +Z face, so it needs NO +PI flip
+                            // (the slime/enemy_basic front is -Z and does). The guardian
+                            // controls its own facing (patrol heading / toward player).
+                            float faceY;
+                            if (isGuardian) {
+                                faceY = enemy.facingYaw;
+                            } else {
+                                float faceDx = player.position.x - enemy.position.x;
+                                float faceDz = player.position.z - enemy.position.z;
+                                faceY  = (float) Math.atan2(faceDx, faceDz) + (float) Math.PI;
+                            }
 
                             float[] sv = enemy.renderScaleVec();
                             Matrix4f worldMat = new Matrix4f()
@@ -3182,9 +3384,11 @@ public class Window {
                     if (showDebug)       hud.renderDebugMenu();
                     if (showNoiseViewer) noiseVis.renderWindow(player);
                     if (showChat || !chatHistory.isEmpty()) hud.renderChatBox(wh[0]);
-                    if (isPaused)        hud.renderPauseMenu(ww[0], wh[0]);
-                    if (showHelp)        hud.renderHelpScreen((float)ww[0], (float)wh[0]);
-                    if (showUnlockCard)  hud.renderUnlockCard((float)ww[0], (float)wh[0]);
+                    if (isPaused)         hud.renderPauseMenu(ww[0], wh[0]);
+                    if (showHelp)         hud.renderHelpScreen((float)ww[0], (float)wh[0]);
+                    if (showUnlockCard)         hud.renderUnlockCard((float)ww[0], (float)wh[0]);
+                    if (practiceAbility != null) hud.renderPractice((float)ww[0], (float)wh[0]);
+                    if (showDeathScreen)         hud.renderDeathScreen((float)ww[0], (float)wh[0]);
                     // Screen flash overlay (snipe, explosion, melee hit, etc.)
                     ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
                     // Snow particle overlay — drawn on top of world, under flash

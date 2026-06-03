@@ -7,6 +7,7 @@ import com.leaf.game.util.Camera;
 import com.leaf.game.util.RaycastResult;
 import com.leaf.game.world.Block;
 import com.leaf.game.world.Chunk;
+import imgui.ImFont;
 import imgui.ImGui;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -15,11 +16,11 @@ import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 
 /**
- * WindowHud — all ImGui HUD / menu rendering extracted from Window.java.
+ * WindowHud  -  all ImGui HUD / menu rendering extracted from Window.java.
  *
  * Every method reads game state via the {@code win} back-reference.
  * Fields accessed as {@code win.fieldName} are package-private in Window.java
- * (no access modifier — same-package visibility is sufficient).
+ * (no access modifier  -  same-package visibility is sufficient).
  */
 class WindowHud {
 
@@ -32,7 +33,7 @@ class WindowHud {
     /**
      * Flip to true to expose the developer options (load game, multiplayer,
      * pre-gen radius). The shipping start screen shows only "Play Game".
-     * The code below is kept intact so nothing is lost — just hidden.
+     * The code below is kept intact so nothing is lost  -  just hidden.
      */
     private static final boolean DEV_MENU = false;
 
@@ -51,12 +52,15 @@ class WindowHud {
         // ── The one shipping button ───────────────────────────────────────────
         if (ImGui.button("PLAY", 320, 44)) {
             win.network = null;
-            win.playIntroOnSpawn = true;   // roll the intro cutscene once spawn loads
+            win.playIntroOnSpawn = true;
+            win.gameEnded = false;
+            win.player.progression.reset();   // fresh run: start with only the starting kit
+            RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
             win.startPreload();
         }
         ImGui.spacing();
 
-        // ── Developer options (hidden unless DEV_MENU) — kept in code ─────────
+        // ── Developer options (hidden unless DEV_MENU)  -  kept in code ─────────
         if (DEV_MENU) {
             ImGui.separator(); ImGui.spacing();
             ImGui.text("Pre-generate Radius:");
@@ -127,7 +131,7 @@ class WindowHud {
         }
         ImGui.spacing();
         if (ImGui.button("Controls  [F1]", 180, 30)) {
-            // Open help without closing pause — win.player can read then ESC back
+            // Open help without closing pause  -  win.player can read then ESC back
             win.showHelp = true;
         }
         ImGui.spacing();
@@ -178,7 +182,7 @@ class WindowHud {
         ImGui.popTextWrapPos();
         ImGui.spacing(); ImGui.separator(); ImGui.spacing();
 
-        cardCenter("[ SPACE ]   begin wave " + (win.unlockCardWave + 1), 1.0f, 0.9f, 0.4f);
+        cardCenter("[ ENTER ]   begin wave " + (win.unlockCardWave + 1), 1.0f, 0.9f, 0.4f);
         ImGui.end();
     }
 
@@ -189,94 +193,150 @@ class WindowHud {
         ImGui.textColored(r, g, b, 1.0f, text);
     }
 
-<<<<<<< HEAD
     // ─────────────────────────────────────────────────────────────────────────
-    //  PRACTICE OVERLAY  (pause-and-teach for Kamui / Seal / Manhattan Transfer)
+    //  PRACTICE OVERLAY  — multi-step hands-on ability tutorial
     // ─────────────────────────────────────────────────────────────────────────
     void renderPractice(float w, float h) {
-        Progression.Ability a = win.practiceAbility;
-        if (a == null) return;
+        if (win.practiceAbility == null || win.practiceSteps == null) return;
+        AbilityPractice.Step step = win.practiceSteps.get(win.practiceStepIndex);
+        int totalSteps = win.practiceSteps.size();
+        boolean celebrating = win.practiceStepDone;
 
-        // Step instructions per complex ability
-        String title; String[] steps; String goal;
-        switch (a) {
-            case KAMUI -> {
-                title = "KAMUI";
-                steps = new String[]{
-                    "[ Z ]  — Press to enter Kamui (phase into another dimension)",
-                    "While inside: you are INVINCIBLE. Enemies pass through you.",
-                    "Left-click while in Kamui to charge an absorption vortex.",
-                    "Press [ Z ] again (or run out of MP) to exit.",
-                };
-                goal = win.practiceUsed ? "Kamui used.  Wave beginning..." : "Try it now — press  [ Z ]";
-            }
-            case SEAL -> {
-                title = "MINATO'S SEAL";
-                steps = new String[]{
-                    "[ H ]  — Throw a teleport seal.  It sticks to any surface.",
-                    "[ B ]  — Instantly teleport to the seal you're looking at.",
-                    "[ N ]  — Recall the targeted seal without teleporting.",
-                    "Up to 5 seals active at once — set escape routes in advance.",
-                };
-                goal = win.practiceUsed ? "Seal placed.  Wave beginning..." : "Try it now — throw a seal with  [ H ]";
-            }
-            case STAND -> {
-                title = "MANHATTAN TRANSFER";
-                steps = new String[]{
-                    "[ X ]  — Deploy your combat drone above you.",
-                    "         It auto-aims and fires at the nearest enemy.",
-                    "[ TAB ] — Enter drone perspective to pilot it yourself.",
-                    "         WASD to fly, Space/Shift for altitude, Left-click to fire.",
-                    "         Requires DUAL LINE-OF-SIGHT: you → drone, and drone → target.",
-                };
-                goal = win.practiceUsed ? "Drone deployed.  Wave beginning..." : "Try it now — deploy the drone with  [ X ]";
-            }
-            default -> { title = ""; steps = new String[]{}; goal = ""; }
-        }
-
-        // Soft dim — world stays visible so player can immediately try the ability
         imgui.ImDrawList draw = ImGui.getForegroundDrawList();
-        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.60f));
+        ImFont font = ImGui.getFont();
+        float base = ImGui.getFontSize();
 
-        // Compact centred card — bottom-half so it doesn't cover where enemies might be
-        float cardW = 560f;
-        float cardH = 80f + steps.length * 22f + 50f;
-        float cx = w * 0.5f, cy = h * 0.7f;
-        draw.addRectFilled(cx - cardW/2, cy - cardH/2, cx + cardW/2, cy + cardH/2,
-                ImGui.colorConvertFloat4ToU32(0.04f, 0.05f, 0.10f, 0.92f), 10f);
-        draw.addRect(cx - cardW/2, cy - cardH/2, cx + cardW/2, cy + cardH/2,
-                ImGui.colorConvertFloat4ToU32(0.4f, 0.5f, 0.9f, 0.6f), 10f, 0, 1.5f);
+        // Dim background — world stays visible so the player can act
+        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.50f));
 
-        float ty = cy - cardH/2 + 14f;
-        // Title bar
-        String header = "PRACTICE — " + title;
-        float tw2 = ImGui.calcTextSize(header).x;
-        draw.addText(cx - tw2/2, ty, ImGui.colorConvertFloat4ToU32(0.45f, 0.95f, 1.0f, 1f), header);
-        ty += 26f;
+        // Card sits at the bottom quarter of the screen
+        float cardW = Math.min(640f, w - 40f);
+        float cx = w * 0.5f;
+        float lineH = base * 1.45f;
+        // Count instruction lines (split on \n)
+        String[] instrLines = step.instruction.split("\n");
+        float cardH = 18f + lineH              // title row
+                    + instrLines.length * lineH + 8f // instructions
+                    + lineH + 12f;             // goal/skip row
+        float cardY = h - cardH - 28f;
 
-        // Steps
-        for (String step : steps) {
-            draw.addText(cx - cardW/2 + 18f, ty, ImGui.colorConvertFloat4ToU32(0.88f, 0.9f, 0.95f, 0.95f), step);
-            ty += 22f;
+        draw.addRectFilled(cx - cardW/2, cardY, cx + cardW/2, cardY + cardH,
+                ImGui.colorConvertFloat4ToU32(0.03f, 0.04f, 0.10f, 0.93f), 8f);
+        int borderCol = celebrating
+                ? ImGui.colorConvertFloat4ToU32(0.35f, 1.0f, 0.5f, 0.9f)   // green when done
+                : ImGui.colorConvertFloat4ToU32(0.4f,  0.55f, 0.9f, 0.6f);
+        draw.addRect(cx - cardW/2, cardY, cx + cardW/2, cardY + cardH, borderCol, 8f, 0, 1.8f);
+
+        float ty = cardY + 10f;
+
+        // Title + step counter
+        String abilName = win.practiceAbility.label;
+        String progress = totalSteps > 1
+                ? "  (" + (win.practiceStepIndex + 1) + " / " + totalSteps + ")"
+                : "";
+        String header = "PRACTICE  -  " + abilName + progress;
+        if (step.keyHint != null) header += "    [ " + step.keyHint + " ]";
+        float hw = ImGui.calcTextSize(header).x;
+        draw.addText(cx - hw/2, ty, ImGui.colorConvertFloat4ToU32(0.45f, 0.95f, 1.0f, 1f), header);
+        ty += lineH + 2f;
+
+        // Instruction lines
+        for (String line : instrLines) {
+            float lw = ImGui.calcTextSize(line).x;
+            draw.addText(font, base, cx - lw/2, ty,
+                    ImGui.colorConvertFloat4ToU32(0.88f, 0.90f, 0.95f, 0.95f), line);
+            ty += lineH;
         }
         ty += 8f;
 
-        // Goal / confirmation — changes colour once used
-        int goalCol = win.practiceUsed
-                ? ImGui.colorConvertFloat4ToU32(0.3f, 1f, 0.4f, 1f)
-                : ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.35f, 1f);
-        float gw = ImGui.calcTextSize(goal).x;
-        draw.addText(cx - gw/2, ty, goalCol, goal);
-        ty += 22f;
+        // Progress counter (e.g. "2 / 3") if required > 1
+        if (step.required > 1) {
+            int done = Math.min(win.practiceCtx.counter, step.required);
+            String prog = done + " / " + step.required;
+            float progW = ImGui.calcTextSize(prog).x;
+            int progCol = done >= step.required
+                    ? ImGui.colorConvertFloat4ToU32(0.3f, 1.0f, 0.45f, 1f)
+                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.3f,  1f);
+            draw.addText(cx - progW/2, ty, progCol, prog);
+            ty += lineH;
+        }
 
-        // Timer bar + skip hint  (input handled exclusively in Window game-loop tick)
-        int secs = Math.max(0, (int) win.practiceTimer);
-        boolean canSkipNow = win.practiceTimer < Window.PRACTICE_TIMEOUT - 1.2f;
-        String skip = canSkipNow
-                ? "Auto-continues in " + secs + "s   —   [ ENTER ] to skip"
-                : "Try the ability above to continue...";
-        float sw2 = ImGui.calcTextSize(skip).x;
-        draw.addText(cx - sw2/2, ty, ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.8f), skip);
+        // Warning text (e.g. "HOLD it! Don't click!") — shown in red above skip row
+        if (win.practiceWarnText != null && win.practiceWarnTimer > 0f) {
+            float pulse = 0.75f + 0.25f * (float) Math.sin(glfwGetTime() * 10f);
+            float ww = ImGui.calcTextSize(win.practiceWarnText).x;
+            draw.addText(font, base * 1.05f, cx - ww/2, ty,
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.25f, pulse), win.practiceWarnText);
+            ty += lineH;
+        }
+
+        // Celebration OR skip/prompt row
+        if (celebrating && step.doneText != null) {
+            float pulse = 0.7f + 0.3f * (float) Math.sin(glfwGetTime() * 8f);
+            float dw = ImGui.calcTextSize(step.doneText).x;
+            draw.addText(cx - dw/2, ty,
+                    ImGui.colorConvertFloat4ToU32(0.3f, 1.0f, 0.45f, pulse), step.doneText);
+        } else if (!celebrating) {
+            String skipTxt = step.allowSkip && win.practiceStepAge > 2f
+                    ? "[ ENTER ]  skip" : "";
+            if (!skipTxt.isEmpty()) {
+                float sw = ImGui.calcTextSize(skipTxt).x;
+                draw.addText(cx - sw/2, ty,
+                        ImGui.colorConvertFloat4ToU32(0.5f, 0.52f, 0.6f, 0.6f), skipTxt);
+            }
+        }
+
+        // Dummy HP bar above the card
+        com.leaf.game.entity.Enemy dummy = win.practiceCtx.dummy();
+        if (dummy != null && dummy.alive) {
+            float barW = 180f, barH = 12f;
+            float bx = cx - barW/2, by = cardY - barH - 22f;
+            float frac = Math.max(0f, dummy.health / dummy.maxHealth);
+            draw.addRectFilled(bx, by, bx + barW, by + barH,
+                    ImGui.colorConvertFloat4ToU32(0.15f, 0.05f, 0.05f, 0.85f), 4f);
+            draw.addRectFilled(bx, by, bx + barW * frac, by + barH,
+                    ImGui.colorConvertFloat4ToU32(0.9f, 0.25f, 0.25f, 0.9f), 4f);
+            draw.addRect(bx, by, bx + barW, by + barH,
+                    ImGui.colorConvertFloat4ToU32(0.5f, 0.2f, 0.2f, 0.6f), 4f, 0, 1.2f);
+            String dLabel = "TARGET  HP";
+            draw.addText(cx - ImGui.calcTextSize(dLabel).x/2, by - 16f,
+                    ImGui.colorConvertFloat4ToU32(0.75f, 0.55f, 0.55f, 0.7f), dLabel);
+        }
+
+        // ── HUD arrows: draw a pointer to the mana bar and/or cooldown icon ──
+        if (step.showManaArrow || step.showCooldownArrow) {
+            renderHudAnnotations(draw, font, base, w, h, step.showManaArrow, step.showCooldownArrow);
+        }
+    }
+
+    /** Draw animated arrows pointing at the mana bar and/or the cooldown icon strip. */
+    private void renderHudAnnotations(imgui.ImDrawList draw, ImFont font, float base,
+                                      float w, float h,
+                                      boolean showMana, boolean showCooldown) {
+        float pulse = 0.6f + 0.4f * (float)Math.abs(Math.sin(glfwGetTime() * 4f));
+        int arrowCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.92f, 0.3f, pulse);
+        int labelCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.5f, pulse);
+
+        if (showMana) {
+            // Mana bar sits at h-80 + 14+3 = h-63  (hpHeight=14, gap=3)
+            float mpY   = h - 63f;
+            float mpCx  = w * 0.5f;
+            // Arrow pointing right  (from left of bar)
+            float ax = mpCx - 120f, ay = mpY + 5f;
+            draw.addLine(ax - 28f, ay, ax, ay, arrowCol, 2.5f);
+            draw.addTriangleFilled(ax, ay - 5f, ax, ay + 5f, ax + 8f, ay, arrowCol);
+            draw.addText(font, base * 0.9f, ax - 80f, ay - 8f, labelCol, "MANA");
+        }
+
+        if (showCooldown) {
+            // Cooldown icon row 1 is bottom-right.  Point at that area.
+            float iconY = h - 90f;   // approximate top of the icon strip
+            float iconX = w - 180f;
+            float ax = iconX - 10f, ay = iconY + 15f;
+            draw.addLine(ax - 32f, ay, ax, ay, arrowCol, 2.5f);
+            draw.addTriangleFilled(ax, ay - 5f, ax, ay + 5f, ax + 8f, ay, arrowCol);
+            draw.addText(font, base * 0.9f, ax - 105f, ay - 8f, labelCol, "COOLDOWN");
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -284,7 +344,7 @@ class WindowHud {
     // ─────────────────────────────────────────────────────────────────────────
     void renderDeathScreen(float w, float h) {
         imgui.ImDrawList draw = ImGui.getForegroundDrawList();
-        // Heavy dark overlay — the world is barely visible
+        // Heavy dark overlay  -  the world is barely visible
         draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
 
         float cy = h * 0.5f - 90f;
@@ -316,7 +376,7 @@ class WindowHud {
         }
 
         cy += 16f;
-        // Prompt — blink
+        // Prompt  -  blink
         String prompt = "[ ENTER ]  Try again";
         float pa = 0.5f + 0.5f * (float) Math.abs(Math.sin(glfwGetTime() * 2.8f));
         float pw = ImGui.calcTextSize(prompt).x;
@@ -324,8 +384,6 @@ class WindowHud {
                 ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.9f, pa), prompt);
     }
 
-=======
->>>>>>> parent of ef87356 (Added practice sessions)
     void renderChatBox(int screenHeight) {
         ImGui.setNextWindowPos(10, screenHeight - 280);
         ImGui.setNextWindowSize(400, 200);
@@ -452,7 +510,7 @@ class WindowHud {
                         by[s] = midY + (boltRng.nextFloat() - 0.5f) * 6f;
                     }
 
-                    // Layer stack: wide outer glow → medium fill → thin bright core
+                    // Layer stack: wide outer glow -> medium fill -> thin bright core
                     float[][] layers = path == 0
                             // Primary path: massive, juicy
                             ? new float[][]{{38f, 0.04f}, {22f, 0.12f}, {12f, 0.30f}, {5f, 0.70f}, {2f, 1.00f}}
@@ -518,7 +576,7 @@ class WindowHud {
             // Edge burst: bright orange, very brief
             float edgeA = grabFlash * 0.65f;
             float innerA = grabFlash * 0.20f;
-            // Full-screen orange tint (very subtle — just a wash of colour)
+            // Full-screen orange tint (very subtle  -  just a wash of colour)
             draw.addRectFilled(0, 0, screenW, screenH,
                     ImGui.colorConvertFloat4ToU32(1.0f, 0.45f, 0.05f, innerA));
             // Strong orange flash on all four edges (like a punch frame)
@@ -568,7 +626,7 @@ class WindowHud {
                     draw.addCircle(vx, vy, ringRadius, ringCol, 48, 2.5f);
                 }
 
-                // Spiral arms — lines drawn from vortex outward along rotating angles
+                // Spiral arms  -  lines drawn from vortex outward along rotating angles
                 int numArms = 8;
                 for (int ai = 0; ai < numArms; ai++) {
                     float baseAngle = (float) (t * 3.5 + ai * Math.PI * 2.0 / numArms);
@@ -740,14 +798,14 @@ class WindowHud {
         float chargeF = win.player.attacks.getChargeFrac();
 
         if (chargeF > 0f) {
-            // ── SNIPER / CHARGING MODE — red shrinking circle crosshair ──────────
+            // ── SNIPER / CHARGING MODE  -  red shrinking circle crosshair ──────────
             int red = ImGui.colorConvertFloat4ToU32(1.0f, 0.12f, 0.12f, 0.95f);
-            float ring = Math.max(4f, 18f - 13f * chargeF); // shrinks from 18 → 5 px as charge builds
+            float ring = Math.max(4f, 18f - 13f * chargeF); // shrinks from 18 -> 5 px as charge builds
 
             draw.addCircle(cx, cy, ring, red, 32, 1.8f);
             draw.addCircleFilled(cx, cy, 2.2f, red, 8);
 
-            // Four radiating lines — sniper style
+            // Four radiating lines  -  sniper style
             float gap = ring + 2f, ext = gap + 9f;
             draw.addLine(cx - ext, cy, cx - gap, cy, red, 1.5f);
             draw.addLine(cx + gap, cy, cx + ext, cy, red, 1.5f);
@@ -760,19 +818,19 @@ class WindowHud {
             draw.addText(cx - 11f, cy + ring + 7f, red, pct);
 
         } else {
-            // ── NORMAL — plain white crosshair ────────────────────────────────────
+            // ── NORMAL  -  plain white crosshair ────────────────────────────────────
             draw.addLine(cx - 11, cy, cx + 11, cy, black, 3.0f);
             draw.addLine(cx, cy - 11, cx, cy + 11, black, 3.0f);
             draw.addLine(cx - 10, cy, cx + 10, cy, white, 1.5f);
             draw.addLine(cx, cy - 10, cx, cy + 10, white, 1.5f);
 
-            // ── KAMUI ABSORPTION RING — shows charge building around crosshair ──
+            // ── KAMUI ABSORPTION RING  -  shows charge building around crosshair ──
             if (win.player.abilities.isKamui && win.player.abilities.absorptionCharge > 0f) {
                 float ch = win.player.abilities.absorptionCharge;
                 double now = glfwGetTime();
                 float pulse = 0.7f + 0.3f * (float) Math.sin(now * 12.0);
                 int ringCol = ImGui.colorConvertFloat4ToU32(0.8f, 0.2f, 1.0f, 0.85f * ch * pulse);
-                // Clockwise fill arc — approximate with many small lines around the ring
+                // Clockwise fill arc  -  approximate with many small lines around the ring
                 int absRing = ImGui.colorConvertFloat4ToU32(0.7f, 0.0f, 1.0f, 0.9f * ch);
                 draw.addCircle(cx, cy, 22f, absRing, 48, 3.0f * ch);
                 // Filling arc (simplified: full circle but alpha scaled by charge)
@@ -813,8 +871,23 @@ class WindowHud {
                 draw.addCircle(cx, cy, circleRadius, grey, 32, 2.0f); // Yellow circle
             }
         }
-        // Health bar and win.hotbar — hidden while piloting the drone
+        // Health bar and win.hotbar  -  hidden while piloting the drone
         if (!win.player.stand.isInStandPerspective()) {
+
+            // Revival immunity indicator — pulsing golden border around the whole screen.
+            if (win.immunityTimer > 0f) {
+                float t = win.immunityTimer / win.REVIVAL_IMMUNITY_SECS;
+                float flicker = 0.3f + 0.55f * (float) Math.abs(Math.sin(glfwGetTime() * 10f));
+                float alpha = t * flicker;  // fades out as immunity expires
+                int immCol = ImGui.colorConvertFloat4ToU32(1f, 0.88f, 0.3f, alpha);
+                float bw = 8f;
+                draw.addRect(bw, bw, screenW - bw, screenH - bw, immCol, 0f, 0, bw);
+                // Small label
+                String immLabel = "PROTECTED  " + (int)Math.ceil(win.immunityTimer) + "s";
+                float lw = ImGui.calcTextSize(immLabel).x;
+                draw.addText(cx - lw/2, screenH - 140f,
+                        ImGui.colorConvertFloat4ToU32(1f, 0.95f, 0.5f, alpha * 1.5f), immLabel);
+            }
 
             // Health bar
             float hpWidth = 200f, hpHeight = 14f;
@@ -957,7 +1030,7 @@ class WindowHud {
             float barW = 180f, barH = 12f;
             float barX = cx - barW / 2f, barY = cy + 42f;
 
-            // Power bar (gold → red-orange)
+            // Power bar (gold -> red-orange)
             draw.addRectFilled(barX, barY, barX + barW, barY + barH,
                     ImGui.colorConvertFloat4ToU32(0.1f, 0.1f, 0.1f, 0.7f), 4f);
             float fill = win.player.abilities.chargePower;
@@ -971,7 +1044,7 @@ class WindowHud {
             draw.addText(cx - 43, barY + 16f, black, powerLabel);
             draw.addText(cx - 44, barY + 15f, barColor, powerLabel);
 
-            // Readiness bar (blue — shows chunk generation progress)
+            // Readiness bar (blue  -  shows chunk generation progress)
             float rdyBarY = barY + 30f;
             draw.addRectFilled(barX, rdyBarY, barX + barW, rdyBarY + barH,
                     ImGui.colorConvertFloat4ToU32(0.05f, 0.05f, 0.15f, 0.7f), 4f);
@@ -982,7 +1055,7 @@ class WindowHud {
             draw.addRect(barX, rdyBarY, barX + barW, rdyBarY + barH, black, 4f, 0, 1.5f);
 
             String rdyLabel = win.pathReadiness >= 0.95f
-                    ? "PATH CLEAR — release [G] to fire!"
+                    ? "PATH CLEAR  -  release [G] to fire!"
                     : String.format("Loading terrain... %.0f%%", win.pathReadiness * 100f);
             int rdyTextColor = win.pathReadiness >= 0.95f
                     ? ImGui.colorConvertFloat4ToU32(0.2f, 1.0f, 0.4f, 0.95f)
@@ -1036,7 +1109,7 @@ class WindowHud {
             draw.addText(cx - 51f, shY + shH + 3f, ImGui.colorConvertFloat4ToU32(0.6f, 0.85f, 1.0f, 0.9f), shLabel);
 
             // ── LOS status indicators ─────────────────────────────────────────
-            // Two dots: owner→stand (left), stand→target (right).
+            // Two dots: owner->stand (left), stand->target (right).
             // Green = clear, red = blocked.
             float dotY = shY + shH + 26f;
             float dotR = 5f;
@@ -1044,7 +1117,7 @@ class WindowHud {
             int losRed = ImGui.colorConvertFloat4ToU32(1.0f, 0.2f, 0.15f, 1.0f);
             int losDim = ImGui.colorConvertFloat4ToU32(0.4f, 0.4f, 0.4f, 0.6f);
 
-            // Owner→Stand
+            // Owner->Stand
             float d1X = cx - 28f;
             draw.addCircleFilled(d1X, dotY, dotR,
                     win.player.stand.losOwnerToStand ? losGreen : losRed, 16);
@@ -1055,7 +1128,7 @@ class WindowHud {
             // Connecting line
             draw.addLine(cx - 22f, dotY, cx + 22f, dotY, losDim, 1.2f);
 
-            // Stand→Target
+            // Stand->Target
             float d2X = cx + 28f;
             draw.addCircleFilled(d2X, dotY, dotR,
                     win.player.stand.losStandToTarget ? losGreen : losRed, 16);
@@ -1090,7 +1163,7 @@ class WindowHud {
                 float mScrY = (1f - (mNdcY * 0.5f + 0.5f)) * screenH;
 
                 if (mOnScreen) {
-                    // Pulsing gold ring — master is visible from drone camera
+                    // Pulsing gold ring  -  master is visible from drone camera
                     int masterGold = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.15f, 0.9f);
                     draw.addCircle(mScrX, mScrY, 11f, masterGold, 24, 2.5f);
                     draw.addCircle(mScrX, mScrY, 7f, masterGold, 24, 1.5f);
@@ -1154,8 +1227,8 @@ class WindowHud {
 
         // ── SEAL HUD MARKERS ─────────────────────────────────────────────────
         // Always-visible indicators so seals are spottable at any distance:
-        //   • On-screen seal  → pulsing cyan ring + distance label
-        //   • Off-screen seal → small cyan arrow on screen edge
+        //   • On-screen seal  -> pulsing cyan ring + distance label
+        //   • Off-screen seal -> small cyan arrow on screen edge
         if (!win.player.stand.isInStandPerspective()
                 && !win.player.seals.placedSeals.isEmpty()) {
 
@@ -1205,7 +1278,7 @@ class WindowHud {
                     draw.addText(sx - 13f, labelY, sealDimText, distLabel);
 
                 } else {
-                    // Off-screen arrow — same dot-product technique as the stand indicator
+                    // Off-screen arrow  -  same dot-product technique as the stand indicator
                     Vector3f toSeal = new Vector3f(seal.position)
                             .sub(camera.position).normalize();
                     Vector3f right = camera.getRight();
@@ -1301,7 +1374,7 @@ class WindowHud {
                 float barW = 44f, barH = 6f;
                 float barX = sx - barW / 2f, barY = sy - barH;
 
-                // Downward chevron above the bar — makes enemies pop against terrain.
+                // Downward chevron above the bar  -  makes enemies pop against terrain.
                 float hurt = enemy.hitFlashTimer > 0f ? 1f : 0f;
                 int chevCol = ImGui.colorConvertFloat4ToU32(1f, 0.25f + 0.6f * hurt, 0.2f, 0.95f);
                 float chTop = barY - 16f, chMid = barY - 7f;
@@ -1310,7 +1383,7 @@ class WindowHud {
                 // Background
                 draw.addRectFilled(barX, barY, barX + barW, barY + barH,
                         ImGui.colorConvertFloat4ToU32(0.1f, 0f, 0f, 0.8f), 2f);
-                // HP fill — green → red as health drops
+                // HP fill  -  green -> red as health drops
                 float r = 0.15f + 0.85f * (1f - hpFrac);
                 float g = 0.9f * hpFrac;
                 draw.addRectFilled(barX, barY, barX + barW * hpFrac, barY + barH,
@@ -1362,7 +1435,7 @@ class WindowHud {
             renderWelcomeBanner(draw, screenW, screenH, win.welcomeTimer);
         }
 
-        // Onboarding objective banner (top-centre) — guides new players.
+        // Onboarding objective banner (top-centre)  -  guides new players.
         // Waits for the welcome banner to fade so they don't overlap.
         if (!win.showHelp && win.welcomeTimer <= 0f) {
             renderObjectiveBanner(draw, screenW, screenH);
@@ -1375,7 +1448,7 @@ class WindowHud {
         }
 
         // ── WAVE COUNTER ──────────────────────────────────────────────────────
-        // Top-left: "WAVE N — next in Xs" or "MAX ENEMIES REACHED"
+        // Top-left: "WAVE N  -  next in Xs" or "MAX ENEMIES REACHED"
         if (!win.player.stand.isInStandPerspective() && !win.player.debugMode) {
             int waveNum = win.enemyManager.getWaveNumber();
             float waveTimer = win.enemyManager.getWaveTimer();
@@ -1391,7 +1464,7 @@ class WindowHud {
                 waveLabel = String.format("Next wave in %.0fs", waveTimer);
                 waveColor = ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.65f);
             } else {
-                waveLabel = String.format("WAVE %d  — next in %.0fs  [%d alive]",
+                waveLabel = String.format("WAVE %d   -  next in %.0fs  [%d alive]",
                         waveNum, waveTimer, liveCount);
                 // Pulse red as the next wave approaches (< 8 s)
                 float urgency = Math.max(0f, 1f - waveTimer / 8f);
@@ -1425,22 +1498,23 @@ class WindowHud {
 
     void renderAbilityHUD(imgui.ImDrawList draw, float screenW, float screenH) {
         // ── Ability icon layout: two rows, bottom-right ───────────────────────
-        // Row 1 (top): Q  E  F  G  Z  K  J   — combat abilities + swap
-        // Row 2 (bot): X  H  B  V             — Stand + Seal + Substitute
+        // Row 1 (top): Q  E  F  G  Z  K  J    -  combat abilities + swap
+        // Row 2 (bot): X  H  B  V              -  Stand + Seal + Substitute
         float iconSize = 28f;
         float spacing = 6f;
         int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
         int grey = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
 
-        // Row 1 — Q / E / F / G / Z / K / J / M / I / U / O
+        // Row 1  -  only show abilities the player has unlocked
         {
-            // ── 5 CORE abilities ─────────────────────────────────────────────
-            // Kept to the essentials so the screen isn't overwhelming on first play.
-            // Every other ability (Kamui, Seals, Drone, etc.) still works — it just
-            // doesn't have a dedicated icon here. Press [F1] to see the full list.
-            // ── ROW 1 (top): MELEE / SUSTAIN ─────────────────────────────────
+            Progression prog = win.player.progression;
             String[] labels   = {"Q",    "F",     "M",        "O",    "L"   };
             String[] tooltips = {"Dash", "Slash", "Quagmire", "Grab", "Heal"};
+            Progression.Ability[] gates = {
+                Progression.Ability.DASH, Progression.Ability.SLASH,
+                Progression.Ability.QUAGMIRE, Progression.Ability.GRAB,
+                Progression.Ability.HEAL,
+            };
             float quagFrac = (GameConfig.quagmireCooldown > 0f)
                     ? Math.max(0f, Math.min(1f, 1f - win.quagmireCooldown / GameConfig.quagmireCooldown))
                     : 1f;
@@ -1452,36 +1526,38 @@ class WindowHud {
                     win.player.abilities.getHealCooldownFrac(),
             };
             int[] colors = {
-                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),  // Q dash: cyan
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f), // F slash: amber
-                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f), // M quagmire: muddy green
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.20f, 0.15f, 1.0f), // O grab: red
-                    ImGui.colorConvertFloat4ToU32(0.15f, 0.85f, 0.35f, 1.0f), // L heal: green
+                    ImGui.colorConvertFloat4ToU32(0.45f, 0.88f, 1.0f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.55f, 0.06f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.55f, 0.82f, 0.20f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.20f, 0.15f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.15f, 0.85f, 0.35f, 1.0f),
             };
 
-            float totalW = labels.length * iconSize + (labels.length - 1) * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize * 3f - spacing * 2f - 14f; // top row of 3
-
-            for (int i = 0; i < labels.length; i++) {
-                float x = startX + i * (iconSize + spacing);
-                draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                float fillH = iconSize * fracs[i];
-                if (fillH > 0.5f) {
-                    draw.addRectFilled(x, startY + iconSize - fillH,
-                            x + iconSize, startY + iconSize, colors[i], 5f);
+            // Build the visible subset
+            java.util.List<Integer> vis = new java.util.ArrayList<>();
+            for (int i = 0; i < labels.length; i++) if (prog.isUnlocked(gates[i])) vis.add(i);
+            if (!vis.isEmpty()) {
+                float totalW = vis.size() * iconSize + (vis.size() - 1) * spacing;
+                float startX = screenW - totalW - 14f;
+                float startY = screenH - iconSize * 3f - spacing * 2f - 14f;
+                for (int slot = 0; slot < vis.size(); slot++) {
+                    int i = vis.get(slot);
+                    float x = startX + slot * (iconSize + spacing);
+                    draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
+                    float fillH = iconSize * fracs[i];
+                    if (fillH > 0.5f)
+                        draw.addRectFilled(x, startY + iconSize - fillH, x + iconSize, startY + iconSize, colors[i], 5f);
+                    draw.addRect(x, startY, x + iconSize, startY + iconSize, black, 5f, 0, 1.5f);
+                    draw.addText(x + 9f, startY + 7f, black, labels[i]);
+                    draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels[i]);
+                    draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips[i]);
                 }
-                draw.addRect(x, startY, x + iconSize, startY + iconSize, black, 5f, 0, 1.5f);
-                draw.addText(x + 9f, startY + 7f, black, labels[i]);
-                draw.addText(x + 9f, startY + 7f,
-                        ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels[i]);
-                draw.addText(x, startY + iconSize + 2f,
-                        ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips[i]);
             }
         }
 
-        // ── ROW 2 (middle): RANGED ATTACKS ───────────────────────────────────
+        // ── ROW 2 (middle): RANGED ATTACKS  -  only unlocked ───────────────────
         {
+            Progression prog = win.player.progression;
             boolean standDeployed = win.player.stand.isDeployed();
             float stoneFrac = win.isChargingStoneCanon
                     ? Math.min(1f, win.stoneCanonCharge / GameConfig.stoneCanonMaxCharge)
@@ -1494,64 +1570,96 @@ class WindowHud {
             float lightA = win.player.lightning.isCharging()
                     ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
 
-            String[] labelsR   = {"C",     "I",     "U",         "X"        };
-            String[] tooltipsR = {"Snipe", "Stone", "Lightning", "Drone"    };
+            String[] labelsR   = {"C",     "I",            "U",         "X"     };
+            String[] tooltipsR = {"Snipe", "Stone Canon",  "Lightning", "Drone" };
+            Progression.Ability[] gatesR = {
+                Progression.Ability.SNIPE, Progression.Ability.STONE_CANON,
+                Progression.Ability.LIGHTNING, Progression.Ability.STAND,
+            };
             float[]  fracsR    = {
-                    win.player.attacks.getSnipeIconFrac(),
-                    stoneFrac,
-                    lightFrac,
+                    win.player.attacks.getSnipeIconFrac(), stoneFrac, lightFrac,
                     standDeployed ? 1f : win.player.stand.getRedeployCooldownFrac(),
             };
             int[] colorsR = {
-                    ImGui.colorConvertFloat4ToU32(0.75f, 0.45f, 1.0f, 1.0f),  // C snipe: violet
-                    ImGui.colorConvertFloat4ToU32(0.70f, 0.55f, 0.35f, 1.0f), // I stone: tan
-                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightA),// U lightning
-                    ImGui.colorConvertFloat4ToU32(1.0f,  0.82f, 0.15f, 1.0f), // X drone: gold
+                    ImGui.colorConvertFloat4ToU32(0.75f, 0.45f, 1.0f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.70f, 0.55f, 0.35f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, lightA),
+                    ImGui.colorConvertFloat4ToU32(1.0f,  0.82f, 0.15f, 1.0f),
             };
             boolean[] glowR = { false, win.isChargingStoneCanon, win.player.lightning.isCharging(), standDeployed };
 
-            float totalW = labelsR.length * iconSize + (labelsR.length - 1) * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize * 2f - spacing - 14f; // middle row of 3
-            drawIconRow(draw, labelsR, tooltipsR, fracsR, colorsR, glowR,
-                        startX, startY, iconSize, spacing, black, grey);
+            java.util.List<Integer> visR = new java.util.ArrayList<>();
+            for (int i = 0; i < labelsR.length; i++) if (prog.isUnlocked(gatesR[i])) visR.add(i);
+            if (!visR.isEmpty()) {
+                float totalW = visR.size() * iconSize + (visR.size() - 1) * spacing;
+                float startX = screenW - totalW - 14f;
+                float startY = screenH - iconSize * 2f - spacing - 14f;
+                for (int slot = 0; slot < visR.size(); slot++) {
+                    int i = visR.get(slot);
+                    float x = startX + slot * (iconSize + spacing);
+                    boolean g = glowR[i];
+                    draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
+                    float fillH = iconSize * Math.max(0f, Math.min(1f, fracsR[i]));
+                    if (fillH > 0.5f) draw.addRectFilled(x, startY + iconSize - fillH, x + iconSize, startY + iconSize, colorsR[i], 5f);
+                    draw.addRect(x, startY, x + iconSize, startY + iconSize, g ? colorsR[i] : black, 5f, 0, g ? 2.5f : 1.5f);
+                    draw.addText(x + 9f, startY + 7f, black, labelsR[i]);
+                    draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f,1f,1f,0.9f), labelsR[i]);
+                    draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f,0.8f,0.8f,0.7f), tooltipsR[i]);
+                }
+            }
         }
 
-        // ── ROW 3 (bottom): SPATIAL / SPECIAL ────────────────────────────────
+        // ── ROW 3 (bottom): SPATIAL / SPECIAL  -  only unlocked ────────────────
         {
+            Progression prog = win.player.progression;
             float kamuiFrac = win.player.abilities.isKamui
                     ? win.player.abilities.kamuiTimer / GameConfig.kamuiMaxDuration
                     : win.player.abilities.getKamuiCooldownFrac();
             float subFrac = (GameConfig.substituteCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, win.substituteCooldown / GameConfig.substituteCooldown))
-                    : 0f;
+                    ? Math.max(0f, Math.min(1f, win.substituteCooldown / GameConfig.substituteCooldown)) : 0f;
             float swapFrac = (GameConfig.todoCooldown > 0f)
-                    ? Math.max(0f, Math.min(1f, 1f - win.todoSwapCooldown / GameConfig.todoCooldown))
-                    : 1f;
+                    ? Math.max(0f, Math.min(1f, 1f - win.todoSwapCooldown / GameConfig.todoCooldown)) : 1f;
 
-            String[] labelsS   = {"Z",     "K",      "V",     "B",      "J"   };
-            String[] tooltipsS = {"Kamui", "Pillar", "Sub",   "Raijin", "Swap"};
+            String[] labelsS   = {"Z",     "K",      "V",    "B",      "J"   };
+            String[] tooltipsS = {"Kamui", "Pillar", "Sub",  "Seal",   "Swap" };
+            Progression.Ability[] gatesS = {
+                Progression.Ability.KAMUI, Progression.Ability.PILLAR,
+                Progression.Ability.SUBSTITUTE, Progression.Ability.SEAL,
+                Progression.Ability.SWAP,
+            };
             float[]  fracsS    = {
-                    kamuiFrac,
-                    win.player.abilities.getPillarCooldownFrac(),
+                    kamuiFrac, win.player.abilities.getPillarCooldownFrac(),
                     win.substitutePrimed ? 1f : (1f - subFrac),
-                    win.player.seals.getTeleportCooldownFrac(),
-                    swapFrac,
+                    win.player.seals.getTeleportCooldownFrac(), swapFrac,
             };
             int[] colorsS = {
-                    ImGui.colorConvertFloat4ToU32(0.85f, 0.0f,  0.9f,  1.0f),  // Z kamui: purple
-                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f),  // K pillar: grey
-                    ImGui.colorConvertFloat4ToU32(0.9f,  0.92f, 1.0f,  1.0f),  // V substitute: white
-                    ImGui.colorConvertFloat4ToU32(0.1f,  0.75f, 0.65f, 1.0f),  // B raijin: teal
-                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f,  1.0f),  // J swap: magenta
+                    ImGui.colorConvertFloat4ToU32(0.85f, 0.0f,  0.9f,  1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.6f,  0.6f,  0.65f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.9f,  0.92f, 1.0f,  1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.1f,  0.75f, 0.65f, 1.0f),
+                    ImGui.colorConvertFloat4ToU32(0.95f, 0.4f,  1.0f,  1.0f),
             };
             boolean[] glowS = { win.player.abilities.isKamui, false, win.substitutePrimed, false, false };
 
-            float totalW = labelsS.length * iconSize + (labelsS.length - 1) * spacing;
-            float startX = screenW - totalW - 14f;
-            float startY = screenH - iconSize - 14f; // bottom row of 3
-            drawIconRow(draw, labelsS, tooltipsS, fracsS, colorsS, glowS,
-                        startX, startY, iconSize, spacing, black, grey);
+            java.util.List<Integer> visS = new java.util.ArrayList<>();
+            for (int i = 0; i < labelsS.length; i++) if (prog.isUnlocked(gatesS[i])) visS.add(i);
+            if (!visS.isEmpty()) {
+                float totalW = visS.size() * iconSize + (visS.size() - 1) * spacing;
+                float startX = screenW - totalW - 14f;
+                float startY = screenH - iconSize - 14f;
+                for (int slot = 0; slot < visS.size(); slot++) {
+                    int i = visS.get(slot);
+                    float x = startX + slot * (iconSize + spacing);
+                    boolean g = glowS[i];
+                    draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
+                    float fillH = iconSize * Math.max(0f, Math.min(1f, fracsS[i]));
+                    if (fillH > 0.5f) draw.addRectFilled(x, startY + iconSize - fillH, x + iconSize, startY + iconSize, colorsS[i], 5f);
+                    draw.addRect(x, startY, x + iconSize, startY + iconSize, g ? colorsS[i] : black, 5f, 0, g ? 2.5f : 1.5f);
+                    draw.addText(x + 9f, startY + 7f, black, labelsS[i]);
+                    draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f,1f,1f,0.9f), labelsS[i]);
+                    draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f,0.8f,0.8f,0.7f), tooltipsS[i]);
+                }
+            }
         }
     }
 
@@ -1603,13 +1711,13 @@ class WindowHud {
         Progression prog = win.player.progression;
         for (Progression.Ability a : prog.allAbilities()) {
             if (prog.isUnlocked(a)) {
-                helpRow(a.key, a.label + " — " + a.desc);
+                helpRow(a.key, a.label + "  -  " + a.desc);
             } else {
                 int wv = prog.unlockWaveOf(a);
                 ImGui.textDisabled("  [ ? ]");
                 ImGui.sameLine(230f);
                 ImGui.pushTextWrapPos(0f);
-                ImGui.textDisabled("Locked — survive wave " + wv + " to unlock.");
+                ImGui.textDisabled("Locked  -  survive wave " + wv + " to unlock.");
                 ImGui.popTextWrapPos();
             }
         }
@@ -1619,14 +1727,15 @@ class WindowHud {
         ImGui.textColored(0.5f, 0.9f, 1.0f, 1.0f, "MOVEMENT");
         ImGui.separator();
         helpRow("WASD", "Move. Double-tap W to sprint.");
-        helpRow("Space", "Jump. Double-tap Space to toggle flight mode.");
+        helpRow("Space", "Jump. Double-tap Space to toggle flight mode (must unlock FLIGHT first).");
+        helpRow("[Shift] in air", "GROUND SLAM  -  hold Shift while falling, just before you land. Craters the terrain and damages nearby enemies. The bigger the fall, the bigger the crater.");
         helpRow("Shift (in air)", "While falling from height: slam into the ground. Craters the terrain and damages nearby enemies. Bigger fall = bigger crater.");
         ImGui.spacing();
 
         // ── FLIGHT ────────────────────────────────────────────────────────────
         ImGui.textColored(0.4f, 0.75f, 1.0f, 1.0f, "FLIGHT  (double-tap Space to enter / exit)");
         ImGui.separator();
-        helpRow("[V]  Cycle mode", "Switch between SKIM → SOAR → GRAPPLE flight modes.");
+        helpRow("[V]  Cycle mode", "Switch between SKIM -> SOAR -> GRAPPLE flight modes.");
         helpRow("SKIM", "Glide forward with gravity. Pitch your camera to angle up or down. Good for fast horizontal travel.");
         helpRow("SOAR", "Full 3D free-flight. WASD moves relative to your look direction. Space = up, Shift = down. No gravity.");
         helpRow("GRAPPLE", "Swing on a grapple line attached to the block you're looking at.");
@@ -1653,10 +1762,10 @@ class WindowHud {
         // ── SPECIAL ABILITIES ─────────────────────────────────────────────────
         ImGui.textColored(0.85f, 0.35f, 1.0f, 1.0f, "SPECIAL ABILITIES");
         ImGui.separator();
-        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously — ends when mana runs out or you press Z again. Cooldown after use.");
+        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously  -  ends when mana runs out or you press Z again. Cooldown after use.");
         helpRow("[J]  Position Swap", "Instantly teleport-swap with the nearest enemy in range. Great for escaping a bad spot or dropping enemies off cliffs.");
-        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed — you blink backward, a paper dummy appears at your old position, then explodes a moment later damaging nearby enemies.");
-        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact — they cannot move for several seconds.");
+        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed  -  you blink backward, a paper dummy appears at your old position, then explodes a moment later damaging nearby enemies.");
+        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact  -  they cannot move for several seconds.");
         helpRow("[I]  Stone Canon", "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile (you can't move while charging). Release to fire. The longer you charge, the more stone consumed and the bigger the explosion.");
         helpRow("[L]  Heal", "Hold [L] to channel healing energy. Restores health over time while held. You cannot move while channeling.");
         ImGui.spacing();
@@ -1666,9 +1775,9 @@ class WindowHud {
         ImGui.separator();
         helpRow("[X]", "Deploy your drone directly above you. Press [X] again to recall it.");
         helpRow("[TAB]", "Enter the drone's perspective to pilot it manually. Press [TAB] again to return to your body.");
-        helpRow("Piloting — WASD", "Fly the drone. Space = up, Shift = down.");
-        helpRow("Piloting — click", "Fire a shot in whatever direction the drone is facing.");
-        helpRow("Not piloting — click", "The drone auto-targets and fires at the nearest visible enemy.");
+        helpRow("Piloting  -  WASD", "Fly the drone. Space = up, Shift = down.");
+        helpRow("Piloting  -  click", "Fire a shot in whatever direction the drone is facing.");
+        helpRow("Not piloting  -  click", "The drone auto-targets and fires at the nearest visible enemy.");
         helpRow("Two dots (top-right)", "Indicate line-of-sight: yours (left dot) and the drone's (right dot). Both green = clear shot.");
         helpRow("Gold diamond", "Shows your drone's position on screen. If it's off-screen, an arrow on the edge points toward it.");
         ImGui.spacing();
@@ -1686,7 +1795,7 @@ class WindowHud {
         ImGui.textColored(0.7f, 1.0f, 0.6f, 1.0f, "TIME DILATION");
         ImGui.separator();
         helpRow("[R]  Slow time", "Everything moves in slow motion (including enemies). Useful for dodging or lining up a shot.");
-        helpRow("[Y]  Fast time", "Speeds up time — enemies and projectiles move faster. Use carefully.");
+        helpRow("[Y]  Fast time", "Speeds up time  -  enemies and projectiles move faster. Use carefully.");
         ImGui.spacing();
 
         // ── WORLD & UI ────────────────────────────────────────────────────────
@@ -1699,8 +1808,8 @@ class WindowHud {
         helpRow("[ESC]", "Open the pause menu.");
         helpRow("[F1]", "This screen.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
-        helpRow("[F5]", "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel — impossible geometry via FBO portal rendering.");
-        helpRow("[F6]", "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways — two are hidden portals that loop you back to the start.");
+        helpRow("[F5]", "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel  -  impossible geometry via FBO portal rendering.");
+        helpRow("[F6]", "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways  -  two are hidden portals that loop you back to the start.");
         ImGui.spacing();
 
         // ── MANA & COOLDOWNS ──────────────────────────────────────────────────
@@ -1713,9 +1822,9 @@ class WindowHud {
         // ── ENEMY TYPES ───────────────────────────────────────────────────────
         ImGui.textColored(0.9f, 0.3f, 0.1f, 1.0f, "ENEMIES");
         ImGui.separator();
-        helpRow("Green tint", "ZOMBIE — slow melee chaser. Closes in and bites. Low damage per hit but relentless. Appears in large numbers early on.");
-        helpRow("Bone-white", "THROWER — skeleton archer. Keeps its distance and pelts you with projectiles. Kill it before it repositions.");
-        helpRow("Blue-grey (large)", "GOLEM — heavily armored tank. Slow but extremely tanky. Slams the ground for AoE damage and throws boulders. Appears from wave 3.");
+        helpRow("Green tint", "ZOMBIE  -  slow melee chaser. Closes in and bites. Low damage per hit but relentless. Appears in large numbers early on.");
+        helpRow("Bone-white", "THROWER  -  skeleton archer. Keeps its distance and pelts you with projectiles. Kill it before it repositions.");
+        helpRow("Blue-grey (large)", "GOLEM  -  heavily armored tank. Slow but extremely tanky. Slams the ground for AoE damage and throws boulders. Appears from wave 3.");
         helpRow("Health bars", "Float above every enemy. Green = healthy, yellow = damaged, red = near death.");
         helpRow("Waves", "Enemies spawn in escalating waves. The wave number shows in the top-left. Later waves bring more Golems.");
 
@@ -1820,7 +1929,7 @@ class WindowHud {
     void renderWelcomeBanner(imgui.ImDrawList draw,
                              float screenW, float screenH, float timer) {
         float alpha;
-        if (timer > 5.6f) alpha = (6f - timer) / 0.4f;   // fade-in 0→0.4 s
+        if (timer > 5.6f) alpha = (6f - timer) / 0.4f;   // fade-in 0->0.4 s
         else if (timer < 1.0f) alpha = timer;                   // fade-out last 1 s
         else alpha = 1f;
         alpha = Math.max(0f, Math.min(1f, alpha));
@@ -1910,7 +2019,7 @@ class WindowHud {
                 win.showDebug = false;
                 glfwSetInputMode(win.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             } catch (NumberFormatException ignored) {
-                // Bad input — do nothing
+                // Bad input  -  do nothing
             }
         }
         ImGui.end();
@@ -1995,7 +2104,7 @@ class WindowHud {
 
     // ── SNOW PARTICLE OVERLAY ─────────────────────────────────────────────────
     // Screen-space procedural snowfall drawn with ImGui foreground draw list.
-    // Uses a deterministic hash (no per-flake Java state) — N seeds produce N
+    // Uses a deterministic hash (no per-flake Java state)  -  N seeds produce N
     // stable screen-position trajectories that drift downward + windward over time.
     //
     //  intensity  0..1  driven by altitude above snowAltitude
