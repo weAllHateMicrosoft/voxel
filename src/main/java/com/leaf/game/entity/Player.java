@@ -21,8 +21,8 @@ public class Player {
     public boolean can(Progression.Ability a) { return progression.isUnlocked(a); }
 
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
-    public float health    = 20.0f;
-    public float maxHealth = 20.0f;
+    public float health    = 50.0f;
+    public float maxHealth = 50.0f;
     public float highestY  = -1000f;
 
     // ── MANA ──────────────────────────────────────────────────────────────────
