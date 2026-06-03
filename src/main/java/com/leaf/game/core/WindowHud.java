@@ -1809,6 +1809,7 @@ class WindowHud {
         helpRow("[F1]", "This screen.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
         helpRow("[F6]", "Non-Euclidean 'Layered Rooms' (testing). Teleports you into a 2x2 building with a central pillar. Walk CLOCKWISE around the pillar and you pass through endless distinct rooms (1,2,3,4,5,6...) instead of looping after four. Press [F6] again to leave.");
+        helpRow("[F7]", "'Orbital Annihilation' (testing). Aim at a block and press F7 for a ~13s cinematic: cross-beam eruption, global blackout + scan dome, sky sigil, implosion that CARVES a crater, then an RGB orbital laser. Stand back.");
         ImGui.spacing();
 
         // ── MANA & COOLDOWNS ──────────────────────────────────────────────────

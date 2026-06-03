@@ -397,6 +397,28 @@ public class Window {
     private float   nerPrevX, nerPrevY, nerPrevZ, nerPrevYaw, nerPrevPitch;
     private boolean nerPrevWaves = true;   // wave-spawner state to restore on exit
     private boolean lastF6 = false;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  "ORBITAL ANNIHILATION"  — dramatic cinematic strike (toggle/fire with F7)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // A timed, phased set-piece, rendered almost entirely as screen-space neon VFX
+    // over a near-black backdrop (so there's zero risk to the real render pipeline):
+    //   P0 INITIATE  (0.0–2.0): green targeting box, cardinal cross beams, ground rings
+    //   P1 BLACKOUT  (2.0–6.0): world snaps black; cyan core; expanding scan dome
+    //   P2 MANDALA   (6.0–8.0): sky sigil + glitch rain at full dome radius
+    //   P3 IMPLOSION (8.0–10.0): everything sucks back to a point → CARVE crater → silence
+    //   P4 STRIKE    (10.0–12.8): RGB-split orbital laser, white flash, violent shake
+    private boolean orbitalActive  = false;
+    private float   orbitalT       = 0f;     // seconds since fire
+    private float   orbEpiX, orbEpiY, orbEpiZ; // epicentre (block centre)
+    private boolean orbCarved      = false;   // one-shot: crater carved
+    private boolean orbStruck      = false;   // one-shot: laser flash fired
+    private boolean lastF7         = false;
+    private final Matrix4f orbProjView = new Matrix4f(); // last frame's proj*view, for projecting the epicentre
+    // Phase boundaries (seconds)
+    private static final float ORB_P1 = 2.0f, ORB_P2 = 6.0f, ORB_P3 = 8.0f,
+                               ORB_CARVE = 9.3f, ORB_P4 = 10.0f, ORB_END = 12.8f;
+    private static final int   ORB_CRATER_R = 12;   // crater radius (blocks)
     // ─────────────────────────────────────────────────────────────────────────
 
     public void run() {
@@ -2387,6 +2409,12 @@ public class Window {
                     // re-skin the hidden diagonal room to keep the sequence going.
                     if (nerActive) updateLayeredRooms();
 
+                    // ── ORBITAL ANNIHILATION (F7 fires the cinematic) ─────────
+                    boolean f7Now = glfwGetKey(window, GLFW_KEY_F7) == GLFW_PRESS;
+                    if (f7Now && !lastF7 && !orbitalActive) startOrbitalStrike(camera);
+                    lastF7 = f7Now;
+                    if (orbitalActive) updateOrbitalStrike(rawDeltaTime);
+
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -2701,6 +2729,7 @@ public class Window {
 // ── PASS 1: OPAQUE ────────────────────────────────────────────
                 // Frustum culling uses the ACTUAL view matrix (including roll/shake)
                 Matrix4f renderMvp = new Matrix4f(projection).mul(view);
+                orbProjView.set(renderMvp);   // captured for the F7 cinematic overlay
                 float[] frustumPlanes = extractFrustumPlanes(renderMvp);
 
                 // ── DIRTY MESH REBUILD ─────────────────────────────────────────
@@ -3273,6 +3302,8 @@ public class Window {
                     if (showUnlockCard)         hud.renderUnlockCard((float)ww[0], (float)wh[0]);
                     if (practiceAbility != null) hud.renderPractice((float)ww[0], (float)wh[0]);
                     if (showDeathScreen)         hud.renderDeathScreen((float)ww[0], (float)wh[0]);
+                    // Orbital Annihilation cinematic (screen-space neon over a black backdrop)
+                    if (orbitalActive) renderOrbitalOverlay((float)ww[0], (float)wh[0], orbProjView);
                     // Screen flash overlay (snipe, explosion, melee hit, etc.)
                     ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
                     // Snow particle overlay — drawn on top of world, under flash
@@ -3995,6 +4026,287 @@ public class Window {
 
         hintText  = "Room " + nerRoom;
         hintTimer = 2.5f;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  "ORBITAL ANNIHILATION"  (F7)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** F7: pick an epicentre and start the cinematic. */
+    private void startOrbitalStrike(Camera camera) {
+        if (lastTarget != null && lastTarget.hit) {
+            orbEpiX = lastTarget.hitX + 0.5f;
+            orbEpiY = lastTarget.hitY + 0.5f;
+            orbEpiZ = lastTarget.hitZ + 0.5f;
+        } else {
+            // No block targeted — drop it ~14 blocks ahead, on the first surface below.
+            float dirx = (float) Math.cos(camera.yaw), dirz = (float) Math.sin(camera.yaw);
+            float tx = player.position.x + dirx * 14f;
+            float tz = player.position.z + dirz * 14f;
+            int bx = (int) Math.floor(tx), bz = (int) Math.floor(tz);
+            float ey = player.position.y;
+            for (int y = (int) player.position.y + 6; y >= 1; y--) {
+                if (world.getBlock(bx, y, bz).isSolid()) { ey = y + 0.5f; break; }
+            }
+            orbEpiX = tx; orbEpiY = ey; orbEpiZ = tz;
+        }
+        orbitalT = 0f; orbCarved = false; orbStruck = false; orbitalActive = true;
+        hintText = "ORBITAL ANNIHILATION  —  stand back."; hintTimer = 3f;
+    }
+
+    /** Drive shake, fire one-shots (carve + flashes), end the sequence. */
+    private void updateOrbitalStrike(float dt) {
+        orbitalT += dt;
+        float t = orbitalT;
+        if (t < ORB_P1) {
+            orbShake(0.18f, 0.02f + 0.05f * (t / ORB_P1));            // eruption rumble
+        } else if (t >= ORB_CARVE && !orbCarved) {
+            carveOrbitalCrater();                                     // the world-erasing moment
+            orbCarved = true;
+            orbShake(0.6f, 0.55f);
+            ScreenEffectManager.INSTANCE.flash(0.4f, 1f, 0.5f, 0.5f, 0.18f);
+        } else if (t >= ORB_P4 && t < ORB_END) {
+            orbShake(0.22f, 0.34f);                                   // violent during the beam
+            if (!orbStruck) {
+                orbStruck = true;
+                ScreenEffectManager.INSTANCE.flash(1f, 1f, 1f, 0.9f, 0.22f);
+            }
+        }
+        if (t >= ORB_END) orbitalActive = false;
+    }
+
+    private void orbShake(float dur, float amp) {
+        activeShakeDuration  = dur;
+        activeShakeAmplitude = amp;
+        smashShakeTimer      = Math.max(smashShakeTimer, dur);
+    }
+
+    /** Erase a vertical cylinder of voxels at the epicentre and remesh the hit chunks. */
+    private void carveOrbitalCrater() {
+        int cxB = (int) Math.floor(orbEpiX);
+        int cyB = (int) Math.floor(orbEpiY);
+        int czB = (int) Math.floor(orbEpiZ);
+        int R = ORB_CRATER_R;
+        int yTop = cyB + 5;
+        int yBot = Math.max(1, cyB - 45);
+
+        java.util.Set<Long> cols = new java.util.HashSet<>();   // affected (cx,cz) chunk columns
+        for (int dx = -R; dx <= R; dx++) {
+            for (int dz = -R; dz <= R; dz++) {
+                if (dx * dx + dz * dz > R * R) continue;
+                int wx = cxB + dx, wz = czB + dz;
+                for (int y = yBot; y <= yTop; y++) {
+                    if (world.getBlock(wx, y, wz) == Block.AIR) continue;
+                    world.setBlockWithMeta(wx, y, wz, Block.AIR, (byte) 0, false);
+                }
+                int ccx = Math.floorDiv(wx, Chunk.SIZE), ccz = Math.floorDiv(wz, Chunk.SIZE);
+                for (int ax = -1; ax <= 1; ax++)
+                    for (int az = -1; az <= 1; az++)
+                        cols.add(((long) (ccx + ax + 32768) << 20) | (ccz + az + 32768));
+            }
+        }
+        int cyLo = Math.floorDiv(yBot, Chunk.HEIGHT), cyHi = Math.floorDiv(yTop, Chunk.HEIGHT);
+        for (long key : cols) {
+            int kcx = (int) ((key >> 20) & 0xFFFFF) - 32768;
+            int kcz = (int) (key & 0xFFFFF) - 32768;
+            for (int cy = cyLo; cy <= cyHi; cy++) {
+                Chunk c = world.getChunk(kcx, cy, kcz);
+                if (c != null) world.buildChunkMeshes(c);
+            }
+        }
+    }
+
+    // ── Screen-space VFX ────────────────────────────────────────────────────────
+
+    private static int orbCol(float r, float g, float b, float a) {
+        return ImGui.colorConvertFloat4ToU32(
+                Math.min(1f, r), Math.min(1f, g), Math.min(1f, b), Math.max(0f, Math.min(1f, a)));
+    }
+
+    /** Project a world point to screen pixels, or null if behind the camera. */
+    private float[] orbProject(Matrix4f pv, float wx, float wy, float wz, float w, float h) {
+        org.joml.Vector4f c = new org.joml.Vector4f(wx, wy, wz, 1f);
+        pv.transform(c);
+        if (c.w <= 0.0001f) return null;
+        return new float[]{ (c.x / c.w * 0.5f + 0.5f) * w, (1f - (c.y / c.w * 0.5f + 0.5f)) * h };
+    }
+
+    private void orbStrokeEllipse(imgui.ImDrawList d, float cx, float cy,
+                                  float rx, float ry, int col, float thick) {
+        int N = 48; float px = 0, py = 0;
+        for (int i = 0; i <= N; i++) {
+            double a = 2 * Math.PI * i / N;
+            float x = cx + (float) Math.cos(a) * rx;
+            float y = cy + (float) Math.sin(a) * ry;
+            if (i > 0) d.addLine(px, py, x, y, col, thick);
+            px = x; py = y;
+        }
+    }
+
+    /** Arc of an ellipse between two angles (radians). */
+    private void orbStrokeArc(imgui.ImDrawList d, float cx, float cy, float rx, float ry,
+                              double a0, double a1, int col, float thick) {
+        int N = 40; float px = 0, py = 0;
+        for (int i = 0; i <= N; i++) {
+            double a = a0 + (a1 - a0) * i / N;
+            float x = cx + (float) Math.cos(a) * rx;
+            float y = cy + (float) Math.sin(a) * ry;
+            if (i > 0) d.addLine(px, py, x, y, col, thick);
+            px = x; py = y;
+        }
+    }
+
+    private void orbGlowDot(imgui.ImDrawList d, float cx, float cy, float r,
+                            float rr, float gg, float bb) {
+        for (int i = 5; i >= 1; i--) {
+            float radius = r * i / 5f;
+            d.addCircleFilled(cx, cy, radius, orbCol(rr, gg, bb, 0.5f / i), 24);
+        }
+        d.addCircleFilled(cx, cy, Math.max(2f, r * 0.18f), orbCol(1f, 1f, 1f, 0.95f), 16);
+    }
+
+    /** Wireframe box around the epicentre voxel. */
+    private void orbDrawBox(imgui.ImDrawList d, Matrix4f pv, float w, float h,
+                            float bx, float by, float bz, int col) {
+        float[][] c = new float[8][];
+        int idx = 0;
+        for (int xi = 0; xi <= 1; xi++)
+            for (int yi = 0; yi <= 1; yi++)
+                for (int zi = 0; zi <= 1; zi++)
+                    c[idx++] = orbProject(pv, bx + xi, by + yi, bz + zi, w, h);
+        int[][] edges = {
+            {0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}
+        };
+        for (int[] e : edges) {
+            float[] a = c[e[0]], b = c[e[1]];
+            if (a != null && b != null) d.addLine(a[0], a[1], b[0], b[1], col, 2f);
+        }
+    }
+
+    private void orbMandala(imgui.ImDrawList d, float cx, float cy, float R, float t) {
+        float rot = t * 0.6f;
+        int blue  = orbCol(0.5f, 0.8f, 1f, 0.85f);
+        int faint = orbCol(0.4f, 0.7f, 1f, 0.35f);
+        for (int k = 1; k <= 3; k++) d.addCircle(cx, cy, R * k / 3f, blue, 48, 2f);
+        for (int i = 0; i < 12; i++) {                      // radial spokes
+            double a = rot + i * Math.PI / 6;
+            d.addLine(cx, cy, cx + (float) Math.cos(a) * R, cy + (float) Math.sin(a) * R, faint, 1.5f);
+        }
+        float hx = 0, hy = 0;                               // rotating hexagon
+        for (int i = 0; i <= 6; i++) {
+            double a = -rot + i * Math.PI / 3;
+            float x = cx + (float) Math.cos(a) * R * 0.8f, y = cy + (float) Math.sin(a) * R * 0.8f;
+            if (i > 0) d.addLine(hx, hy, x, y, blue, 2f);
+            hx = x; hy = y;
+        }
+    }
+
+    private void orbGlitchRain(imgui.ImDrawList d, float w, float h, float t) {
+        int col = orbCol(1f, 1f, 1f, 0.55f);
+        for (int i = 0; i < 70; i++) {
+            float fx = ((i * 73) % 100) / 100f * w;
+            float speed = 320 + (i % 5) * 130;
+            float y = ((i * 137) % (int) h + t * speed) % h;
+            d.addLine(fx, y, fx, y + 26f, col, 1.6f);
+        }
+    }
+
+    private void orbRgbLaser(imgui.ImDrawList d, float ex, float h, float t, float fade) {
+        float wc    = (16f + 6f * (float) Math.sin(t * 40)) * fade;     // flickering core width
+        float split = (10f + 5f * (float) Math.sin(t * 33)) * fade;     // chromatic separation
+        // RGB fringes (offset bands), then bright white core on top.
+        d.addRectFilled(ex - wc - split, 0, ex + wc - split, h, orbCol(1f, 0.1f, 0.1f, 0.55f)); // red ←
+        d.addRectFilled(ex - wc + split, 0, ex + wc + split, h, orbCol(0.1f, 0.3f, 1f, 0.55f)); // blue →
+        d.addRectFilled(ex - wc * 0.8f,  0, ex + wc * 0.8f,  h, orbCol(0.1f, 1f, 0.2f, 0.5f));  // green
+        d.addRectFilled(ex - wc * 0.45f, 0, ex + wc * 0.45f, h, orbCol(1f, 1f, 1f, 0.95f));     // white core
+    }
+
+    private float orbBackdropAlpha(float t) {
+        if (t < ORB_P1)            return 0f;                              // P0: world visible
+        if (t < ORB_P1 + 0.25f)    return (t - ORB_P1) / 0.25f * 0.96f;    // snap to black
+        if (t < ORB_CARVE)         return 0.96f;
+        if (t < ORB_P4)            return 1.0f;                            // silence: pure black
+        float p = (t - ORB_P4) / (ORB_END - ORB_P4);                      // P4: fade to reveal crater
+        return Math.max(0f, 1.0f - p * 1.4f);
+    }
+
+    /** Draw the whole cinematic in screen space over a black backdrop. */
+    private void renderOrbitalOverlay(float w, float h, Matrix4f pv) {
+        imgui.ImDrawList d = ImGui.getForegroundDrawList();
+        float t = orbitalT;
+        float[] epi = orbProject(pv, orbEpiX, orbEpiY, orbEpiZ, w, h);
+        float ex = (epi != null) ? epi[0] : w * 0.5f;
+        float ey = (epi != null) ? epi[1] : h * 0.62f;
+        float maxR = Math.min(w, h) * 0.55f;
+
+        float backA = orbBackdropAlpha(t);
+        if (backA > 0.001f) d.addRectFilled(0, 0, w, h, orbCol(0f, 0f, 0f, backA));
+
+        // ── P0: targeting box, cardinal cross beams, expanding ground rings ──
+        if (t < ORB_P1) {
+            float[] xp = orbProject(pv, orbEpiX + 60f, orbEpiY, orbEpiZ, w, h);
+            float[] xm = orbProject(pv, orbEpiX - 60f, orbEpiY, orbEpiZ, w, h);
+            float[] zp = orbProject(pv, orbEpiX, orbEpiY, orbEpiZ + 60f, w, h);
+            float[] zm = orbProject(pv, orbEpiX, orbEpiY, orbEpiZ - 60f, w, h);
+            int beam = orbCol(0.75f, 1f, 0.85f, 0.9f);
+            if (xp != null && xm != null) d.addLine(xm[0], xm[1], xp[0], xp[1], beam, 6f);
+            if (zp != null && zm != null) d.addLine(zm[0], zm[1], zp[0], zp[1], beam, 6f);
+            orbDrawBox(d, pv, w, h, (float) Math.floor(orbEpiX), (float) Math.floor(orbEpiY),
+                       (float) Math.floor(orbEpiZ), orbCol(0.2f, 1f, 0.3f, 1f));
+            orbGlowDot(d, ex, ey, 24f, 0.8f, 1f, 0.85f);
+            float p = t / ORB_P1;
+            for (int i = 0; i < 3; i++) {
+                float rr = ((p + i * 0.34f) % 1f) * maxR;
+                orbStrokeEllipse(d, ex, ey, rr, rr * 0.32f,
+                        orbCol(0.4f, 1f, 0.5f, 0.5f * (1f - rr / maxR)), 3f);
+            }
+        }
+
+        // ── P1+P2: expanding scan dome + inner contour rings ──
+        if (t >= ORB_P1 && t < ORB_P3) {
+            float p = Math.min(1f, (t - ORB_P1) / (ORB_P2 - ORB_P1));   // grows over P1, holds in P2
+            float domeR = p * maxR;
+            int dome = orbCol(0.3f, 1f, 0.55f, 0.85f);
+            orbStrokeArc(d, ex, ey, domeR, domeR, Math.PI, 2 * Math.PI, dome, 3f); // top silhouette
+            orbStrokeEllipse(d, ex, ey, domeR, domeR * 0.32f, dome, 3f);           // ground ring
+            for (int i = 1; i <= 4; i++) {
+                float rr = domeR * (i / 5f);
+                orbStrokeEllipse(d, ex, ey, rr, rr * 0.32f, orbCol(0.2f, 0.9f, 0.4f, 0.25f), 1.5f);
+            }
+            orbGlowDot(d, ex, ey - 6f, 14f, 0.5f, 1f, 1f);
+        }
+
+        // ── P2: sky mandala + glitch rain ──
+        if (t >= ORB_P2 && t < ORB_P3) {
+            float[] sky = orbProject(pv, orbEpiX, orbEpiY + 80f, orbEpiZ, w, h);
+            float mx = (sky != null) ? sky[0] : ex, my = (sky != null) ? sky[1] : h * 0.18f;
+            orbMandala(d, mx, my, Math.min(w, h) * 0.16f, t);
+            orbGlitchRain(d, w, h, t);
+        }
+
+        // ── P3: implosion → silence ──
+        if (t >= ORB_P3 && t < ORB_P4) {
+            if (t < ORB_CARVE) {
+                float p = (t - ORB_P3) / (ORB_CARVE - ORB_P3);
+                float rr = (1f - p) * maxR;
+                int col = orbCol(0.5f, 1f, 0.6f, 0.9f);
+                orbStrokeEllipse(d, ex, ey, rr, rr * 0.32f, col, 4f);
+                orbStrokeArc(d, ex, ey, rr, rr, Math.PI, 2 * Math.PI, col, 4f);
+                orbGlowDot(d, ex, ey, 10f + (1f - p) * 40f, 0.7f, 1f, 0.8f);
+            } else {
+                orbGlowDot(d, ex, ey, 6f, 1f, 1f, 1f);   // lone pixel of light in the dark
+            }
+        }
+
+        // ── P4: RGB orbital laser + impact bloom ──
+        if (t >= ORB_P4) {
+            float p = (t - ORB_P4) / (ORB_END - ORB_P4);
+            float fade = (p < 0.8f) ? 1f : Math.max(0f, 1f - (p - 0.8f) / 0.2f);
+            orbRgbLaser(d, ex, h, t, fade);
+            orbGlowDot(d, ex, ey, 20f + 40f * fade, 1f, 1f, 1f);
+            float ringR = p * maxR * 1.2f;
+            orbStrokeEllipse(d, ex, ey, ringR, ringR * 0.32f, orbCol(1f, 1f, 1f, 0.6f * fade), 4f);
+        }
     }
 
 }
