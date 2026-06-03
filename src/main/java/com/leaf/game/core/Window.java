@@ -107,6 +107,8 @@ public class Window {
      * While any death cutscene is active: player update is frozen (same gate as showDeathScreen).
      */
     boolean      deathCutscenePending  = false;
+    /** Set when the 3rd death fires the Kamui awakening; consumed once revival ends. */
+    private boolean kamuiJustUnlockedThisRevival = false;
     /** Seconds of post-revival immunity remaining (player is invincible, flickers). */
     float        immunityTimer = 0f;
     static final float REVIVAL_IMMUNITY_SECS = 4f;
@@ -940,12 +942,13 @@ public class Window {
                     player.abilities.isDashing        = false;
                     immunityTimer = REVIVAL_IMMUNITY_SECS;   // 4 s of invincibility
                     ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f);
-                    // If Kamui was just awakened, show its practice session immediately.
-                    if (player.progression.isUnlocked(Progression.Ability.KAMUI)
-                            && practiceAbility == null) {
+                    // If Kamui was JUST awakened this death (one-shot flag in RunRecords),
+                    // show its practice tutorial. Never show again on subsequent deaths.
+                    if (kamuiJustUnlockedThisRevival) {
+                        kamuiJustUnlockedThisRevival = false;
                         practiceQueue.clear();
                         practiceQueue.add(Progression.Ability.KAMUI);
-                        lastPracticeEnter = true;  // require ENTER release first
+                        lastPracticeEnter = true;
                         startNextPractice();
                     }
                 }
@@ -1531,8 +1534,8 @@ public class Window {
 
                                         // 3rd death: play Kamui awakening first, then revival.
                                         if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
-                                            // Unlock Kamui in this run's progression (death-earned, not wave-earned).
                                             player.progression.grantKamui();
+                                            kamuiJustUnlockedThisRevival = true; // shows tutorial once after revival
                                             cutscene.startKamuiAwaken();
                                         } else {
                                             cutscene.startRevival();
