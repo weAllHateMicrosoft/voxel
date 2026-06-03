@@ -249,26 +249,39 @@ class WindowHud {
         }
         ty += 8f;
 
-        // Bottom row: celebration OR skip hint
-        if (celebrating && step.doneText != null) {
-            float pulse = 0.7f + 0.3f * (float) Math.sin(glfwGetTime() * 8f);
-            String dt = step.doneText;
-            float dw = ImGui.calcTextSize(dt).x;
-            draw.addText(cx - dw/2, ty,
-                    ImGui.colorConvertFloat4ToU32(0.3f, 1.0f, 0.45f, pulse), dt);
-        } else if (!celebrating) {
-            boolean canSkip = win.practiceStepAge > 1.2f;
-            String skipTxt = canSkip ? "[ ENTER ]  skip this step" : "Try the ability above...";
-            float sw = ImGui.calcTextSize(skipTxt).x;
-            draw.addText(cx - sw/2, ty,
-                    ImGui.colorConvertFloat4ToU32(0.55f, 0.57f, 0.65f, 0.7f), skipTxt);
+        // Progress counter (e.g. "2 / 3") if required > 1
+        if (step.required > 1) {
+            int done = Math.min(win.practiceCtx.counter, step.required);
+            String prog = done + " / " + step.required;
+            float progW = ImGui.calcTextSize(prog).x;
+            int progCol = done >= step.required
+                    ? ImGui.colorConvertFloat4ToU32(0.3f, 1.0f, 0.45f, 1f)
+                    : ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.3f,  1f);
+            draw.addText(cx - progW/2, ty, progCol, prog);
+            ty += lineH;
         }
 
-        // Dummy HP bar — shown above the card if a dummy is alive
+        // Celebration OR skip/prompt row
+        if (celebrating && step.doneText != null) {
+            float pulse = 0.7f + 0.3f * (float) Math.sin(glfwGetTime() * 8f);
+            float dw = ImGui.calcTextSize(step.doneText).x;
+            draw.addText(cx - dw/2, ty,
+                    ImGui.colorConvertFloat4ToU32(0.3f, 1.0f, 0.45f, pulse), step.doneText);
+        } else if (!celebrating) {
+            String skipTxt = step.allowSkip && win.practiceStepAge > 2f
+                    ? "[ ENTER ]  skip" : "";
+            if (!skipTxt.isEmpty()) {
+                float sw = ImGui.calcTextSize(skipTxt).x;
+                draw.addText(cx - sw/2, ty,
+                        ImGui.colorConvertFloat4ToU32(0.5f, 0.52f, 0.6f, 0.6f), skipTxt);
+            }
+        }
+
+        // Dummy HP bar above the card
         com.leaf.game.entity.Enemy dummy = win.practiceCtx.dummy();
         if (dummy != null && dummy.alive) {
             float barW = 180f, barH = 12f;
-            float bx = cx - barW/2, by = cardY - barH - 18f;
+            float bx = cx - barW/2, by = cardY - barH - 22f;
             float frac = Math.max(0f, dummy.health / dummy.maxHealth);
             draw.addRectFilled(bx, by, bx + barW, by + barH,
                     ImGui.colorConvertFloat4ToU32(0.15f, 0.05f, 0.05f, 0.85f), 4f);
@@ -276,10 +289,44 @@ class WindowHud {
                     ImGui.colorConvertFloat4ToU32(0.9f, 0.25f, 0.25f, 0.9f), 4f);
             draw.addRect(bx, by, bx + barW, by + barH,
                     ImGui.colorConvertFloat4ToU32(0.5f, 0.2f, 0.2f, 0.6f), 4f, 0, 1.2f);
-            String dLabel = "DUMMY  HP";
-            float dlw = ImGui.calcTextSize(dLabel).x;
-            draw.addText(cx - dlw/2, by - 16f,
+            String dLabel = "TARGET  HP";
+            draw.addText(cx - ImGui.calcTextSize(dLabel).x/2, by - 16f,
                     ImGui.colorConvertFloat4ToU32(0.75f, 0.55f, 0.55f, 0.7f), dLabel);
+        }
+
+        // ── HUD arrows: draw a pointer to the mana bar and/or cooldown icon ──
+        if (step.showManaArrow || step.showCooldownArrow) {
+            renderHudAnnotations(draw, font, base, w, h, step.showManaArrow, step.showCooldownArrow);
+        }
+    }
+
+    /** Draw animated arrows pointing at the mana bar and/or the cooldown icon strip. */
+    private void renderHudAnnotations(imgui.ImDrawList draw, ImFont font, float base,
+                                      float w, float h,
+                                      boolean showMana, boolean showCooldown) {
+        float pulse = 0.6f + 0.4f * (float)Math.abs(Math.sin(glfwGetTime() * 4f));
+        int arrowCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.92f, 0.3f, pulse);
+        int labelCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.5f, pulse);
+
+        if (showMana) {
+            // Mana bar sits at h-80 + 14+3 = h-63  (hpHeight=14, gap=3)
+            float mpY   = h - 63f;
+            float mpCx  = w * 0.5f;
+            // Arrow pointing right  (from left of bar)
+            float ax = mpCx - 120f, ay = mpY + 5f;
+            draw.addLine(ax - 28f, ay, ax, ay, arrowCol, 2.5f);
+            draw.addTriangleFilled(ax, ay - 5f, ax, ay + 5f, ax + 8f, ay, arrowCol);
+            draw.addText(font, base * 0.9f, ax - 80f, ay - 8f, labelCol, "MANA");
+        }
+
+        if (showCooldown) {
+            // Cooldown icon row 1 is bottom-right.  Point at that area.
+            float iconY = h - 90f;   // approximate top of the icon strip
+            float iconX = w - 180f;
+            float ax = iconX - 10f, ay = iconY + 15f;
+            draw.addLine(ax - 32f, ay, ax, ay, arrowCol, 2.5f);
+            draw.addTriangleFilled(ax, ay - 5f, ax, ay + 5f, ax + 8f, ay, arrowCol);
+            draw.addText(font, base * 0.9f, ax - 105f, ay - 8f, labelCol, "COOLDOWN");
         }
     }
 

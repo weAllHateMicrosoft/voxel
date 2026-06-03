@@ -51,7 +51,13 @@ public class Progression {
         Ability(String label, String key, String desc) { this.label = label; this.key = key; this.desc = desc; }
     }
 
-    /** Which abilities unlock at which wave. Index = wave cleared; index 0 = starting kit. */
+    /**
+     * Which abilities unlock at which wave. Index = wave cleared; index 0 = starting kit.
+     *
+     * KAMUI is intentionally absent from the tier list.
+     * It is a death-earned easter egg granted by RunRecords after 3 deaths.
+     * Progression.grantKamui() handles it separately.
+     */
     private static final Ability[][] TIERS = {
         /* start  */ { Ability.SNIPE },
         /* wave 1 */ { Ability.SLASH, Ability.DASH },
@@ -60,9 +66,10 @@ public class Progression {
         /* wave 4 */ { Ability.GRAB },
         /* wave 5 */ { Ability.BLINK, Ability.SWAP },
         /* wave 6 */ { Ability.PILLAR, Ability.CANNONBALL },
-        /* wave 7 */ { Ability.STAND, Ability.TIME },
-        /* wave 8 */ { Ability.SEAL, Ability.SUBSTITUTE, Ability.STONE_CANON, Ability.KAMUI },
-        /* wave 9 */ { Ability.FLIGHT },   // final parting gift  -  before the boss
+        /* wave 7 */ { Ability.STAND },
+        /* wave 8 */ { Ability.STONE_CANON, Ability.SUBSTITUTE },
+        /* wave 9 */ { Ability.SEAL },        // Minato's Seal — complex, earns its own wave
+        /* wave 10*/ { Ability.FLIGHT },       // final gift — the ending
     };
 
     /** Story headline shown on each wave's unlock card (index = wave cleared). */
@@ -75,12 +82,13 @@ public class Progression {
         "Be everywhere they aren't.",
         "The earth itself answers to you now.",
         "You are not alone anymore.",
+        "Stone and shadow. Break through.",
         "Mark the world. Bend it around you.",
         "One last gift. The mountain releases you. The sky is yours now.",
     };
 
-    /** The wave that is the final boss (no ability unlock  -  you fight with everything). */
-    public static final int BOSS_WAVE = 10;
+    /** The wave that triggers the ENDING cutscene and grants FLIGHT. */
+    public static final int ENDING_WAVE = 10;
 
     /** Always shown on unlock cards  -  the user wants players reminded about mana. */
     public static final String MANA_NOTE = "Most abilities draw MANA  -  the blue bar under your health. It refills over time.";

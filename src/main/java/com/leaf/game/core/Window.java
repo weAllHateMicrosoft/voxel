@@ -671,14 +671,16 @@ public class Window {
             practiceStepAge    = 0f;
             practiceStepDone   = false;
             practiceCelebration = 0f;
-            practiceCtx.win    = this;
-            practiceCtx.flag   = false;
+            practiceCtx.win      = this;
+            practiceCtx.flag     = false;
             practiceCtx.snapshot = 0f;
+            practiceCtx.counter  = 0;
             // Kill live enemies so the player can focus, pause spawning.
             enemyManager.getEnemies().forEach(e -> { if (e.type != Enemy.Type.DUMMY) e.alive = false; });
             enemyManager.wavesEnabled = false;
             // Run the first step's onEnter.
             AbilityPractice.Step first = steps.get(0);
+            practiceCtx.required = first.required;
             if (first.onEnter != null) {
                 practiceCtx.stepAge = 0f;
                 first.onEnter.accept(practiceCtx);
@@ -698,9 +700,11 @@ public class Window {
         practiceStepAge     = 0f;
         practiceStepDone    = false;
         practiceCelebration = 0f;
-        practiceCtx.flag    = false;
+        practiceCtx.flag     = false;
         practiceCtx.snapshot = 0f;
+        practiceCtx.counter  = 0;
         AbilityPractice.Step step = practiceSteps.get(practiceStepIndex);
+        practiceCtx.required = step.required;
         if (step.onEnter != null) step.onEnter.accept(practiceCtx);
     }
 
@@ -1323,9 +1327,9 @@ public class Window {
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
                             int waveJustCleared = enemyManager.lastClearedWave;
 
-                            if (waveJustCleared >= 9 && !gameEnded) {
-                                // ── WAVE 9 = FLIGHT = THE ENDING ──────────────
-                                player.progression.unlockForWave(9);   // grant FLIGHT
+                            if (waveJustCleared >= Progression.ENDING_WAVE && !gameEnded) {
+                                // ── WAVE 10 = FLIGHT = THE ENDING ─────────────
+                                player.progression.unlockForWave(Progression.ENDING_WAVE); // grant FLIGHT
                                 float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
                                 int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
                                 cutscene.endingStat = String.format(
@@ -1358,16 +1362,13 @@ public class Window {
                                     || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                             if (en && !lastCardSpace) {
                                 showUnlockCard = false;
-                                // Queue pause-and-teach sessions for the complex abilities on this wave.
+                                // Every wave unlocked gets a practice session now.
                                 practiceQueue.clear();
-                                switch (enemyManager.lastClearedWave) {
-                                    case 7 -> practiceQueue.add(Progression.Ability.STAND);             // Manhattan Transfer
-                                    case 8 -> { practiceQueue.add(Progression.Ability.SEAL);            // Minato's Seal
-                                                practiceQueue.add(Progression.Ability.KAMUI); }         // then Kamui
-                                    default -> { }
+                                for (Progression.Ability a : unlockCardAbilities) {
+                                    practiceQueue.add(a);
                                 }
-                                lastPracticeEnter = true;   // require ENTER release before a skip counts
-                                startNextPractice();         // begins first queued session, or next wave
+                                lastPracticeEnter = true;
+                                startNextPractice();
                             }
                             lastCardSpace = en;
                         }
@@ -1378,27 +1379,38 @@ public class Window {
                             practiceStepAge     += deltaTime;
                             practiceCtx.stepAge  = practiceStepAge;
 
+                            // Run optional per-frame tick logic (e.g. move NPCs).
+                            if (step.onTick != null) {
+                                try { step.onTick.accept(practiceCtx); } catch (Exception ignored) {}
+                            }
+
                             if (practiceStepDone) {
-                                // Celebration pause: show doneText, then advance.
+                                // Celebration pause before advancing.
                                 practiceCelebration -= deltaTime;
                                 if (practiceCelebration <= 0f) advancePracticeStep();
                             } else {
-                                boolean accomplished = false;
-                                try { accomplished = step.done.test(practiceCtx); }
+                                // Run the done() predicate — counts up to step.required.
+                                boolean oneAction = false;
+                                try { oneAction = step.done.test(practiceCtx); }
                                 catch (Exception ignored) {}
 
-                                if (accomplished) {
-                                    practiceStepDone    = true;
-                                    practiceCelebration = step.doneText != null
-                                            ? PRACTICE_CELEBRATE_SECS : 0.3f;
+                                if (oneAction) {
+                                    practiceCtx.counter++;
+                                    practiceCtx.flag = false; // reset latch for next count
+                                    if (practiceCtx.counter >= step.required) {
+                                        practiceStepDone    = true;
+                                        practiceCelebration = step.doneText != null
+                                                ? PRACTICE_CELEBRATE_SECS : 0.3f;
+                                    }
                                 } else if (practiceStepAge > step.timeout) {
-                                    advancePracticeStep();  // timed out on this step
+                                    advancePracticeStep(); // safety timeout
                                 }
 
-                                // ENTER skip with debounce.
+                                // ENTER skip — only for steps that explicitly allow it.
                                 boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
                                         || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-                                boolean canSkip  = practiceStepAge > 1.2f
+                                boolean canSkip  = step.allowSkip
+                                        && practiceStepAge > 1.2f
                                         && !lastPracticeEnter && enterNow;
                                 lastPracticeEnter = enterNow;
                                 if (canSkip) { practiceStepDone = true; practiceCelebration = 0.1f; }

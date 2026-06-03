@@ -30,6 +30,12 @@ public class RunRecords {
     public  boolean kamuiEverUnlocked = false;
     /** Deaths required before the Kamui awakening triggers. */
     public  static final int KAMUI_AWAKEN_DEATHS = 3;
+    /**
+     * One-shot flag: true for exactly one call to wasKamuiAwakenDeath() after the
+     * threshold death fires, then permanently false.  This prevents the cutscene
+     * from re-triggering on every subsequent death.
+     */
+    private boolean kamuiJustAwakened = false;
 
     // Singleton used by Window
     public static final RunRecords INSTANCE = new RunRecords();
@@ -59,8 +65,10 @@ public class RunRecords {
 
         // Count deaths toward Kamui separately — robust regardless of total deaths history.
         if (!kamuiEverUnlocked) deathsBeforeKamui++;
-        if (deathsBeforeKamui >= KAMUI_AWAKEN_DEATHS && !kamuiEverUnlocked)
-            kamuiEverUnlocked = true;  // awakening triggers this death
+        if (deathsBeforeKamui >= KAMUI_AWAKEN_DEATHS && !kamuiEverUnlocked) {
+            kamuiEverUnlocked = true;
+            kamuiJustAwakened = true;  // consumed by wasKamuiAwakenDeath() exactly once
+        }
 
         float elapsed = nowSecs - runStartTime;
         int mins = (int)(elapsed / 60f);
@@ -78,11 +86,16 @@ public class RunRecords {
     }
 
     /**
-     * True if the death just recorded (via recordDeath) triggered the Kamui awakening.
-     * Uses deathsBeforeKamui reaching the threshold — works regardless of total deaths.
+     * Consumes the one-shot Kamui-awakening flag.
+     * Returns true exactly once — the death that crossed the threshold.
+     * Every subsequent call returns false, so the cutscene never re-fires.
      */
     public boolean wasKamuiAwakenDeath() {
-        return deathsBeforeKamui == KAMUI_AWAKEN_DEATHS && kamuiEverUnlocked;
+        if (kamuiJustAwakened) {
+            kamuiJustAwakened = false;
+            return true;
+        }
+        return false;
     }
 
     // ── Persistence ────────────────────────────────────────────────────────────
