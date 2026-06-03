@@ -10,6 +10,7 @@ out vec4  vertexColor;
 out vec3  vertexNormal;
 out float vWorldY;   // absolute world Y of this vertex, passed for abyss depth fog
 out vec2  vertexUV;  // passed through to fragment for optional texture sampling
+out vec3  vWorldPos; // full world-space position (for the orbital "lidar" scan)
 
 void main() {
     gl_Position = mvp * vec4(aPos, 1.0);
@@ -17,4 +18,5 @@ void main() {
     vertexNormal = aNormal;
     vWorldY      = aPos.y;   // vertices are stored in world-space coords
     vertexUV     = aUV;
+    vWorldPos    = aPos;     // world-space coords (regular Mesh stores world coords)
 }

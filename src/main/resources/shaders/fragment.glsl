@@ -3,12 +3,23 @@ in vec4  vertexColor;
 in vec3  vertexNormal;
 in float vWorldY;        // world-space Y of this fragment (from vertex shader)
 in vec2  vertexUV;       // texture coordinates (zero when not a ModelMesh)
+in vec3  vWorldPos;      // full world-space position (orbital scan)
 
 uniform vec3  sunDirection;
 uniform float sunStrength;
 uniform float ambientStrength;
 uniform int   isUnderwater;
 uniform float cameraY;        // camera eye world-Y, set each frame from Java
+
+// ── ORBITAL ANNIHILATION: lidar/topographic scan + environmental flash ────────
+// An expanding wavefront that traces the 90° voxel edges in pitch darkness, plus
+// a global white flash when the orbital laser strikes. All additive emission.
+uniform int   orbActive;      // 1 = scan live
+uniform vec3  orbEpicenter;   // world-space epicentre
+uniform float orbRadius;      // current wavefront radius (world units, XZ)
+uniform float orbWidth;       // wavefront band thickness
+uniform float orbIntensity;   // emissive gain
+uniform float orbFlash;       // environmental white flash (laser impact)
 
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
@@ -110,6 +121,40 @@ void main() {
     if (desaturate > 0.001) {
         float lum = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
         gammaCorrected = mix(gammaCorrected, vec3(lum), desaturate);
+    }
+
+    // ── ORBITAL "LIDAR" SCAN (additive — traces voxel edges in the dark) ──────
+    if (orbActive == 1) {
+        vec3  wp    = vWorldPos;
+        vec3  dEdge = 0.5 - abs(fract(wp) - 0.5);      // 0 at a block boundary, 0.5 at centre
+        vec3  nA    = abs(normalize(vertexNormal));    // the face's normal axis
+        float lw    = 0.07;                            // wireframe line thickness (world units)
+        // Lines on the two IN-PLANE axes of this face (exclude the normal axis,
+        // which is always sitting exactly on a boundary).
+        float lx = (1.0 - nA.x) * (1.0 - smoothstep(0.0, lw, dEdge.x));
+        float ly = (1.0 - nA.y) * (1.0 - smoothstep(0.0, lw, dEdge.y));
+        float lz = (1.0 - nA.z) * (1.0 - smoothstep(0.0, lw, dEdge.z));
+        float wire = clamp(lx + ly + lz, 0.0, 1.0);    // bright on every 90° block edge
+
+        // Expanding wavefront ring on the XZ plane — sweeps out across the terrain.
+        float dist   = length(wp.xz - orbEpicenter.xz);
+        float ring   = 1.0 - smoothstep(0.0, orbWidth, abs(dist - orbRadius));
+        // Faint persistent contour map left behind the wavefront.
+        float inside = (dist < orbRadius) ? (0.30 * (1.0 - dist / max(orbRadius, 0.001))) : 0.0;
+        float mask   = max(ring, inside);
+
+        // Green wireframe, white-hot at the wavefront.
+        vec3 scanCol  = mix(vec3(0.15, 1.0, 0.35), vec3(1.0, 1.0, 1.0), ring);
+        vec3 emission = scanCol * (wire * mask) * orbIntensity;
+        // The leading edge sears even across flat faces.
+        emission += vec3(0.6, 1.0, 0.7) * (ring * ring) * 0.6 * orbIntensity;
+
+        gammaCorrected += emission;
+    }
+
+    // ── ENVIRONMENTAL FLASH — the laser impact lights up the dead world ───────
+    if (orbFlash > 0.001) {
+        gammaCorrected += vec3(0.85, 1.0, 0.9) * orbFlash;
     }
 
     FragColor = vec4(gammaCorrected, baseColor.a * alphaMultiplier);
