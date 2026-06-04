@@ -10,6 +10,9 @@ uniform sampler2D screenTexture;
 uniform vec2      texel;          // 1.0 / framebuffer size
 uniform float     bloomStrength;  // overall bleed gain
 uniform float     threshold;      // brightness above which a pixel blooms
+// Deprivation Domain: strike flash overlay (0 = none, 1 = full white-gold pulse).
+// Set by Window.java each frame; 0 when domain is inactive.
+uniform float     depStrike;
 
 void main() {
     vec3 base = texture(screenTexture, TexCoord).rgb;
@@ -31,5 +34,12 @@ void main() {
 
     // Additive composite — bright stays bright, halo bleeds into the dark.
     vec3 col = base + glow * bloomStrength;
+
+    // Domain strike: screen-wide white-gold wash — the "dimensional slash" moment.
+    // This is post-bloom so it sears over everything including the bloom glow.
+    if (depStrike > 0.001) {
+        col += vec3(1.6, 1.2, 0.35) * depStrike * 0.55;
+    }
+
     FragColor = vec4(col, 1.0);
 }

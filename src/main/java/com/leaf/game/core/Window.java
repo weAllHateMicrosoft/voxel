@@ -507,6 +507,27 @@ public class Window {
     private com.leaf.game.render.Mesh cdMesh = null;    // rebuilt when state changes
     boolean cdMeshDirty = true;
 
+    // ── DEPRIVATION DOMAIN (Water God Stance) — ['] key ─────────────────────────
+    // Absolute stillness. The player locks in place. Every entity that moves inside
+    // the golden hemisphere is instantly counter-struck with a lingering golden thread
+    // and a dimensional-slash ring. Thread web builds over time. All configurable via
+    // GameConfig (depRadius, depDuration, depDamage, …).
+    private boolean depActive    = false;
+    private float   depT         = 0f;   // seconds since domain activated
+    private float   depCooldown  = 0f;   // seconds until usable again (counts down)
+    private float   depStrike    = 0f;   // 0→1 strike flash (decays 6×/sec); fed to shader
+    private boolean lastApostr   = false;
+    private float   depX, depY, depZ;   // player position frozen at activation
+    private float   depDetectTimer = 0f; // accumulates until DEP_TICK, then samples
+    /** Previous positions of each enemy for velocity estimation. int = System.identityHashCode. */
+    private final java.util.HashMap<Integer, org.joml.Vector3f> depPrevPos = new java.util.HashMap<>();
+    /** Active threads: each float[] = {sx,sy,sz, ex,ey,ez, life, maxLife}. */
+    private final java.util.ArrayList<float[]> depThreads = new java.util.ArrayList<>();
+    /** Active slash rings: each float[] = {cx,cy,cz, life, maxLife}. */
+    private final java.util.ArrayList<float[]> depSlashes = new java.util.ArrayList<>();
+    /** Hemisphere dome mesh (unit sphere top half, built once, scaled to depRadius). */
+    private com.leaf.game.render.Mesh depHemi = null;
+
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
     private static final float TS_SHRINK = 0.9f;   // collapse duration (s)
@@ -1188,6 +1209,17 @@ public class Window {
                         boolean wasOnGroundAudio = player.isOnGround();
                         boolean wasFlightMode    = player.debugMode;
                         player.update(window, camera, world, deltaTime);
+
+                        // ── DEPRIVATION DOMAIN: enforce position lock every frame ─
+                        // Override whatever movement player.update() computed so the
+                        // player's feet are nailed to their activation position.
+                        if (depActive) {
+                            player.position.x = depX;
+                            player.position.y = depY;
+                            player.position.z = depZ;
+                            player.setVelocityY(0f);
+                        }
+
                         lastCameraYaw = camera.yaw;
                         hud.updateBreaking(deltaTime);
 
@@ -2631,6 +2663,21 @@ public class Window {
                     lastDisco = kNow;
                     if (cdActive) updateDiscoGrid(rawDeltaTime, camera, world);
 
+                    // ── DEPRIVATION DOMAIN – Water God Stance (' key) ─────────
+                    boolean apostrNow = glfwGetKey(window, KeyBindings.DEPRIVATION_DOMAIN) == GLFW_PRESS;
+                    if (apostrNow && !lastApostr) {
+                        if (!depActive && depCooldown <= 0f) {
+                            startDeprivationDomain();
+                        } else if (depActive) {
+                            stopDeprivationDomain();
+                        }
+                    }
+                    lastApostr = apostrNow;
+                    // Tick cooldown + strike flash decay every frame (outside domain too)
+                    depCooldown = Math.max(0f, depCooldown - rawDeltaTime);
+                    depStrike   = Math.max(0f, depStrike   - rawDeltaTime * 6f);
+                    if (depActive) updateDeprivationDomain(rawDeltaTime, world);
+
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -2702,7 +2749,9 @@ public class Window {
             // Disco grid also blooms — the wireframe boxes and detonation pillars are
             // HDR-bright and need the bloom pass to look correct.
             boolean doDiscoBloom = cdActive && !isPreloading && bloomShader != null && cdSpawnT > 0.05f;
-            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom;
+            // Domain always blooms — the HDR gold hemisphere + threads + boundary ring need it.
+            boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
+            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom;
             boolean useSceneFbo = doKamuiDistort || doBloom;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
@@ -2797,6 +2846,12 @@ public class Window {
                 shader.setUniform("vlRadius", vlRadiusNow);
                 shader.setUniform("vlAmount", vlAmountNow);
                 shader.setUniform("vlSweep",  vlSweepNow);
+
+                // Deprivation Domain world-shader tinting
+                shader.setUniform("depActive", depActive ? 1 : 0);
+                shader.setUniform("depCenter", new Vector3f(depX, depY + 0.9f, depZ));
+                shader.setUniform("depRadius", GameConfig.depRadius);
+                shader.setUniform("depStrike", depStrike);
                 shader.setUniform("desaturate", ScreenEffectManager.INSTANCE.getDesaturate());
 
                 boolean isCameraUnderwater = world.getBlock(
@@ -3082,6 +3137,11 @@ public class Window {
                 // ── CHOCOLATE DISCO: 9×9 glowing geometry grid ───────────────
                 if (cdActive && !isPreloading) {
                     renderDiscoGrid(shader, projection, view, renderMvp);
+                }
+
+                // ── DEPRIVATION DOMAIN: golden hemisphere + thread web ────────
+                if (depActive && !isPreloading) {
+                    renderDeprivationDomain(shader, projection, view, renderMvp);
                 }
 
                 // ── PASS 2: TRANSPARENT ───────────────────────────────────────
@@ -3628,6 +3688,8 @@ public class Window {
                     bloomShader.setUniform("texel",
                             1f / Math.max(1, fw[0]), 1f / Math.max(1, fh[0]));
                     bloomShader.setUniform("bloomStrength", 1.7f);
+                    // Domain strike flash overlay (0 when domain is inactive — safe to always set)
+                    bloomShader.setUniform("depStrike", depStrike);
                     bloomShader.setUniform("threshold", 0.65f);
 
                     org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
@@ -4913,6 +4975,310 @@ public class Window {
         for (int j = 0; j < seg; j++) {
             int a = j*2, b = j*2+1, c = j*2+2, d = j*2+3;
             idx[ii++]=a; idx[ii++]=c; idx[ii++]=b; idx[ii++]=b; idx[ii++]=c; idx[ii++]=d;
+        }
+        return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  DEPRIVATION DOMAIN — WATER GOD STANCE  (' key, KeyBindings.DEPRIVATION_DOMAIN)
+    // ══════════════════════════════════════════════════════════════════════════
+    //  The player locks in place. A golden HDR hemisphere marks the domain. Any
+    //  entity that moves inside the radius is instantly killed and connected to the
+    //  player by a lingering golden "thread" (dimensional slash). The thread web
+    //  builds over time as enemies try to push through. The world-shader tints the
+    //  interior gold and the exterior cool/dark, making it feel like an absolute
+    //  domain. The bloom FBO makes all of it sear.
+
+    private void startDeprivationDomain() {
+        depActive = true;
+        depT      = 0f;
+        depX = player.position.x;
+        depY = player.position.y;
+        depZ = player.position.z;
+        depStrike = 0f;
+        depDetectTimer = 0f;
+        depPrevPos.clear();
+        depThreads.clear();
+        depSlashes.clear();
+        if (depHemi == null) depHemi = depBuildHemisphere(10, 32);
+        hintText  = "DEPRIVATION DOMAIN — perfect stillness, absolute death · ['] to exit";
+        hintTimer = 5f;
+        AudioManager.play("kamui_enter", 0.7f);
+        AudioManager.playContinuous("kamui_distortion", 0.45f);
+        ScreenEffectManager.INSTANCE.flash(1f, 0.88f, 0.28f, 0.35f, 0.4f);
+    }
+
+    private void stopDeprivationDomain() {
+        depActive = false;
+        depCooldown = GameConfig.depCooldownSecs;
+        depPrevPos.clear();
+        AudioManager.stopContinuous("kamui_distortion");
+        AudioManager.play("kamui_exit", 0.7f);
+    }
+
+    private void updateDeprivationDomain(float dt, World world) {
+        // Auto-expire after duration
+        depT += dt;
+        if (depT >= GameConfig.depDuration) { stopDeprivationDomain(); return; }
+
+        // Decay lingering threads and slashes
+        depThreads.removeIf(th -> { th[6] -= dt; return th[6] <= 0f; });
+        depSlashes.removeIf(sl -> { sl[3] -= dt; return sl[3] <= 0f; });
+
+        // Movement detection (sampled every depDetectTick for perf)
+        depDetectTimer += dt;
+        if (depDetectTimer < GameConfig.depDetectTick) return;
+        float tick = depDetectTimer;
+        depDetectTimer = 0f;
+
+        float radSq  = GameConfig.depRadius * GameConfig.depRadius;
+        float minMov = GameConfig.depDetectMinVel * tick;  // blocks moved this tick
+        float weapY  = depY + 1.4f;                        // approx weapon height
+
+        if (enemyManager == null) return;
+
+        // ── Enemy movement detection ─────────────────────────────────────────
+        for (com.leaf.game.entity.Enemy e : enemyManager.getEnemies()) {
+            if (!e.alive) continue;
+            float dx = e.position.x - depX, dz = e.position.z - depZ;
+            if (dx * dx + dz * dz > radSq) {
+                depPrevPos.remove(System.identityHashCode(e));
+                continue;
+            }
+            org.joml.Vector3f prev = depPrevPos.get(System.identityHashCode(e));
+            if (prev != null) {
+                float moved = new org.joml.Vector3f(e.position.x - prev.x, 0, e.position.z - prev.z).length();
+                if (moved >= minMov) {
+                    // ── STRIKE ──
+                    float ex = e.position.x, ey = e.position.y + 0.9f, ez = e.position.z;
+                    depThreads.add(new float[]{depX, weapY, depZ,  ex, ey, ez,
+                                               GameConfig.depThreadLife, GameConfig.depThreadLife});
+                    depSlashes.add(new float[]{ex, ey - 0.3f, ez,
+                                               GameConfig.depSlashLife, GameConfig.depSlashLife});
+                    e.applyDamage(GameConfig.depDamage);
+                    depStrike = Math.min(1f, depStrike + 0.55f);
+                    // Precise micro-shake per strike
+                    activeShakeAmplitude = 0.06f;
+                    activeShakeDuration  = 0.12f;
+                    smashShakeTimer      = Math.max(smashShakeTimer, 0.12f);
+                    ScreenEffectManager.INSTANCE.flash(1f, 0.9f, 0.3f, 0.22f, 0.10f);
+                }
+            }
+            depPrevPos.put(System.identityHashCode(e), new org.joml.Vector3f(e.position));
+        }
+
+        // ── Projectile nullification ──────────────────────────────────────────
+        for (com.leaf.game.entity.EnemyManager.EnemyProjectile proj : enemyManager.projectiles) {
+            if (!proj.alive) continue;
+            float dx = proj.pos.x - depX, dz = proj.pos.z - depZ;
+            if (dx * dx + dz * dz > radSq) continue;
+            if (proj.vel.length() > 0.1f) {
+                depThreads.add(new float[]{depX, weapY, depZ,
+                                           proj.pos.x, proj.pos.y, proj.pos.z,
+                                           0.8f, 0.8f});
+                depSlashes.add(new float[]{proj.pos.x, proj.pos.y, proj.pos.z, 0.35f, 0.35f});
+                proj.alive  = false;
+                depStrike   = Math.min(1f, depStrike + 0.3f);
+            }
+        }
+    }
+
+    private void renderDeprivationDomain(com.leaf.game.render.Shader shader,
+                                         Matrix4f projection, Matrix4f view,
+                                         Matrix4f renderMvp) {
+        if (!depActive) return;
+        if (depHemi  == null) depHemi  = depBuildHemisphere(10, 32);
+        if (orbTorus == null) orbTorus = orbBuildTorus(0.05f, 72, 8);
+        if (orbCyl   == null) orbCyl   = orbBuildCylinder(28);
+
+        Matrix4f pv  = new Matrix4f(projection).mul(view);
+        float    t   = (float) glfwGetTime();
+        float    lifeF = 1f - depT / GameConfig.depDuration;   // 1→0 as domain nears expiry
+        float    domR  = GameConfig.depRadius;
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);   // additive — everything glows
+        glDepthMask(false);
+        glDepthFunc(GL_LEQUAL);        // grounded: terrain naturally occludes the dome
+        glDisable(GL_CULL_FACE);
+        shader.setUniform("emissiveMode", 1);
+
+        // ── Hemisphere dome (faint gold shell) ───────────────────────────────
+        float domeBr = (0.14f + 0.04f * (float) Math.sin(t * 2.5)) * lifeF;
+        orbDraw(shader, pv, depHemi,
+                new Matrix4f().translate(depX, depY, depZ).scale(domR),
+                domeBr, domeBr * 0.74f, domeBr * 0.18f);
+
+        // ── Equatorial base ring (the "ground of death") ─────────────────────
+        orbDraw(shader, pv, orbTorus,
+                new Matrix4f().translate(depX, depY + 0.15f, depZ).scale(domR),
+                1.6f * lifeF, 1.1f * lifeF, 0.28f * lifeF);
+
+        // ── Three altitude rings (30° / 60° / 85°) with gentle counter-rotation ──
+        float[] latSin = {0.50f, 0.866f, 0.996f};
+        float[] latCos = {0.866f, 0.50f, 0.087f};
+        float[] rotSpd = {0.55f, -0.38f, 0.22f};
+        float[] brMult = {0.55f,  0.32f, 0.42f};
+        for (int li = 0; li < 3; li++) {
+            float ry = depY + latSin[li] * domR;
+            float rr = latCos[li] * domR;
+            float br = brMult[li] * lifeF;
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(depX, ry, depZ)
+                                  .rotateY(t * rotSpd[li])
+                                  .scale(rr, 0.8f, rr),
+                    br, br * 0.72f, br * 0.18f);
+        }
+
+        // ── Interior scanning rings (3 angled toruses slowly orbiting the core)
+        for (int i = 0; i < 3; i++) {
+            float phase = t * (0.8f + i * 0.35f) + i * 2.094f;
+            float scanBr = 0.30f * lifeF;
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(depX, depY + domR * 0.45f, depZ)
+                                  .rotateY(phase).rotateX(0.62f)
+                                  .scale(domR * 0.55f, 0.6f, domR * 0.55f),
+                    scanBr, scanBr * 0.70f, scanBr * 0.15f);
+        }
+
+        // ── Thread web: combined mesh of all active golden threads ────────────
+        if (!depThreads.isEmpty()) {
+            com.leaf.game.render.Mesh tm = depBuildThreadMesh();
+            if (tm != null) {
+                shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
+                shader.setUniform("mvp", pv);
+                tm.render();
+                tm.cleanup();
+            }
+        }
+
+        // ── Dimensional slash rings at each strike point ─────────────────────
+        for (float[] sl : depSlashes) {
+            float sf  = sl[3] / sl[4];   // life fraction: 1 (fresh) → 0 (gone)
+            float exp = 1f - sf;          // expansion: 0 → 1
+            float ringR = 0.3f + exp * 5.0f;
+            float br    = sf * 5.5f;      // bright on spawn, fades fast
+            // Main expanding ring (Vergil's circular slash)
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(sl[0], sl[1], sl[2]).scale(ringR, 0.18f, ringR),
+                    br, br * 0.82f, br * 0.22f);
+            // Vertical inner spike (the cutting edge)
+            if (sf > 0.5f) {
+                float spkBr = (sf - 0.5f) * 2f * 3.5f;
+                orbDraw(shader, pv, orbCyl,
+                        new Matrix4f().translate(sl[0], sl[1] - 0.5f, sl[2])
+                                      .scale(0.06f, ringR * 1.2f, 0.06f),
+                        spkBr, spkBr * 0.85f, spkBr * 0.22f);
+            }
+        }
+
+        // Restore GL state
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
+        shader.setUniform("mvp", renderMvp);
+        glDepthFunc(GL_LESS);
+        glDepthMask(true);
+        glEnable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
+    }
+
+    /**
+     * Build a combined world-space mesh of all active threads.
+     * Each thread = two perpendicular thin quads along the thread axis.
+     * Color: HDR gold that spikes at birth (the "slash moment") and sustains as a glow.
+     * Returns null if no threads exist.
+     */
+    private com.leaf.game.render.Mesh depBuildThreadMesh() {
+        java.util.ArrayList<Float>   vl = new java.util.ArrayList<>(depThreads.size() * 80);
+        java.util.ArrayList<Integer> il = new java.util.ArrayList<>(depThreads.size() * 24);
+
+        final float TW  = 0.038f;   // half-width of each thread ribbon
+        final org.joml.Vector3f UP = new org.joml.Vector3f(0, 1, 0);
+
+        for (float[] th : depThreads) {
+            float life = th[6], maxLife = th[7];
+            float lf   = life / maxLife;                         // 1 (fresh) → 0 (gone)
+            // Brightness profile: spike when fresh (the "slash"), sustain as a glow
+            float hdrBr = 1.8f + 3.5f * (float) Math.exp(-6.0f * (1.0f - lf));
+            hdrBr *= (lf < 0.15f ? lf / 0.15f : 1f);            // final fade-out
+
+            float r = 1.35f * hdrBr, g = 0.92f * hdrBr, b = 0.22f * hdrBr;
+
+            org.joml.Vector3f pa = new org.joml.Vector3f(th[0], th[1], th[2]);
+            org.joml.Vector3f pb = new org.joml.Vector3f(th[3], th[4], th[5]);
+
+            org.joml.Vector3f dir = new org.joml.Vector3f(pb).sub(pa);
+            if (dir.lengthSquared() < 1e-6f) continue;
+            dir.normalize();
+
+            // Choose perpendicular to the thread direction
+            org.joml.Vector3f ref = (Math.abs(dir.y) < 0.9f) ? UP : new org.joml.Vector3f(1, 0, 0);
+            org.joml.Vector3f p1  = new org.joml.Vector3f(dir).cross(ref).normalize();
+            org.joml.Vector3f p2  = new org.joml.Vector3f(dir).cross(p1).normalize();
+
+            addDepRibbon(vl, il, pa, pb, p1, TW, r, g, b);
+            addDepRibbon(vl, il, pa, pb, p2, TW, r, g, b);
+        }
+        if (vl.isEmpty()) return null;
+
+        float[] va = new float[vl.size()];
+        for (int i = 0; i < va.length; i++) va[i] = vl.get(i);
+        int[]   ia = new int[il.size()];
+        for (int i = 0; i < ia.length;  i++) ia[i] = il.get(i);
+        return new com.leaf.game.render.Mesh(va, ia);
+    }
+
+    /** Add a single ribbon quad (width 2*hw) between two points along a given perpendicular. */
+    private static void addDepRibbon(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                     org.joml.Vector3f a, org.joml.Vector3f b,
+                                     org.joml.Vector3f perp, float hw,
+                                     float r, float g, float bl) {
+        int base = vl.size() / 10;
+        float[] c = {
+            a.x + perp.x*hw, a.y + perp.y*hw, a.z + perp.z*hw,
+            b.x + perp.x*hw, b.y + perp.y*hw, b.z + perp.z*hw,
+            b.x - perp.x*hw, b.y - perp.y*hw, b.z - perp.z*hw,
+            a.x - perp.x*hw, a.y - perp.y*hw, a.z - perp.z*hw,
+        };
+        for (int i = 0; i < 4; i++) {
+            vl.add(c[i*3]); vl.add(c[i*3+1]); vl.add(c[i*3+2]);
+            vl.add(r); vl.add(g); vl.add(bl); vl.add(1f);
+            vl.add(0f); vl.add(1f); vl.add(0f);   // normal (irrelevant for emissive)
+        }
+        il.add(base); il.add(base+1); il.add(base+2);
+        il.add(base); il.add(base+2); il.add(base+3);
+    }
+
+    /** Upper hemisphere (y ≥ 0) as a unit mesh. Vertex colours are gold-tinted,
+     *  brighter at the equator and fading toward the pole. */
+    private com.leaf.game.render.Mesh depBuildHemisphere(int rings, int sectors) {
+        int vCount = (rings + 1) * (sectors + 1);
+        float[] v  = new float[vCount * 10];
+        int vi = 0;
+        for (int i = 0; i <= rings; i++) {
+            double phi   = Math.PI * 0.5 * i / rings;      // 0 (equator) → π/2 (pole)
+            float cosPhi = (float) Math.cos(phi);
+            float sinPhi = (float) Math.sin(phi);
+            float bright = 1.0f - 0.55f * (float) i / rings; // bright at equator, dim at pole
+            for (int j = 0; j <= sectors; j++) {
+                double theta = 2 * Math.PI * j / sectors;
+                float x = cosPhi * (float) Math.cos(theta);
+                float y = sinPhi;
+                float z = cosPhi * (float) Math.sin(theta);
+                int o = (vi++) * 10;
+                v[o]   = x; v[o+1] = y; v[o+2] = z;
+                v[o+3] = bright; v[o+4] = bright * 0.72f; v[o+5] = bright * 0.18f; v[o+6] = 1f;
+                v[o+7] = x;     v[o+8] = y;               v[o+9] = z;               // outward normal
+            }
+        }
+        int[] idx = new int[rings * sectors * 6];
+        int ii = 0, stride = sectors + 1;
+        for (int i = 0; i < rings; i++) {
+            for (int j = 0; j < sectors; j++) {
+                int a = i * stride + j, bv = a + stride;
+                idx[ii++] = a;  idx[ii++] = bv;    idx[ii++] = a + 1;
+                idx[ii++] = a+1; idx[ii++] = bv;   idx[ii++] = bv + 1;
+            }
         }
         return new com.leaf.game.render.Mesh(v, idx);
     }

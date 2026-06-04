@@ -67,6 +67,18 @@ public class GameConfig {
     public static int caveSurfaceBuffer = 6;
     public static int caveBedrockFloor  = 4;
 
+    // ── DEPRIVATION DOMAIN (Water God Stance) ─────────────────────────────────
+    // Tap ['] to enter a locked defensive stance. Any entity moving inside the
+    // radius is instantly counter-struck with a golden thread and killed.
+    public static float depRadius          = 28f;   // detection + visual domain radius (blocks)
+    public static float depDuration        = 10f;   // max stance seconds before auto-exit
+    public static float depCooldownSecs    = 18f;   // recovery cooldown after stance ends
+    public static float depDamage          = 9999f; // counter-strike damage (instant kill)
+    public static float depDetectMinVel    = 0.22f; // min movement per detection tick to trigger
+    public static float depDetectTick      = 0.07f; // how often movement is sampled (seconds)
+    public static float depThreadLife      = 2.0f;  // how long golden threads linger (seconds)
+    public static float depSlashLife       = 0.55f; // how long the slash ring lasts (seconds)
+
     // ── CANYON / MESA REGION (faithful gelami Shadertoy port) ─────────────────
     // A fixed circular region rendered as a PURE 3D isosurface (no heightmap):
     // solid wherever fbm3D(x,y,z) < canyonSurfaceFactor, isotropic, capped flat

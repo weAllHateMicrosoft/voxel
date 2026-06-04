@@ -23,8 +23,9 @@ public final class KeyBindings {
     private KeyBindings() {}
 
     // ── Keys for the new showcase abilities (kept off the fully-booked A–Z set) ──
-    public static final int DISCO          = GLFW_KEY_PERIOD;   // '.'  Chocolate Disco grid
-    public static final int QUANTUM_BULLET = GLFW_KEY_COMMA;    // ','  Quantum Bullet
+    public static final int DISCO             = GLFW_KEY_PERIOD;      // '.'  Chocolate Disco grid
+    public static final int QUANTUM_BULLET    = GLFW_KEY_COMMA;       // ','  Quantum Bullet (reserved)
+    public static final int DEPRIVATION_DOMAIN = GLFW_KEY_APOSTROPHE; // '''  Water God Stance
 
     /** key code → human description (insertion-ordered for a tidy printout). */
     private static final Map<Integer, String> REG = new LinkedHashMap<>();
@@ -79,7 +80,8 @@ public final class KeyBindings {
         register(GLFW_KEY_TAB, "Stand perspective");
         // ── New showcase abilities ──
         register(DISCO, "Chocolate Disco grid");
-        register(QUANTUM_BULLET, "Quantum Bullet");
+        register(QUANTUM_BULLET, "Quantum Bullet (reserved)");
+        register(DEPRIVATION_DOMAIN, "Deprivation Domain – Water God Stance");
         // ── System / debug ──
         register(GLFW_KEY_T, "Chat");
         register(GLFW_KEY_P, "Debug: spawn enemy");

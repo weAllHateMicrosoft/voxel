@@ -34,6 +34,15 @@ uniform float vlRadius;       // scope radius (world units)
 uniform float vlAmount;       // 0→1→0 fade-in/out envelope
 uniform float vlSweep;        // current sweep-arm angle (radians)
 
+// ── DEPRIVATION DOMAIN (Water God Stance) ─────────────────────────────────────
+// Golden absolute-defence hemisphere. Inside: hyper-real desaturated gold tint.
+// Outside: cooler, darker — the world beyond the domain is less real.
+// Domain boundary glows bright HDR gold (bloom picks this up as a searing ring).
+uniform int   depActive;      // 1 = domain live
+uniform vec3  depCenter;      // player's locked world position (feet)
+uniform float depRadius;      // domain detection + visual radius (blocks)
+uniform float depStrike;      // 0→1 strike flash intensity (decays ~6×/sec)
+
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
 // Set useTexture = 0 (default) to use pure vertex colour — all existing Mesh
@@ -239,6 +248,36 @@ void main() {
             radar += vec3(0.3, 1.0, 0.45) * arm * 0.7;          // sweep line (green, not white)
 
             gammaCorrected = mix(gammaCorrected, radar, amt);
+        }
+    }
+
+    // ── DEPRIVATION DOMAIN world colour grade ────────────────────────────────
+    // Three zones: inside = desaturated gold (hyper-real standoff),
+    //              boundary = searing HDR gold ring (the "edge of death"),
+    //              outside  = cooler and slightly darker.
+    if (depActive == 1) {
+        float d3d    = length(vWorldPos - depCenter);
+        float inside = 1.0 - smoothstep(depRadius - 1.5, depRadius + 0.5, d3d);
+
+        // Inside: desaturate + warm gold tint — everything looks hyper-sharp and golden
+        float lum   = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
+        vec3 desat  = mix(gammaCorrected, vec3(lum * 0.90), inside * 0.52);
+        vec3 goldIn = mix(desat, desat * vec3(1.32, 1.08, 0.60), inside * 0.40);
+
+        // Outside: cool blue-grey tint — the world beyond feels muted and distant
+        float outside = smoothstep(depRadius - 2.0, depRadius + 2.0, d3d);
+        vec3 coolOut  = gammaCorrected * mix(vec3(1.0), vec3(0.78, 0.82, 0.92), outside * 0.48);
+
+        // Boundary ring: HDR gold burst — bloom turns this into a glowing edge halo
+        float edge    = smoothstep(depRadius - 3.5, depRadius - 0.5, d3d)
+                      * smoothstep(depRadius + 1.0, depRadius - 1.0, d3d);
+        vec3 edgeGlow = vec3(3.2, 2.3, 0.55) * edge;
+
+        gammaCorrected = mix(coolOut, goldIn, inside) + edgeGlow;
+
+        // Strike flash: white-gold pulse searing through the entire scene
+        if (depStrike > 0.001) {
+            gammaCorrected += vec3(2.5, 1.9, 0.6) * depStrike * 0.38;
         }
     }
 
