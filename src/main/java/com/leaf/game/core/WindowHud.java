@@ -2189,4 +2189,133 @@ class WindowHud {
         float t  = Math.min(1f, Math.min(ex, ey));
         return t * t * (3f - 2f * t); // smoothstep
     }
+
+    void renderChocolateDiscoConsole() {
+        if (!win.showDiscoUI) return;
+
+        // Position on the left side of the screen
+        ImGui.setNextWindowPos(30, 100, imgui.flag.ImGuiCond.FirstUseEver);
+        ImGui.begin("Chocolate Disco Datapad", imgui.flag.ImGuiWindowFlags.AlwaysAutoResize | imgui.flag.ImGuiWindowFlags.NoCollapse);
+
+        ImGui.textColored(1.0f, 0.8f, 0.1f, 1.0f, "MODE: ANNIHILATE");
+        ImGui.separator();
+        ImGui.spacing();
+
+        // X-Axis Headers
+        ImGui.text("   "); ImGui.sameLine();
+        for (int c = 0; c < 9; c++) {
+            ImGui.text(" " + (c + 1) + " "); ImGui.sameLine();
+        }
+        ImGui.newLine();
+
+        // Reset hover state (updated only if hovered this frame)
+        win.cdHoverR = -1;
+        win.cdHoverC = -1;
+
+        // 9x9 Grid of ImGui Buttons
+        for (int r = 0; r < 9; r++) {
+            // Y-Axis Headers
+            ImGui.text("" + (char)('A' + r) + " "); ImGui.sameLine();
+
+            for (int c = 0; c < 9; c++) {
+                if (c > 0) ImGui.sameLine();
+                ImGui.pushID(r * 9 + c);
+
+                boolean marked = win.cdMarked[r][c];
+                boolean det    = win.cdDetT[r][c] > 0;
+
+                // Color the buttons based on their state
+                if (det) {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.2f, 0.2f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.4f, 0.4f, 1.0f);
+                } else if (marked) {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.7f, 0.1f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.85f, 0.3f, 1.0f);
+                } else {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 0.15f, 0.15f, 0.2f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 0.2f, 0.8f, 0.9f, 1.0f);
+                }
+
+                if (ImGui.button("##cell", 28f, 28f)) {
+                    if (!det) {
+                        win.cdMarked[r][c] = !marked;
+                        win.cdMeshDirty = true;
+                    }
+                }
+
+                if (ImGui.isItemHovered()) {
+                    win.cdHoverR = r;
+                    win.cdHoverC = c;
+                    win.cdMeshDirty = true;
+                }
+
+                ImGui.popStyleColor(2);
+                ImGui.popID();
+            }
+            ImGui.newLine();
+        }
+
+        ImGui.spacing(); ImGui.separator(); ImGui.spacing();
+
+        if (ImGui.button("EXECUTE", 280f, 40f)) {
+            win.detonateDiscoGrid(win.world);
+        }
+        ImGui.spacing();
+        if (ImGui.button("DISMISS", 280f, 30f)) {
+            win.dismissDiscoGrid();
+        }
+
+        ImGui.end();
+    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  CHOCOLATE DISCO: IMGUI WRIST-CONSOLE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    enum DiscoMode { ANNIHILATE, DROP, REDIRECT }
+    DiscoMode currentDiscoMode = DiscoMode.ANNIHILATE;
+
+    private void handleDiscoClick(int r, int c) {
+        if (currentDiscoMode == DiscoMode.ANNIHILATE) {
+            // Mode 1: Toggle the Mark for Detonation
+            if (win.cdDetT[r][c] <= 0f) {
+                win.cdMarked[r][c] = !win.cdMarked[r][c];
+                win.cdMeshDirty = true;
+            }
+        }
+        else if (currentDiscoMode == DiscoMode.DROP) {
+            // Mode 2: Call down an orbital strike of your currently selected block!
+            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wy = win.cdGridY + 40f; // Drop from the sky
+
+            com.leaf.game.entity.DroppedItem item = new com.leaf.game.entity.DroppedItem(
+                    (int)wx, (int)wy, (int)wz, win.selectedBlock, new org.joml.Vector3f(0f, -40f, 0f) // Heavy downward slam velocity
+            );
+            win.droppedItems.add(item);
+            com.leaf.game.core.AudioManager.play("fall_hit", 0.8f);
+        }
+        else if (currentDiscoMode == DiscoMode.REDIRECT) {
+            // Mode 3: Instantly warp all active projectiles to this cell
+            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
+
+            boolean redirected = false;
+
+            // Redirect player Void Shards
+            for (com.leaf.game.entity.AttackController.ActiveBolt bolt : win.player.attacks.activeBolts) {
+                bolt.pos.set(wx, win.cdGridY + 1.5f, wz);
+                redirected = true;
+            }
+            // Redirect enemy boulders/projectiles
+            for (com.leaf.game.entity.EnemyManager.EnemyProjectile proj : win.enemyManager.projectiles) {
+                proj.pos.set(wx, win.cdGridY + 1.5f, wz);
+                redirected = true;
+            }
+
+            if (redirected) {
+                com.leaf.game.core.AudioManager.play("snipe_redirect", 1.0f);
+                com.leaf.game.core.ScreenEffectManager.INSTANCE.flash(0f, 0.8f, 1.0f, 0.4f, 0.1f);
+            }
+        }
+    }
 }
