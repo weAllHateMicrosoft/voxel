@@ -452,11 +452,12 @@ public class Window {
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
-    private static final float TS_MAXR   = 220f;       // domain reach (blocks) — as large as possible
-    private static final float TS_EXPAND = 1.8f;       // slower, more dramatic expansion
-    private static final float TS_HOLD   = 4.0f;       // time-stopped beat
-    private static final float TS_SHRINK = 0.9f;       // collapse back
-    private static final float TS_END    = TS_EXPAND + TS_HOLD + TS_SHRINK;
+    private static final float TS_MAXR   = 220f;   // domain reach (blocks)
+    private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
+    private static final float TS_SHRINK = 0.9f;   // collapse duration (s)
+    // TS_HOLD and TS_END are read from GameConfig at runtime so they can be tuned.
+    private float tsHold() { return GameConfig.timeStopHoldSecs; }
+    private float tsEnd()  { return TS_EXPAND + tsHold() + TS_SHRINK; }
     // ─────────────────────────────────────────────────────────────────────────
 
     public void run() {
@@ -4348,33 +4349,45 @@ public class Window {
     //  "THE WORLD"  (F8)
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /** F8: anchor the domain at the player's feet and start the burst. */
+    /** F8: anchor the domain, pause all world audio, start the ZA WARUDO sequence. */
     private void startTimeStop() {
         tsCenterX = player.position.x;
-        tsCenterY = player.position.y + 1.0f;   // centre on the body, not the soles
+        tsCenterY = player.position.y + 1.0f;
         tsCenterZ = player.position.z;
         timeStopT = 0f; tsRadiusNow = 0f; timeStopActive = true;
+
+        // Pause every currently-playing sound before the time_stop sfx fires.
+        // This silences ambient loops, enemy sounds, and ongoing one-shots so
+        // only the signature audio plays in a clean silence.
+        AudioManager.pauseAll();
         AudioManager.play("copyrighted/time_stop", 1.0f);
-        // The "ZA WARUDO" freeze flash — a hard electric-blue pop.
+        AudioManager.playContinuous("clock_ticking", 0.65f);
+
         ScreenEffectManager.INSTANCE.flash(0.45f, 0.7f, 1.0f, 0.7f, 0.18f);
-        orbShake(0.25f, 0.18f);                 // a sharp jolt as time seizes
+        orbShake(0.25f, 0.18f);
         hintText = "THE WORLD  —  time has stopped."; hintTimer = 3f;
     }
 
-    /** Drive the expand → hold → collapse radius; deactivate at the end. */
+    /** Drive the expand → hold → collapse radius; deactivate and restore audio at the end. */
     private void updateTimeStop(float dt) {
         timeStopT += dt;
         float t = timeStopT;
+        float hold = tsHold();
+
         if (t < TS_EXPAND) {
             float p = t / TS_EXPAND;
-            tsRadiusNow = TS_MAXR * (1f - (1f - p) * (1f - p) * (1f - p)); // ease-out burst
-        } else if (t < TS_EXPAND + TS_HOLD) {
+            tsRadiusNow = TS_MAXR * (1f - (1f - p) * (1f - p) * (1f - p));
+        } else if (t < TS_EXPAND + hold) {
             tsRadiusNow = TS_MAXR;
-        } else if (t < TS_END) {
-            float p = (t - TS_EXPAND - TS_HOLD) / TS_SHRINK;
-            tsRadiusNow = TS_MAXR * (1f - p * p);     // accelerating collapse
-            if (Math.abs(t - (TS_EXPAND + TS_HOLD)) < dt * 1.5f) {
-                // Time resumes — a softer release flash.
+        } else if (t < tsEnd()) {
+            float p = (t - TS_EXPAND - hold) / TS_SHRINK;
+            tsRadiusNow = TS_MAXR * (1f - p * p);
+
+            // One-shot at the moment collapse begins: stop ticking, resume world.
+            if (Math.abs(t - (TS_EXPAND + hold)) < dt * 1.5f) {
+                AudioManager.stopContinuous("clock_ticking");
+                AudioManager.resumeAll();
+                AudioManager.play("copyrighted/resume_time", 1.0f);
                 ScreenEffectManager.INSTANCE.flash(0.5f, 0.7f, 1.0f, 0.4f, 0.2f);
             }
         } else {

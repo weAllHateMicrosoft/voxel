@@ -136,6 +136,9 @@ public class GameConfig {
     // (T is reserved for chat; R was chosen to avoid conflict.)
     public static float timeSlowScale       = 0.15f;  // scale while R held
     public static float timeFastScale       = 4.0f;   // scale while Y held
+
+    // ── TIME STOP (F8 "The World") ────────────────────────────────────────────
+    public static float timeStopHoldSecs    = 4.0f;   // seconds enemies stay frozen
     // Linear ramp rate: covers full slow range (1.0→0.15 = 0.85) in ~0.3 s
     public static float timeTransitionSpeed = 2.83f;
 

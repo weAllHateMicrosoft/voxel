@@ -578,6 +578,37 @@ public class AudioManager {
                 + " activeLoops=" + loops.size();
     }
 
+    /**
+     * Pause every currently-playing source (one-shots + loops).
+     * Only sources that are actually PLAYING are paused so resumeAll()
+     * can un-pause exactly those — sources already stopped are untouched.
+     */
+    public static void pauseAll() {
+        AUDIO.submit(() -> {
+            if (pool != null) for (int s : pool) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PLAYING) alSourcePause(s);
+            }
+            for (int s : loops.values()) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PLAYING) alSourcePause(s);
+            }
+        });
+    }
+
+    /**
+     * Resume every source that was paused (via pauseAll or otherwise).
+     * Sources that were already stopped before pauseAll() remain stopped.
+     */
+    public static void resumeAll() {
+        AUDIO.submit(() -> {
+            if (pool != null) for (int s : pool) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PAUSED) alSourcePlay(s);
+            }
+            for (int s : loops.values()) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PAUSED) alSourcePlay(s);
+            }
+        });
+    }
+
     /** Release all OpenAL resources. Optional — daemon thread dies with the JVM. */
     public static void shutdown() {
         AUDIO.submit(() -> {
