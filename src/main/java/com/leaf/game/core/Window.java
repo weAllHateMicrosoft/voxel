@@ -4148,8 +4148,7 @@ public class Window {
         }
         orbitalT = 0f; orbCarved = false; orbStruck = false; orbitalActive = true;
         orbParticles.clear();
-        AudioManager.preload("laser_gun");
-        AudioManager.preload("tinnitus");
+        AudioManager.play("laser_gun", 1.0f);   // starts charging immediately on F7
         hintText = "ORBITAL ANNIHILATION  —  stand back."; hintTimer = 3f;
     }
 
@@ -4197,7 +4196,6 @@ public class Window {
             orbShake(0.22f, 0.36f);
             if (!orbStruck) {
                 orbStruck = true;
-                AudioManager.play("laser_gun", 1.0f);          // the 10-s laser audio
                 ScreenEffectManager.INSTANCE.flash(1f, 1f, 1f, 0.9f, 0.22f);
                 spawnDebris();                                  // voxel debris bursts from impact
             }
@@ -4207,11 +4205,7 @@ public class Window {
         if (Math.abs(t - ORB_IMPLODE) < dt * 1.5f) {
             orbShake(0.45f, 0.42f);
             ScreenEffectManager.INSTANCE.flash(0.7f, 1f, 0.8f, 0.55f, 0.14f);
-            // Shockwave tinnitus — a high-pitched ringing that fades over ~4 s.
-            // Pitch 2.2 × normal gives the "ears screaming" frequency; volume 0.65
-            // keeps it eerie rather than just loud.
-            AudioManager.play("tinnitus", 0.65f, 2.2f);
-            // Also briefly muffle all other audio as if the blast deafened the player.
+            // Muffle all other audio briefly as if the blast deafened the player.
             AudioManager.setListenerMuffle(0.9f);
         }
         // Fade the muffle out over ~3 s (called every frame, driven by the timer).
@@ -4227,7 +4221,8 @@ public class Window {
 
         if (t >= ORB_END) {
             orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear();
-            AudioManager.setListenerMuffle(0f);   // ensure muffle cleared if sequence ended early
+            AudioManager.setListenerMuffle(0f);
+            AudioManager.play("tinnitus", 0.65f, 2.2f);   // ears ringing after the whole thing
         }
     }
 
