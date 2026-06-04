@@ -440,6 +440,23 @@ public class Window {
     // Tinnitus post-effect (runs after ORB_END, independent of orbitalActive).
     private float  tinnitusTimer = 0f;
     private static final float TINNITUS_DUR = 7.0f;   // seconds
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  "THE WORLD" — time-stop domain (F8)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // An expanding sphere of photographic-negative reality bursts from the player's
+    // feet; everything inside is inverted + shifted to electric blue, enemies and
+    // their projectiles freeze, then the domain collapses back. Pure spectacle.
+    private boolean timeStopActive = false;
+    private float   timeStopT      = 0f;
+    private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
+    private float   tsRadiusNow    = 0f;               // live radius (world units)
+    private boolean lastF8         = false;
+    private static final float TS_MAXR   = 78f;        // domain reach (blocks)
+    private static final float TS_EXPAND = 0.40f;      // fast burst out
+    private static final float TS_HOLD   = 3.6f;       // time-stopped beat
+    private static final float TS_SHRINK = 0.55f;      // collapse back
+    private static final float TS_END    = TS_EXPAND + TS_HOLD + TS_SHRINK;
     // ─────────────────────────────────────────────────────────────────────────
 
     public void run() {
@@ -1302,8 +1319,10 @@ public class Window {
                         }
                         player.attacks.pendingMeleeArcs.clear();
 
-                        // Update all enemies (gravity, AI, death fade, etc.)
-                        enemyManager.update(deltaTime, world, player.position);
+                        // Update all enemies (gravity, AI, death fade, etc.).
+                        // THE WORLD: time is frozen → enemies and their projectiles
+                        // stop dead while the player keeps moving (dt=0 freezes them).
+                        enemyManager.update(timeStopActive ? 0f : deltaTime, world, player.position);
 
                         // ── PROCESS GOLEM BLOCK BREAKING ──
                         for (Enemy e : enemyManager.getEnemies()) {
@@ -2463,6 +2482,12 @@ public class Window {
                     lastF7 = f7Now;
                     if (orbitalActive) updateOrbitalStrike(rawDeltaTime);
 
+                    // ── THE WORLD: time-stop domain (F8) ──────────────────────
+                    boolean f8Now = glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS;
+                    if (f8Now && !lastF8 && !timeStopActive) startTimeStop();
+                    lastF8 = f8Now;
+                    if (timeStopActive) updateTimeStop(rawDeltaTime);
+
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -2612,6 +2637,11 @@ public class Window {
                 shader.setUniform("orbWidth",     6.0f);
                 shader.setUniform("orbIntensity", orbScanIntensity);
                 shader.setUniform("orbFlash",     orbitalActive ? orbFlashAmt : 0f);
+                // "The World" time-stop domain.
+                shader.setUniform("tsActive", timeStopActive ? 1 : 0);
+                shader.setUniform("tsCenter", new Vector3f(tsCenterX, tsCenterY, tsCenterZ));
+                shader.setUniform("tsRadius", tsRadiusNow);
+                shader.setUniform("tsEdge",   2.5f);
                 shader.setUniform("desaturate", ScreenEffectManager.INSTANCE.getDesaturate());
 
                 boolean isCameraUnderwater = world.getBlock(
@@ -4310,6 +4340,43 @@ public class Window {
         activeShakeDuration  = dur;
         activeShakeAmplitude = amp;
         smashShakeTimer      = Math.max(smashShakeTimer, dur);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  "THE WORLD"  (F8)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** F8: anchor the domain at the player's feet and start the burst. */
+    private void startTimeStop() {
+        tsCenterX = player.position.x;
+        tsCenterY = player.position.y + 1.0f;   // centre on the body, not the soles
+        tsCenterZ = player.position.z;
+        timeStopT = 0f; tsRadiusNow = 0f; timeStopActive = true;
+        // The "ZA WARUDO" freeze flash — a hard electric-blue pop.
+        ScreenEffectManager.INSTANCE.flash(0.45f, 0.7f, 1.0f, 0.7f, 0.18f);
+        orbShake(0.25f, 0.18f);                 // a sharp jolt as time seizes
+        hintText = "THE WORLD  —  time has stopped."; hintTimer = 3f;
+    }
+
+    /** Drive the expand → hold → collapse radius; deactivate at the end. */
+    private void updateTimeStop(float dt) {
+        timeStopT += dt;
+        float t = timeStopT;
+        if (t < TS_EXPAND) {
+            float p = t / TS_EXPAND;
+            tsRadiusNow = TS_MAXR * (1f - (1f - p) * (1f - p) * (1f - p)); // ease-out burst
+        } else if (t < TS_EXPAND + TS_HOLD) {
+            tsRadiusNow = TS_MAXR;
+        } else if (t < TS_END) {
+            float p = (t - TS_EXPAND - TS_HOLD) / TS_SHRINK;
+            tsRadiusNow = TS_MAXR * (1f - p * p);     // accelerating collapse
+            if (Math.abs(t - (TS_EXPAND + TS_HOLD)) < dt * 1.5f) {
+                // Time resumes — a softer release flash.
+                ScreenEffectManager.INSTANCE.flash(0.5f, 0.7f, 1.0f, 0.4f, 0.2f);
+            }
+        } else {
+            timeStopActive = false; tsRadiusNow = 0f;
+        }
     }
 
     /** Erase a vertical cylinder of voxels at the epicentre and remesh the hit chunks. */

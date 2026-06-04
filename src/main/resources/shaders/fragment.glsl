@@ -21,6 +21,12 @@ uniform float orbWidth;       // wavefront band thickness
 uniform float orbIntensity;   // emissive gain
 uniform float orbFlash;       // environmental white flash (laser impact)
 
+// ── TIME STOP: "negative film" domain (DIO's The World) ───────────────────────
+uniform int   tsActive;       // 1 = domain live
+uniform vec3  tsCenter;       // world-space domain centre (player's feet)
+uniform float tsRadius;       // current domain radius (world units)
+uniform float tsEdge;         // boundary fade / ring thickness
+
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
 // Set useTexture = 0 (default) to use pure vertex colour — all existing Mesh
@@ -169,6 +175,23 @@ void main() {
     // ── ENVIRONMENTAL FLASH — the laser impact lights up the dead world ───────
     if (orbFlash > 0.001) {
         gammaCorrected += vec3(0.85, 1.0, 0.9) * orbFlash;
+    }
+
+    // ── TIME STOP — expanding photographic-negative domain, shifted to DIO blue ──
+    if (tsActive == 1) {
+        float d = length(vWorldPos - tsCenter);          // 3D sphere from the feet
+        // Inversion fades in from the surface inward so the boundary sweeps colour.
+        float invAmt = smoothstep(tsRadius, tsRadius - tsEdge, d);   // 1 inside → 0 at surface
+        if (invAmt > 0.001) {
+            vec3  inv = vec3(1.0) - gammaCorrected;       // photographic negative
+            vec3  neg = inv * vec3(0.60, 0.85, 1.40);     // shove toward cyan/electric blue
+            float lum = dot(inv, vec3(0.299, 0.587, 0.114));
+            neg = mix(neg, vec3(lum) * vec3(0.45, 0.70, 1.35), 0.30);  // 30% toward blue-mono
+            gammaCorrected = mix(gammaCorrected, neg, invAmt);
+        }
+        // Searing electric-blue boundary ring riding the domain surface.
+        float ring = 1.0 - smoothstep(0.0, tsEdge * 1.5, abs(d - tsRadius));
+        gammaCorrected += vec3(0.30, 0.70, 1.0) * ring * 1.8;
     }
 
     FragColor = vec4(gammaCorrected, baseColor.a * alphaMultiplier);
