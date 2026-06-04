@@ -427,6 +427,7 @@ public class Window {
     private com.leaf.game.render.Shader bloomShader = null; // searing-bloom post-process
     // 3D effect meshes (unit-sized, built once, drawn emissive with per-object MVP).
     private com.leaf.game.render.Mesh orbTorus, orbSphere, orbCyl, orbCube;
+    private com.leaf.game.render.Mesh radarFan;   // flat afterglow wedge (angular bright→0 fade)
     /** Lightweight 3D particles for embers (float up) and debris (burst out). */
     private static final class OrbParticle {
         float x, y, z, vx, vy, vz, life, maxLife, size, r, g, b;
@@ -452,20 +453,23 @@ public class Window {
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
-    // ── "VOXEL LINES" world restyle (F10) — one-shot cycle over the REAL terrain ─
-    // A clay + neon-edge sweep ("blueprint" recolour, IQ-inspired) passes over the
-    // actual world, holds, then fades back to normal. No new world, no toggle.
+    // ── RADAR SWEEP (F10) — one-shot scan over the REAL world ────────────────────
+    // A 3D radar scope projects onto the terrain (rings + spokes + rotating sweep
+    // arm with an opaque→transparent afterglow), enemies light up in wireframe and
+    // "ping" as the arm passes them, then it all fades back to normal.
     private boolean vlActive   = false;
-    private float   vlT        = 0f;          // seconds into the cycle
-    private float   vlCx, vlCy, vlCz;         // sweep origin (player position at trigger)
-    private float   vlRadiusNow = 0f;         // sweep-front radius (world units)
-    private float   vlAmountNow = 0f;         // 0→1→0 envelope
+    private float   vlT        = 0f;          // seconds into the scan
+    private float   vlCx, vlCy, vlCz;         // scope origin (player position at trigger)
+    private float   vlRadiusNow = 0f;         // scope radius (world units)
+    private float   vlAmountNow = 0f;         // 0→1→0 fade envelope
+    private float   vlSweepNow  = 0f;         // sweep-arm angle (radians)
     private boolean lastF10     = false;
-    private static final float VL_MAXR   = 200f;   // sweep reach (blocks)
-    private static final float VL_RAMP   = 1.6f;   // sweep-in + intensify (s)
-    private static final float VL_HOLD   = 2.6f;   // full restyle hold (s)
-    private static final float VL_RETURN = 2.2f;   // fade back to normal (s)
+    private static final float VL_MAXR   = 200f;   // scope reach (blocks)
+    private static final float VL_RAMP   = 1.0f;   // fade-in (s)
+    private static final float VL_HOLD   = 6.0f;   // active scanning (s)
+    private static final float VL_RETURN = 1.5f;   // fade-out (s)
     private static final float VL_END    = VL_RAMP + VL_HOLD + VL_RETURN;
+    private static final float VL_SWEEP_SPEED = 3.14159f;  // rad/s (~1 rotation / 2 s)
 
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
@@ -2668,11 +2672,12 @@ public class Window {
                 shader.setUniform("tsCenter", new Vector3f(tsCenterX, tsCenterY, tsCenterZ));
                 shader.setUniform("tsRadius", tsRadiusNow);
                 shader.setUniform("tsEdge",   2.5f);
-                // "Voxel Lines" world restyle.
+                // Radar scope projected on the terrain.
                 shader.setUniform("vlActive", vlActive ? 1 : 0);
                 shader.setUniform("vlCenter", new Vector3f(vlCx, vlCy, vlCz));
                 shader.setUniform("vlRadius", vlRadiusNow);
                 shader.setUniform("vlAmount", vlAmountNow);
+                shader.setUniform("vlSweep",  vlSweepNow);
                 shader.setUniform("desaturate", ScreenEffectManager.INSTANCE.getDesaturate());
 
                 boolean isCameraUnderwater = world.getBlock(
@@ -2948,6 +2953,11 @@ public class Window {
                 //    it gets the searing bloom) — drawn over opaque terrain ──────
                 if (orbitalActive && !isPreloading) {
                     renderOrbital3D(shader, projection, view, renderMvp);
+                }
+
+                // ── RADAR: 3D sweep blade, afterglow wedge, enemy wireframes ────
+                if (vlActive && !isPreloading) {
+                    renderRadar3D(shader, projection, view, renderMvp);
                 }
 
                 // ── PASS 2: TRANSPARENT ───────────────────────────────────────
@@ -4425,13 +4435,12 @@ public class Window {
         }
     }
 
-    /** Drive the one-shot Voxel-Lines restyle: sweep in → hold → fade back to normal. */
+    /** Drive the one-shot radar scan: fade in → scan (rotating arm) → fade out. */
     private void updateVoxelLines(float dt) {
         vlT += dt;
         float t = vlT;
-        // Front sweeps out over the ramp, then stays covering the world.
-        vlRadiusNow = Math.min(1f, t / VL_RAMP) * VL_MAXR;
-        // 0→1 over the ramp, hold at 1, then 1→0 over the return.
+        vlRadiusNow = VL_MAXR;                                  // full scope immediately
+        vlSweepNow  = (vlSweepNow + VL_SWEEP_SPEED * dt) % 6.2831853f;  // rotate the arm
         if (t < VL_RAMP) {
             vlAmountNow = t / VL_RAMP;
         } else if (t < VL_RAMP + VL_HOLD) {
@@ -4488,6 +4497,103 @@ public class Window {
         shader.setUniform("mvp", new Matrix4f(pv).mul(model));
         shader.setUniform("emissiveTint", new Vector3f(r, g, b));
         m.render();
+    }
+
+    /** Radar 3D layer: a vertical "arm" curtain sweeping around (opaque→transparent
+     *  afterglow), a centre pylon, and a wireframe box around every enemy that
+     *  "pings" bright as the arm passes its bearing. The flat ground sweep + rings
+     *  are handled in the terrain shader so they hug the 3D landscape. */
+    private void renderRadar3D(com.leaf.game.render.Shader shader,
+                               Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
+        if (radarFan  == null) radarFan  = orbBuildCurtain(1.7f, 28);  // ~97° afterglow curtain
+        if (orbCube   == null) orbCube   = orbBuildCube();
+        if (orbSphere == null) orbSphere = orbBuildSphere(10, 14);
+
+        float amt = vlAmountNow;
+        if (amt < 0.01f) return;
+        Matrix4f pv = new Matrix4f(projection).mul(view);
+        float cx = vlCx, cy = vlCy, cz = vlCz, R = vlRadiusNow;
+        float sweep = vlSweepNow;
+        float armLen = Math.min(R, 48f);    // the visible 3D arm is local, not the full scope
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);     // additive
+        glDepthMask(false);
+        glDepthFunc(GL_ALWAYS);          // draw over terrain like the shader scope
+        shader.setUniform("emissiveMode", 1);
+
+        // Vertical afterglow CURTAIN: a curved wall (radius 1, height 1) spanning
+        // fan-angle [-span,0]; bright at the leading edge → transparent trailing.
+        // rotateY(-sweep) maps local fan-angle a → world bearing (a + sweep).
+        Matrix4f curtain = new Matrix4f().translate(cx, cy - 1.0f, cz)
+                                         .rotateY(-sweep)
+                                         .scale(armLen, 7.0f, armLen);
+        orbDraw(shader, pv, radarFan, curtain, 0.10f * amt, 1.0f * amt, 0.40f * amt);
+
+        // Bright leading-edge beam — a thin tall box marking the arm itself.
+        float bladeH = 7.0f;
+        Matrix4f blade = new Matrix4f().translate(cx, cy - 1.0f, cz)
+                                       .rotateY(-sweep)
+                                       .translate(armLen * 0.5f, bladeH * 0.5f, 0f)
+                                       .scale(armLen, bladeH, 0.4f);
+        orbDraw(shader, pv, orbCube, blade, 0.5f * amt, 1.5f * amt, 0.75f * amt);
+
+        // Centre pylon.
+        orbDraw(shader, pv, orbSphere,
+                new Matrix4f().translate(cx, cy, cz).scale(0.6f),
+                0.4f * amt, 1.5f * amt, 0.6f * amt);
+
+        // Enemy wireframe boxes + radar ping (bright just after the arm sweeps past).
+        org.lwjgl.opengl.GL11.glPolygonMode(
+                org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_LINE);
+        org.lwjgl.opengl.GL11.glLineWidth(2.0f);
+        for (Enemy e : enemyManager.getEnemies()) {
+            if (!e.alive) continue;
+            float dx = e.position.x - cx, dz = e.position.z - cz;
+            float d = (float) Math.sqrt(dx * dx + dz * dz);
+            if (d > R) continue;
+            float bearing = (float) Math.atan2(dz, dx);
+            float behind  = ((sweep - bearing) % 6.2831853f + 6.2831853f) % 6.2831853f;
+            float ping    = Math.max(0f, 1f - behind / 1.7f);   // fades over the afterglow span
+            float b = (0.35f + 1.7f * ping) * amt;
+            Matrix4f box = new Matrix4f()
+                    .translate(e.position.x, e.position.y + 1.1f, e.position.z)
+                    .scale(2.2f, 2.7f, 2.2f);
+            orbDraw(shader, pv, orbCube, box, 0.10f * b, 1.0f * b, 0.35f * b);
+        }
+        org.lwjgl.opengl.GL11.glPolygonMode(
+                org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_FILL);
+        org.lwjgl.opengl.GL11.glLineWidth(1.0f);
+
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("mvp", renderMvp);
+        glDepthFunc(GL_LESS);
+        glDepthMask(true);
+        glDisable(GL_BLEND);
+    }
+
+    /** Vertical afterglow curtain: a curved wall of radius 1, y in [0,1], spanning
+     *  fan-angle [-span, 0]. Vertex brightness 1 at the leading edge (angle 0) → 0
+     *  trailing, so additive blending fades it opaque→transparent behind the arm. */
+    private com.leaf.game.render.Mesh orbBuildCurtain(float span, int segs) {
+        float[] v = new float[(segs + 1) * 2 * 10];
+        int vi = 0;
+        for (int i = 0; i <= segs; i++) {
+            float a = -span * (float) i / segs;       // 0 → -span
+            float b = 1f - (float) i / segs;           // 1 → 0 brightness
+            float cxr = (float) Math.cos(a), czr = (float) Math.sin(a);
+            int o = (vi++) * 10;                       // bottom vertex
+            v[o]=cxr; v[o+1]=0; v[o+2]=czr; v[o+3]=b; v[o+4]=b; v[o+5]=b; v[o+6]=1; v[o+7]=0; v[o+8]=1; v[o+9]=0;
+            o = (vi++) * 10;                           // top vertex
+            v[o]=cxr; v[o+1]=1; v[o+2]=czr; v[o+3]=b; v[o+4]=b; v[o+5]=b; v[o+6]=1; v[o+7]=0; v[o+8]=1; v[o+9]=0;
+        }
+        int[] idx = new int[segs * 6];
+        int ii = 0;
+        for (int i = 0; i < segs; i++) {
+            int a = i*2, bt = i*2+1, c = i*2+2, dt = i*2+3;
+            idx[ii++]=a; idx[ii++]=c; idx[ii++]=bt;  idx[ii++]=bt; idx[ii++]=c; idx[ii++]=dt;
+        }
+        return new com.leaf.game.render.Mesh(v, idx);
     }
 
     /** The whole 3D set-piece: gyroscope, implosion rings, core, embers, laser. */

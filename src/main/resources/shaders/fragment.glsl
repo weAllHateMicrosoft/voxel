@@ -27,11 +27,12 @@ uniform vec3  tsCenter;       // world-space domain centre (player's feet)
 uniform float tsRadius;       // current domain radius (world units)
 uniform float tsEdge;         // boundary fade / ring thickness
 
-// ── VOXEL LINES: clay + neon-edge restyle that sweeps over the real world ─────
-uniform int   vlActive;       // 1 = restyle live
-uniform vec3  vlCenter;       // sweep origin (player position)
-uniform float vlRadius;       // sweep-front radius (world units)
-uniform float vlAmount;       // 0→1→0 envelope over the single cycle
+// ── RADAR SCOPE: range rings + bearing spokes + rotating sweep on the terrain ──
+uniform int   vlActive;       // 1 = radar live
+uniform vec3  vlCenter;       // scope origin (player position)
+uniform float vlRadius;       // scope radius (world units)
+uniform float vlAmount;       // 0→1→0 fade-in/out envelope
+uniform float vlSweep;        // current sweep-arm angle (radians)
 
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
@@ -200,36 +201,44 @@ void main() {
         gammaCorrected += vec3(0.30, 0.70, 1.0) * ring * 1.8;
     }
 
-    // ── VOXEL LINES — clay → neon-edge "blueprint" restyle that sweeps over the world ──
-    // A conversion front expands from the player; behind it the terrain becomes a
-    // cool matte clay, then deepens to midnight blue with blazing cyan-white edge
-    // lines on every 90° block boundary. vlAmount drives a single 0→1→0 cycle.
-    // (Distinct palette from IQ's orange-on-charcoal: cyan-white on midnight blue.)
+    // ── RADAR SCOPE — projected onto the real terrain so it hugs the 3D world ──
+    // The ground becomes a dark-green radar scope with range rings + bearing
+    // spokes + a bright outer ring, and a rotating sweep arm whose afterglow
+    // fades opaque→transparent behind it, "pinging" the terrain as it passes.
     if (vlActive == 1) {
-        float d   = length(vWorldPos - vlCenter);
-        float amt = vlAmount * smoothstep(vlRadius, vlRadius - 6.0, d);   // full behind the front
+        vec2  rel  = vWorldPos.xz - vlCenter.xz;
+        float dist = length(rel);
+        float inside = 1.0 - smoothstep(vlRadius - 2.0, vlRadius + 1.0, dist);
+        float amt = vlAmount * inside;
         if (amt > 0.001) {
-            // Voxel-edge wireframe: bright on the two IN-PLANE block boundaries of
-            // this face (exclude the normal axis, which always sits on a boundary).
-            vec3  dE = 0.5 - abs(fract(vWorldPos) - 0.5);
-            vec3  nA = abs(normalize(vertexNormal));
-            float lw = 0.055;
-            float wire = clamp(
-                (1.0 - nA.x) * (1.0 - smoothstep(0.0, lw, dE.x)) +
-                (1.0 - nA.y) * (1.0 - smoothstep(0.0, lw, dE.y)) +
-                (1.0 - nA.z) * (1.0 - smoothstep(0.0, lw, dE.z)), 0.0, 1.0);
+            float ang = atan(rel.y, rel.x);            // bearing of this fragment
 
-            // Matte clay: cool blue-grey, keeps the soft AO/lighting already in gammaCorrected.
-            float lum  = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
-            vec3  clay = vec3(lum) * vec3(0.55, 0.72, 0.95);
+            // Dark radar-scope base (keeps a hint of terrain shading).
+            float lum   = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
+            vec3  scope = vec3(0.0, 0.045, 0.02) + vec3(0.0, 0.16, 0.06) * lum;
 
-            // Neon kicks in past half-conversion: clay darkens to midnight, edges blaze.
-            float neon = smoothstep(0.45, 1.0, amt);
-            vec3  base = clay * mix(1.0, 0.08, neon);                       // → deep midnight blue
-            vec3  edge = mix(vec3(0.0, 0.9, 1.0), vec3(0.7, 1.0, 1.0), wire); // cyan → white-hot
-            vec3  styled = base + edge * wire * (0.35 + 2.6 * neon);
+            // Range rings every 12 blocks.
+            float rn   = dist / 12.0;
+            float ring = 1.0 - smoothstep(0.0, 0.05, abs(rn - floor(rn + 0.5)));
+            // Bearing spokes — 12 of them (every 30°).
+            float an   = ang / 0.5235988;
+            float spoke= 1.0 - smoothstep(0.0, 0.04, abs(an - floor(an + 0.5)));
+            // Bright outer boundary ring.
+            float outer= 1.0 - smoothstep(0.0, 2.0, abs(dist - vlRadius));
 
-            gammaCorrected = mix(gammaCorrected, styled, amt);
+            // Rotating sweep + trailing afterglow (opaque at the arm → 0 behind it).
+            float behind = mod(vlSweep - ang, 6.2831853);     // angle behind the arm
+            float sweep  = 1.0 - smoothstep(0.0, 1.7, behind); // ~97° afterglow
+            sweep *= sweep;
+            float arm    = 1.0 - smoothstep(0.0, 0.045, behind); // razor leading edge
+
+            vec3 grid = vec3(0.10, 1.0, 0.35);
+            vec3 radar = scope;
+            radar += grid * (ring * 0.5 + spoke * 0.4 + outer * 1.4);
+            radar += grid * sweep * 0.85;                       // the ping wash
+            radar += vec3(0.7, 1.0, 0.8) * arm * 1.6;           // bright sweep line
+
+            gammaCorrected = mix(gammaCorrected, radar, amt);
         }
     }
 
