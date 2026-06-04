@@ -527,11 +527,16 @@ public class Window {
     private final java.util.ArrayList<float[]> depGibs = new java.util.ArrayList<>();
     /** Anime sword-sweep crescent mesh (unit, in local XY plane; built once). */
     private com.leaf.game.render.Mesh depCrescent = null;
-    /** Phantom sword silhouette mesh for the idle "ready-sword" aura ring (built once). */
+    /** Phantom sword silhouette mesh (built once). */
     private com.leaf.game.render.Mesh depBlade = null;
-    private float   depRingPhase = 0f;   // slow orbit angle of the aura sword ring
-    private float   depAuraGlow  = 0f;   // 0→1 aura intensity (pulses "occasionally" + on strikes)
-    private float   depAuraTimer = 0f;   // counts up to depAuraInterval, then pulses the aura
+    private float   depAuraGlow  = 0f;   // 0→1 aura intensity (always swinging; flares on strikes + occasionally)
+    private float   depAuraTimer = 0f;   // counts up to depAuraInterval, then flares
+    // Phantom blades violently sweeping GREAT CIRCLES across the whole sphere around the player.
+    private static final int DEP_BLADES = 9;
+    private final org.joml.Vector3f[] depBladeAxis  = new org.joml.Vector3f[DEP_BLADES];
+    private final org.joml.Vector3f[] depBladeStart = new org.joml.Vector3f[DEP_BLADES];
+    private final float[]             depBladeSpeed = new float[DEP_BLADES];
+    private float depHitstopCd = 0f;     // cooldown so impact-frames don't freeze the game constantly
     // ── Bezier head-turn: smoothly rotate the camera to face each slashed enemy ──
     private boolean depTurning = false;
     private float   depTurnT = 0f;
@@ -5011,11 +5016,24 @@ public class Window {
         depZ = player.position.z;
         depStrike = 0f;
         depDetectTimer = 0f;
-        depAuraTimer = 0f; depAuraGlow = 0f; depRingPhase = 0f;
+        depAuraTimer = 0f; depAuraGlow = 0.5f; depHitstopCd = 0f;
         depTurning = false; depTurnT = 0f;
         depPrevPos.clear();
         depSlashFx.clear();
         depGibs.clear();
+        // Randomise each phantom blade's great-circle path so they cover the whole sphere.
+        java.util.Random rng = new java.util.Random();
+        for (int i = 0; i < DEP_BLADES; i++) {
+            org.joml.Vector3f ax = new org.joml.Vector3f(
+                    rng.nextFloat() * 2 - 1, rng.nextFloat() * 2 - 1, rng.nextFloat() * 2 - 1);
+            if (ax.lengthSquared() < 1e-4f) ax.set(0, 1, 0);
+            ax.normalize();
+            org.joml.Vector3f ref = Math.abs(ax.y) < 0.9f
+                    ? new org.joml.Vector3f(0, 1, 0) : new org.joml.Vector3f(1, 0, 0);
+            depBladeAxis[i]  = ax;
+            depBladeStart[i] = new org.joml.Vector3f(ref).cross(ax).normalize();
+            depBladeSpeed[i] = (rng.nextBoolean() ? 1 : -1) * (3.0f + rng.nextFloat() * 4.0f); // FAST
+        }
         if (depCrescent == null) depCrescent = buildSlashCrescent(22);
         if (depBlade    == null) depBlade    = buildPhantomBlade();
         hintText  = "DEPRIVATION DOMAIN — perfect stillness, absolute death · ['] to exit";
@@ -5047,13 +5065,13 @@ public class Window {
             if (depTurnT >= 1f) depTurning = false;
         }
 
-        // ── Idle "ready-sword" aura: slow orbiting blade ring that pulses ────────
-        depRingPhase += dt * 0.6f;
-        depAuraGlow   = Math.max(0f, depAuraGlow - dt * 1.6f);   // decay between pulses
+        // ── Ready-sword aura intensity: always active (violent), flares occasionally ──
+        depHitstopCd = Math.max(0f, depHitstopCd - dt);
+        depAuraGlow  = Math.max(0.40f, depAuraGlow - dt * 1.6f);  // never fully off — always swinging
         depAuraTimer += dt;
         if (depAuraTimer >= GameConfig.depAuraInterval) {
             depAuraTimer = 0f;
-            depAuraGlow  = Math.max(depAuraGlow, 0.85f);          // an "occasional" flare
+            depAuraGlow  = Math.max(depAuraGlow, 0.95f);           // an "occasional" flare
         }
 
         // Age slash crescents (expand + sweep + fade)
@@ -5129,10 +5147,17 @@ public class Window {
             spawnSlashBurst(depX, depY + 1.1f, depZ, n, 1.0f, 2.0f);
             depStrike   = Math.min(1f, depStrike + 0.6f);
             depAuraGlow = Math.min(1f, depAuraGlow + 0.7f);   // the ready-swords flare too
-            activeShakeAmplitude = 0.08f;
-            activeShakeDuration  = 0.14f;
-            smashShakeTimer      = Math.max(smashShakeTimer, 0.14f);
+            activeShakeAmplitude = 0.11f;
+            activeShakeDuration  = 0.16f;
+            smashShakeTimer      = Math.max(smashShakeTimer, 0.16f);
             ScreenEffectManager.INSTANCE.flash(1f, 0.90f, 0.35f, 0.25f, 0.10f);
+            // IMPACT FRAMES: briefly freeze the world on the cut (rate-limited so a
+            // horde doesn't lock the game solid). FX use rawDeltaTime so the slash
+            // keeps animating while everything else stops — that's the juice.
+            if (depHitstopCd <= 0f) {
+                ScreenEffectManager.INSTANCE.hitStop(3);   // ~3 frames (~50 ms)
+                depHitstopCd = 0.18f;
+            }
             // AUDIO HOOK: add your own slash / cut cue here (user-supplied).
         }
     }
@@ -5164,6 +5189,25 @@ public class Window {
     private static float smootherstep(float t) {
         t = Math.max(0f, Math.min(1f, t));
         return t * t * t * (t * (t * 6f - 15f) + 10f);
+    }
+
+    /** Model matrix that places a phantom blade at (px,py,pz) with its tip (+Y)
+     *  pointing along {@code outDir} (radially outward), flat face roughly side-on. */
+    private static Matrix4f bladeMatrixOutward(float px, float py, float pz,
+                                               org.joml.Vector3f outDir, float scale) {
+        org.joml.Vector3f y = new org.joml.Vector3f(outDir);
+        if (y.lengthSquared() < 1e-6f) y.set(0, 1, 0);
+        y.normalize();
+        org.joml.Vector3f ref = Math.abs(y.y) < 0.95f
+                ? new org.joml.Vector3f(0, 1, 0) : new org.joml.Vector3f(1, 0, 0);
+        org.joml.Vector3f x = new org.joml.Vector3f(ref).cross(y).normalize(); // local X
+        org.joml.Vector3f z = new org.joml.Vector3f(x).cross(y).normalize();   // local Z (normal)
+        Matrix4f m = new Matrix4f(
+                x.x, x.y, x.z, 0f,
+                y.x, y.y, y.z, 0f,
+                z.x, z.y, z.z, 0f,
+                px,  py,  pz,  1f);
+        return m.scale(scale);
     }
 
     /** Spawn a burst of randomly-oriented slash crescents centred at (cx,cy,cz).
@@ -5205,6 +5249,15 @@ public class Window {
             float life = 0.9f + (float) Math.random() * 0.7f;
             depGibs.add(new float[]{px, py, pz, vx, vy, vz, size, 0f, life});
         }
+        // Two BIG halves — the body visibly cleaved in two and flung apart, tumbling.
+        for (int h = 0; h < 2; h++) {
+            float side = (h == 0) ? 1f : -1f;
+            float spd = 2.5f + (float) Math.random() * 2.0f;
+            depGibs.add(new float[]{
+                    cx + nx * side * 0.3f, cy + 0.2f, cz + nz * side * 0.3f,
+                    nx * side * spd, 2.5f + (float) Math.random() * 2.0f, nz * side * spd,
+                    0.55f + (float) Math.random() * 0.25f, 0f, 1.3f + (float) Math.random() * 0.4f});
+        }
     }
 
     private void renderDeprivationDomain(com.leaf.game.render.Shader shader,
@@ -5225,39 +5278,41 @@ public class Window {
         glDisable(GL_CULL_FACE);
         shader.setUniform("emissiveMode", 1);
 
-        // ── READY-SWORD AURA: a slow orbiting ring of phantom blades around you,
-        //    flaring "occasionally" (and on every strike) — you are armed in 360°. ──
-        if (depAuraGlow > 0.02f) {
-            int N = 8;
-            float ringR = GameConfig.depRadius * 0.82f;
-            for (int i = 0; i < N; i++) {
-                float th = depRingPhase + i * (float) (Math.PI * 2.0 / N);
-                float bx = depX + (float) Math.cos(th) * ringR;
-                float bz = depZ + (float) Math.sin(th) * ringR;
-                float glint = depAuraGlow * (0.55f + 0.45f * (float) Math.sin(tnow * 6.0 + i * 1.7));
-                float br = glint * 2.4f;
+        // ── READY-SWORD STORM: phantom blades whipping GREAT CIRCLES across the
+        //    whole sphere around you — violent, omnidirectional, always swinging. ──
+        {
+            float radius = GameConfig.depRadius * 0.72f;
+            for (int i = 0; i < DEP_BLADES; i++) {
+                float ang = tnow * depBladeSpeed[i];
+                org.joml.Vector3f p = new org.joml.Vector3f(depBladeStart[i])
+                        .rotateAxis(ang, depBladeAxis[i].x, depBladeAxis[i].y, depBladeAxis[i].z);
+                float px = depX + p.x * radius;
+                float py = depY + 1.0f + p.y * radius;
+                float pz = depZ + p.z * radius;
+                float flick = 0.55f + 0.45f * (float) Math.sin(tnow * 11.0 + i * 2.0);
+                float br = (0.45f + 1.05f * depAuraGlow) * flick * 2.0f;
                 if (br <= 0.02f) continue;
-                Matrix4f m = new Matrix4f().translate(bx, depY + 0.2f, bz)
-                        .rotateY(-th + (float) (Math.PI * 0.5))   // flat face toward the player
-                        .rotateX(-0.22f)                          // lean outward, tip up-and-out
-                        .scale(1.35f);
-                orbDraw(shader, pv, depBlade, m, br * 1.3f, br * 0.95f, br * 0.30f);
+                // Tip points radially outward; the great-circle motion sweeps it violently.
+                Matrix4f m = bladeMatrixOutward(px, py, pz, p, 1.45f);
+                orbDraw(shader, pv, depBlade, m, br * 1.2f, br * 0.9f, br * 0.28f);
             }
         }
 
-        // ── THE SLASH STORM: expanding + SWEEPING crescents, white-hot gold ──
+        // ── THE SLASH STORM: expanding + SWEEPING crescents (crimson-white blades) ──
+        // Drawn with a WHITE tint so the baked two-tone (white edge → crimson body)
+        // shows through — that contrast is what makes the slashes pop off the gold.
         for (float[] s : depSlashFx) {
             float f    = s[6] / s[7];                       // 0→1 over its life
             float ease = 1f - (1f - f) * (1f - f);          // easeOut for expansion + sweep
             float scale = s[8] + (s[9] - s[8]) * ease;
             float rise = (f < 0.12f) ? f / 0.12f : 1f;      // snap to full brightness
             float fall = (f > 0.55f) ? (1f - (f - 0.55f) / 0.45f) : 1f;  // then fade out
-            float br   = rise * fall * 4.5f;                // HDR — feeds the bloom
+            float br   = rise * fall * 4.8f;                // HDR — feeds the bloom
             if (br <= 0.01f) continue;
             Matrix4f m = new Matrix4f().translate(s[0], s[1], s[2])
                     .rotateY(s[3]).rotateX(s[4]).rotateZ(s[5] + s[10] * ease)  // sweep through the arc
                     .scale(scale);
-            orbDraw(shader, pv, depCrescent, m, br * 1.35f, br * 1.0f, br * 0.32f);
+            orbDraw(shader, pv, depCrescent, m, br, br, br);   // white tint → keep baked crimson
         }
 
         // ── VOXEL GIBS: sliced bodies, white-hot gold → charred ──────────────
@@ -5290,9 +5345,9 @@ public class Window {
      * is white (×emissiveTint at draw), dimmer toward the tips for soft ends.
      */
     private com.leaf.game.render.Mesh buildSlashCrescent(int seg) {
-        final float A = 1.15f;     // arc half-angle (radians) — ~66°
+        final float A = 1.25f;     // arc half-angle (radians) — wider, more dramatic
         final float R = 1.0f;      // centreline radius
-        final float wMax = 0.20f;  // max half-thickness of the blade
+        final float wMax = 0.15f;  // half-thickness — thinner = sharper blade
         float[] v = new float[(seg + 1) * 2 * 10];
         int vi = 0;
         for (int i = 0; i <= seg; i++) {
@@ -5302,14 +5357,16 @@ public class Window {
             float taper = 1f - (a / A) * (a / A); // 1 at centre, 0 at tips
             taper = (float) Math.pow(Math.max(0f, taper), 0.6);
             float w = wMax * taper;
-            float bright = 0.40f + 0.60f * taper; // soft tips, hot centre
-            int o = (vi++) * 10;                   // inner edge vertex
+            float bright = 0.45f + 0.55f * taper; // soft tips, hot centre
+            // Two-tone across the blade width: crimson concave (inner) edge, white-hot
+            // convex (outer/leading) edge — an anime slash that POPS off the gold domain.
+            int o = (vi++) * 10;                   // inner (crimson) edge
             v[o]   = (R - w) * dirX; v[o+1] = (R - w) * dirY; v[o+2] = 0f;
-            v[o+3] = bright; v[o+4] = bright; v[o+5] = bright; v[o+6] = 1f;
+            v[o+3] = 1.00f * bright; v[o+4] = 0.10f * bright; v[o+5] = 0.20f * bright; v[o+6] = 1f;
             v[o+7] = 0f; v[o+8] = 0f; v[o+9] = 1f;
-            o = (vi++) * 10;                       // outer edge vertex
+            o = (vi++) * 10;                       // outer (white-hot leading) edge
             v[o]   = (R + w) * dirX; v[o+1] = (R + w) * dirY; v[o+2] = 0f;
-            v[o+3] = bright; v[o+4] = bright; v[o+5] = bright; v[o+6] = 1f;
+            v[o+3] = 1.00f * bright; v[o+4] = 0.92f * bright; v[o+5] = 0.85f * bright; v[o+6] = 1f;
             v[o+7] = 0f; v[o+8] = 0f; v[o+9] = 1f;
         }
         int[] idx = new int[seg * 6];
