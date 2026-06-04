@@ -27,6 +27,12 @@ uniform vec3  tsCenter;       // world-space domain centre (player's feet)
 uniform float tsRadius;       // current domain radius (world units)
 uniform float tsEdge;         // boundary fade / ring thickness
 
+// ── VOXEL LINES: clay + neon-edge restyle that sweeps over the real world ─────
+uniform int   vlActive;       // 1 = restyle live
+uniform vec3  vlCenter;       // sweep origin (player position)
+uniform float vlRadius;       // sweep-front radius (world units)
+uniform float vlAmount;       // 0→1→0 envelope over the single cycle
+
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
 // Set useTexture = 0 (default) to use pure vertex colour — all existing Mesh
@@ -192,6 +198,39 @@ void main() {
         // Searing electric-blue boundary ring riding the domain surface.
         float ring = 1.0 - smoothstep(0.0, tsEdge * 1.5, abs(d - tsRadius));
         gammaCorrected += vec3(0.30, 0.70, 1.0) * ring * 1.8;
+    }
+
+    // ── VOXEL LINES — clay → neon-edge "blueprint" restyle that sweeps over the world ──
+    // A conversion front expands from the player; behind it the terrain becomes a
+    // cool matte clay, then deepens to midnight blue with blazing cyan-white edge
+    // lines on every 90° block boundary. vlAmount drives a single 0→1→0 cycle.
+    // (Distinct palette from IQ's orange-on-charcoal: cyan-white on midnight blue.)
+    if (vlActive == 1) {
+        float d   = length(vWorldPos - vlCenter);
+        float amt = vlAmount * smoothstep(vlRadius, vlRadius - 6.0, d);   // full behind the front
+        if (amt > 0.001) {
+            // Voxel-edge wireframe: bright on the two IN-PLANE block boundaries of
+            // this face (exclude the normal axis, which always sits on a boundary).
+            vec3  dE = 0.5 - abs(fract(vWorldPos) - 0.5);
+            vec3  nA = abs(normalize(vertexNormal));
+            float lw = 0.055;
+            float wire = clamp(
+                (1.0 - nA.x) * (1.0 - smoothstep(0.0, lw, dE.x)) +
+                (1.0 - nA.y) * (1.0 - smoothstep(0.0, lw, dE.y)) +
+                (1.0 - nA.z) * (1.0 - smoothstep(0.0, lw, dE.z)), 0.0, 1.0);
+
+            // Matte clay: cool blue-grey, keeps the soft AO/lighting already in gammaCorrected.
+            float lum  = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
+            vec3  clay = vec3(lum) * vec3(0.55, 0.72, 0.95);
+
+            // Neon kicks in past half-conversion: clay darkens to midnight, edges blaze.
+            float neon = smoothstep(0.45, 1.0, amt);
+            vec3  base = clay * mix(1.0, 0.08, neon);                       // → deep midnight blue
+            vec3  edge = mix(vec3(0.0, 0.9, 1.0), vec3(0.7, 1.0, 1.0), wire); // cyan → white-hot
+            vec3  styled = base + edge * wire * (0.35 + 2.6 * neon);
+
+            gammaCorrected = mix(gammaCorrected, styled, amt);
+        }
     }
 
     FragColor = vec4(gammaCorrected, baseColor.a * alphaMultiplier);

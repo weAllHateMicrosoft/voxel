@@ -452,12 +452,20 @@ public class Window {
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
-    // ── "VOXEL LINES" fullscreen showcase (F10) — Inigo Quilez port ─────────────
-    private com.leaf.game.render.Shader voxelLinesShader = null;
-    private boolean voxelLinesActive = false;
-    private boolean voxelLinesFailed = false; // shader failed to compile — don't retry
-    private double  voxelLinesStart  = 0.0;   // glfwGetTime() when activated → drives iTime
-    private boolean lastF10          = false;
+    // ── "VOXEL LINES" world restyle (F10) — one-shot cycle over the REAL terrain ─
+    // A clay + neon-edge sweep ("blueprint" recolour, IQ-inspired) passes over the
+    // actual world, holds, then fades back to normal. No new world, no toggle.
+    private boolean vlActive   = false;
+    private float   vlT        = 0f;          // seconds into the cycle
+    private float   vlCx, vlCy, vlCz;         // sweep origin (player position at trigger)
+    private float   vlRadiusNow = 0f;         // sweep-front radius (world units)
+    private float   vlAmountNow = 0f;         // 0→1→0 envelope
+    private boolean lastF10     = false;
+    private static final float VL_MAXR   = 200f;   // sweep reach (blocks)
+    private static final float VL_RAMP   = 1.6f;   // sweep-in + intensify (s)
+    private static final float VL_HOLD   = 2.6f;   // full restyle hold (s)
+    private static final float VL_RETURN = 2.2f;   // fade back to normal (s)
+    private static final float VL_END    = VL_RAMP + VL_HOLD + VL_RETURN;
 
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
@@ -807,8 +815,6 @@ public class Window {
         bloomShader = new com.leaf.game.render.Shader(
                 "src/main/resources/shaders/distort_vertex.glsl",
                 "src/main/resources/shaders/bloom_fragment.glsl");
-        // (voxelLinesShader is loaded lazily on first F10 so a GLSL issue in that
-        //  fancy showcase shader can never crash the game at startup.)
 
         // Full-screen quad: two triangles covering NDC [-1,1]
         float[] quadVerts = {
@@ -2498,29 +2504,15 @@ public class Window {
                     lastF8 = f8Now;
                     if (timeStopActive) updateTimeStop(rawDeltaTime);
 
-                    // ── VOXEL LINES showcase (F10 toggles fullscreen) ─────────
+                    // ── VOXEL LINES world restyle (F10 = one-shot cycle) ──────
                     boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
-                    if (f10Now && !lastF10) {
-                        if (voxelLinesShader == null && !voxelLinesFailed) {
-                            try {
-                                voxelLinesShader = new com.leaf.game.render.Shader(
-                                        "src/main/resources/shaders/distort_vertex.glsl",
-                                        "src/main/resources/shaders/voxellines_fragment.glsl");
-                            } catch (Exception e) {
-                                voxelLinesFailed = true;
-                                System.err.println("[VoxelLines] shader load failed: " + e.getMessage());
-                                hintText = "Voxel Lines shader failed to compile (see console)"; hintTimer = 4f;
-                            }
-                        }
-                        if (voxelLinesShader != null) {
-                            voxelLinesActive = !voxelLinesActive;
-                            if (voxelLinesActive) {
-                                voxelLinesStart = org.lwjgl.glfw.GLFW.glfwGetTime();
-                                hintText = "VOXEL LINES  —  press F10 to exit"; hintTimer = 4f;
-                            }
-                        }
+                    if (f10Now && !lastF10 && !vlActive) {
+                        vlActive = true; vlT = 0f;
+                        vlCx = player.position.x; vlCy = player.position.y + 1f; vlCz = player.position.z;
+                        hintText = "VOXEL LINES"; hintTimer = 3f;
                     }
                     lastF10 = f10Now;
+                    if (vlActive) updateVoxelLines(rawDeltaTime);
 
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
@@ -2676,6 +2668,11 @@ public class Window {
                 shader.setUniform("tsCenter", new Vector3f(tsCenterX, tsCenterY, tsCenterZ));
                 shader.setUniform("tsRadius", tsRadiusNow);
                 shader.setUniform("tsEdge",   2.5f);
+                // "Voxel Lines" world restyle.
+                shader.setUniform("vlActive", vlActive ? 1 : 0);
+                shader.setUniform("vlCenter", new Vector3f(vlCx, vlCy, vlCz));
+                shader.setUniform("vlRadius", vlRadiusNow);
+                shader.setUniform("vlAmount", vlAmountNow);
                 shader.setUniform("desaturate", ScreenEffectManager.INSTANCE.getDesaturate());
 
                 boolean isCameraUnderwater = world.getBlock(
@@ -3476,23 +3473,6 @@ public class Window {
                     bloomShader.unbind();
                 }
             }
-            // ── VOXEL LINES showcase — overwrite the whole view with the IQ effect ──
-            if (voxelLinesActive && voxelLinesShader != null) {
-                org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
-                glViewport(0, 0, Math.max(1, fw[0]), Math.max(1, fh[0]));
-                voxelLinesShader.bind();
-                voxelLinesShader.setUniform("iTime",
-                        (float) (org.lwjgl.glfw.GLFW.glfwGetTime() - voxelLinesStart));
-                voxelLinesShader.setUniform("iResolution",
-                        (float) Math.max(1, fw[0]), (float) Math.max(1, fh[0]));
-                glDisable(GL_DEPTH_TEST);
-                org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
-                glDrawArrays(GL_TRIANGLES, 0, 6);
-                org.lwjgl.opengl.GL30.glBindVertexArray(0);
-                glEnable(GL_DEPTH_TEST);
-                voxelLinesShader.unbind();
-            }
-
             // ── IMGUI ─────────────────────────────────────────────────────────
             imguiGlfw.newFrame();
             ImGui.newFrame();
@@ -4442,6 +4422,24 @@ public class Window {
             }
         } else {
             timeStopActive = false; tsRadiusNow = 0f;
+        }
+    }
+
+    /** Drive the one-shot Voxel-Lines restyle: sweep in → hold → fade back to normal. */
+    private void updateVoxelLines(float dt) {
+        vlT += dt;
+        float t = vlT;
+        // Front sweeps out over the ramp, then stays covering the world.
+        vlRadiusNow = Math.min(1f, t / VL_RAMP) * VL_MAXR;
+        // 0→1 over the ramp, hold at 1, then 1→0 over the return.
+        if (t < VL_RAMP) {
+            vlAmountNow = t / VL_RAMP;
+        } else if (t < VL_RAMP + VL_HOLD) {
+            vlAmountNow = 1f;
+        } else if (t < VL_END) {
+            vlAmountNow = 1f - (t - VL_RAMP - VL_HOLD) / VL_RETURN;
+        } else {
+            vlActive = false; vlAmountNow = 0f; vlRadiusNow = 0f;
         }
     }
 
