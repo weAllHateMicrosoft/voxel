@@ -234,9 +234,9 @@ void main() {
 
             vec3 grid = vec3(0.10, 1.0, 0.35);
             vec3 radar = scope;
-            radar += grid * (ring * 0.5 + spoke * 0.4 + outer * 1.4);
-            radar += grid * sweep * 0.85;                       // the ping wash
-            radar += vec3(0.7, 1.0, 0.8) * arm * 1.6;           // bright sweep line
+            radar += grid * (ring * 0.35 + spoke * 0.28 + outer * 0.8);
+            radar += grid * sweep * 0.45;                       // the ping wash
+            radar += vec3(0.3, 1.0, 0.45) * arm * 0.7;          // sweep line (green, not white)
 
             gammaCorrected = mix(gammaCorrected, radar, amt);
         }

@@ -3183,6 +3183,16 @@ public class Window {
 
                 // 6. Render Enemies
                 if (!enemyManager.getEnemies().isEmpty()) {
+                    // RADAR: draw enemies as their EXACT model in see-through wireframe
+                    // (no solid fill = transparent body) and ignore depth so contacts
+                    // show through terrain — the "detection" look.
+                    boolean radarWire = vlActive && vlAmountNow > 0.05f;
+                    if (radarWire) {
+                        org.lwjgl.opengl.GL11.glPolygonMode(
+                                org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_LINE);
+                        org.lwjgl.opengl.GL11.glLineWidth(1.5f);
+                        glDisable(GL_DEPTH_TEST);
+                    }
                     if (enemyAnimModel != null) {
                         // ── Animated path: enemy_basic.json with walk/attack/death ──
                         // ── Animated path ──
@@ -3289,6 +3299,12 @@ public class Window {
                     shader.setUniform("overlayVignetteStrength", 0f);
                     shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
                     shader.setUniform("alphaMultiplier", 1.0f);
+                    if (radarWire) {   // restore solid fill + depth after the wireframe pass
+                        glEnable(GL_DEPTH_TEST);
+                        org.lwjgl.opengl.GL11.glPolygonMode(
+                                org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_FILL);
+                        org.lwjgl.opengl.GL11.glLineWidth(1.0f);
+                    }
                 }
 
                 // ── Render enemy projectiles (boulders / thrown rocks) ────────────
@@ -4499,22 +4515,22 @@ public class Window {
         m.render();
     }
 
-    /** Radar 3D layer: a vertical "arm" curtain sweeping around (opaque→transparent
-     *  afterglow), a centre pylon, and a wireframe box around every enemy that
-     *  "pings" bright as the arm passes its bearing. The flat ground sweep + rings
-     *  are handled in the terrain shader so they hug the 3D landscape. */
+    /** Radar 3D layer: a soft vertical "arm" curtain sweeping around (opaque→
+     *  transparent afterglow) + a small centre pylon. The flat ground sweep, rings
+     *  and spokes live in the terrain shader; enemies are wireframed in the enemy
+     *  render pass (see the radar gate there). Kept deliberately DIM — additive
+     *  green that glows without blowing out to white. */
     private void renderRadar3D(com.leaf.game.render.Shader shader,
                                Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
         if (radarFan  == null) radarFan  = orbBuildCurtain(1.7f, 28);  // ~97° afterglow curtain
-        if (orbCube   == null) orbCube   = orbBuildCube();
         if (orbSphere == null) orbSphere = orbBuildSphere(10, 14);
 
         float amt = vlAmountNow;
         if (amt < 0.01f) return;
         Matrix4f pv = new Matrix4f(projection).mul(view);
-        float cx = vlCx, cy = vlCy, cz = vlCz, R = vlRadiusNow;
+        float cx = vlCx, cy = vlCy, cz = vlCz;
         float sweep = vlSweepNow;
-        float armLen = Math.min(R, 48f);    // the visible 3D arm is local, not the full scope
+        float armLen = Math.min(vlRadiusNow, 40f);   // a modest local arm, not the full scope
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);     // additive
@@ -4523,47 +4539,18 @@ public class Window {
         shader.setUniform("emissiveMode", 1);
 
         // Vertical afterglow CURTAIN: a curved wall (radius 1, height 1) spanning
-        // fan-angle [-span,0]; bright at the leading edge → transparent trailing.
+        // fan-angle [-span,0]; bright leading edge → transparent trailing.
         // rotateY(-sweep) maps local fan-angle a → world bearing (a + sweep).
+        // DIM — a soft sheet of light, not a searing wall.
         Matrix4f curtain = new Matrix4f().translate(cx, cy - 1.0f, cz)
                                          .rotateY(-sweep)
-                                         .scale(armLen, 7.0f, armLen);
-        orbDraw(shader, pv, radarFan, curtain, 0.10f * amt, 1.0f * amt, 0.40f * amt);
+                                         .scale(armLen, 4.0f, armLen);
+        orbDraw(shader, pv, radarFan, curtain, 0.03f * amt, 0.34f * amt, 0.14f * amt);
 
-        // Bright leading-edge beam — a thin tall box marking the arm itself.
-        float bladeH = 7.0f;
-        Matrix4f blade = new Matrix4f().translate(cx, cy - 1.0f, cz)
-                                       .rotateY(-sweep)
-                                       .translate(armLen * 0.5f, bladeH * 0.5f, 0f)
-                                       .scale(armLen, bladeH, 0.4f);
-        orbDraw(shader, pv, orbCube, blade, 0.5f * amt, 1.5f * amt, 0.75f * amt);
-
-        // Centre pylon.
+        // Small centre pylon (gentle).
         orbDraw(shader, pv, orbSphere,
-                new Matrix4f().translate(cx, cy, cz).scale(0.6f),
-                0.4f * amt, 1.5f * amt, 0.6f * amt);
-
-        // Enemy wireframe boxes + radar ping (bright just after the arm sweeps past).
-        org.lwjgl.opengl.GL11.glPolygonMode(
-                org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_LINE);
-        org.lwjgl.opengl.GL11.glLineWidth(2.0f);
-        for (Enemy e : enemyManager.getEnemies()) {
-            if (!e.alive) continue;
-            float dx = e.position.x - cx, dz = e.position.z - cz;
-            float d = (float) Math.sqrt(dx * dx + dz * dz);
-            if (d > R) continue;
-            float bearing = (float) Math.atan2(dz, dx);
-            float behind  = ((sweep - bearing) % 6.2831853f + 6.2831853f) % 6.2831853f;
-            float ping    = Math.max(0f, 1f - behind / 1.7f);   // fades over the afterglow span
-            float b = (0.35f + 1.7f * ping) * amt;
-            Matrix4f box = new Matrix4f()
-                    .translate(e.position.x, e.position.y + 1.1f, e.position.z)
-                    .scale(2.2f, 2.7f, 2.2f);
-            orbDraw(shader, pv, orbCube, box, 0.10f * b, 1.0f * b, 0.35f * b);
-        }
-        org.lwjgl.opengl.GL11.glPolygonMode(
-                org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_FILL);
-        org.lwjgl.opengl.GL11.glLineWidth(1.0f);
+                new Matrix4f().translate(cx, cy, cz).scale(0.5f),
+                0.12f * amt, 0.55f * amt, 0.22f * amt);
 
         shader.setUniform("emissiveMode", 0);
         shader.setUniform("mvp", renderMvp);
