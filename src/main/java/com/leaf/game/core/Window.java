@@ -5110,7 +5110,7 @@ public class Window {
         shader.setUniform("mvp", renderMvp);
         glDepthFunc(GL_LESS);
         glDepthMask(true);
-        glDisable(GL_CULL_FACE); // <--- SHADER BUG FIX! Terrain will no longer turn invisible!
+        glEnable(GL_CULL_FACE);  // restore — must re-enable so terrain faces aren't missing
         glDisable(GL_BLEND);
     }
 
