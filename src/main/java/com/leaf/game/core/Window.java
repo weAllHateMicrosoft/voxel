@@ -521,12 +521,21 @@ public class Window {
     private float   depDetectTimer = 0f; // accumulates until DEP_TICK, then samples
     /** Previous positions of each enemy for velocity estimation. int = System.identityHashCode. */
     private final java.util.HashMap<Integer, org.joml.Vector3f> depPrevPos = new java.util.HashMap<>();
-    /** Active slash crescents (the "slash storm"): {x,y,z, yaw,pitch,roll, age,life, startScale,endScale}. */
+    /** Active slash crescents: {x,y,z, yaw,pitch,roll, age,life, startScale,endScale, sweep}. */
     private final java.util.ArrayList<float[]> depSlashFx = new java.util.ArrayList<>();
     /** Voxel gib debris from sliced enemies: {x,y,z, vx,vy,vz, size, age,life}. */
     private final java.util.ArrayList<float[]> depGibs = new java.util.ArrayList<>();
     /** Anime sword-sweep crescent mesh (unit, in local XY plane; built once). */
     private com.leaf.game.render.Mesh depCrescent = null;
+    /** Phantom sword silhouette mesh for the idle "ready-sword" aura ring (built once). */
+    private com.leaf.game.render.Mesh depBlade = null;
+    private float   depRingPhase = 0f;   // slow orbit angle of the aura sword ring
+    private float   depAuraGlow  = 0f;   // 0→1 aura intensity (pulses "occasionally" + on strikes)
+    private float   depAuraTimer = 0f;   // counts up to depAuraInterval, then pulses the aura
+    // ── Bezier head-turn: smoothly rotate the camera to face each slashed enemy ──
+    private boolean depTurning = false;
+    private float   depTurnT = 0f;
+    private float   depTurnStartYaw, depTurnStartPitch, depTurnTargetYaw, depTurnTargetPitch;
 
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
@@ -2676,7 +2685,7 @@ public class Window {
                     // Tick cooldown + strike flash decay every frame (outside domain too)
                     depCooldown = Math.max(0f, depCooldown - rawDeltaTime);
                     depStrike   = Math.max(0f, depStrike   - rawDeltaTime * 6f);
-                    if (depActive) updateDeprivationDomain(rawDeltaTime, world);
+                    if (depActive) updateDeprivationDomain(rawDeltaTime, world, camera);
 
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
@@ -2851,7 +2860,7 @@ public class Window {
                 // depSweep is a ring radius that grows ~14 blocks/s and resets — the
                 // repeating "360° detection" pulse traced across the terrain.
                 float depSweepR = depActive
-                        ? (depT * 14f) % Math.max(1f, GameConfig.depRadius)
+                        ? (depT * 8f) % Math.max(1f, GameConfig.depRadius)
                         : 0f;
                 shader.setUniform("depActive", depActive ? 1 : 0);
                 shader.setUniform("depCenter", new Vector3f(depX, depY + 0.9f, depZ));
@@ -5002,10 +5011,13 @@ public class Window {
         depZ = player.position.z;
         depStrike = 0f;
         depDetectTimer = 0f;
+        depAuraTimer = 0f; depAuraGlow = 0f; depRingPhase = 0f;
+        depTurning = false; depTurnT = 0f;
         depPrevPos.clear();
         depSlashFx.clear();
         depGibs.clear();
         if (depCrescent == null) depCrescent = buildSlashCrescent(22);
+        if (depBlade    == null) depBlade    = buildPhantomBlade();
         hintText  = "DEPRIVATION DOMAIN — perfect stillness, absolute death · ['] to exit";
         hintTimer = 5f;
         // AUDIO HOOK: add your own domain-enter cue here (user-supplied).
@@ -5015,16 +5027,36 @@ public class Window {
     private void stopDeprivationDomain() {
         depActive = false;
         depCooldown = GameConfig.depCooldownSecs;
+        depTurning = false;
         depPrevPos.clear();
         depSlashFx.clear();
         depGibs.clear();
         // AUDIO HOOK: add your own domain-exit cue here (user-supplied).
     }
 
-    private void updateDeprivationDomain(float dt, World world) {
+    private void updateDeprivationDomain(float dt, World world, Camera camera) {
         depT += dt;
 
-        // Age slash crescents (expand + fade in ~0.2 s)
+        // ── Bezier head-turn: smoothly swing the camera to lock onto the victim ──
+        if (depTurning) {
+            depTurnT += dt / Math.max(0.05f, GameConfig.depTurnDuration);
+            float e = depTurnT >= 1f ? 1f : smootherstep(depTurnT);   // bezier-like S-curve
+            camera.yaw   = lerpAngle(depTurnStartYaw, depTurnTargetYaw, e);
+            camera.pitch = depTurnStartPitch + (depTurnTargetPitch - depTurnStartPitch) * e;
+            camera.clampPitch();
+            if (depTurnT >= 1f) depTurning = false;
+        }
+
+        // ── Idle "ready-sword" aura: slow orbiting blade ring that pulses ────────
+        depRingPhase += dt * 0.6f;
+        depAuraGlow   = Math.max(0f, depAuraGlow - dt * 1.6f);   // decay between pulses
+        depAuraTimer += dt;
+        if (depAuraTimer >= GameConfig.depAuraInterval) {
+            depAuraTimer = 0f;
+            depAuraGlow  = Math.max(depAuraGlow, 0.85f);          // an "occasional" flare
+        }
+
+        // Age slash crescents (expand + sweep + fade)
         for (java.util.Iterator<float[]> it = depSlashFx.iterator(); it.hasNext(); ) {
             float[] s = it.next(); s[6] += dt; if (s[6] >= s[7]) it.remove();
         }
@@ -5066,9 +5098,12 @@ public class Window {
                 float moved = (float) Math.hypot(e.position.x - prev.x, e.position.z - prev.z);
                 if (moved >= minMov) {
                     float ex = e.position.x, ey = e.position.y + 1.0f, ez = e.position.z;
-                    spawnSlashBurst(ex, ey, ez, 2, 0.6f, 1.4f);  // the cut itself
+                    spawnSlashBurst(ex, ey, ez, 3, 0.8f, 1.8f);  // the cut itself (bigger)
                     spawnSliceGibs(ex, ey, ez);                  // body falls apart
                     e.applyDamage(GameConfig.depDamage);
+                    // Lock the head onto the victim — but let the current turn settle
+                    // past halfway before snapping to a new one (avoids whiplash).
+                    if (!depTurning || depTurnT > 0.5f) aimHeadAt(camera, ex, ey, ez);
                     struck = true;
                 }
             }
@@ -5092,7 +5127,8 @@ public class Window {
         if (struck) {
             int n = 5 + (int) (Math.random() * 6);   // 5–10 crescents
             spawnSlashBurst(depX, depY + 1.1f, depZ, n, 1.0f, 2.0f);
-            depStrike = Math.min(1f, depStrike + 0.6f);
+            depStrike   = Math.min(1f, depStrike + 0.6f);
+            depAuraGlow = Math.min(1f, depAuraGlow + 0.7f);   // the ready-swords flare too
             activeShakeAmplitude = 0.08f;
             activeShakeDuration  = 0.14f;
             smashShakeTimer      = Math.max(smashShakeTimer, 0.14f);
@@ -5101,18 +5137,51 @@ public class Window {
         }
     }
 
-    /** Spawn a burst of randomly-oriented slash crescents centred at (cx,cy,cz). */
+    /** Begin a smooth bezier camera turn to face a world point (the slashed victim). */
+    private void aimHeadAt(Camera camera, float tx, float ty, float tz) {
+        float dx = tx - camera.position.x;
+        float dy = ty - camera.position.y;
+        float dz = tz - camera.position.z;
+        float horiz = (float) Math.sqrt(dx * dx + dz * dz);
+        if (horiz < 1e-3f) return;
+        depTurnStartYaw    = camera.yaw;
+        depTurnStartPitch  = camera.pitch;
+        depTurnTargetYaw   = (float) Math.atan2(dz, dx);
+        depTurnTargetPitch = (float) Math.atan2(dy, horiz);
+        depTurnT = 0f;
+        depTurning = true;
+    }
+
+    /** Shortest-path angular lerp (handles the ±π wrap). */
+    private static float lerpAngle(float a, float b, float t) {
+        float d = b - a;
+        while (d >  Math.PI) d -= (float) (2 * Math.PI);
+        while (d < -Math.PI) d += (float) (2 * Math.PI);
+        return a + d * t;
+    }
+
+    /** Ken-Perlin smootherstep — the S-curve for the bezier-feel head turn. */
+    private static float smootherstep(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t * t * t * (t * (t * 6f - 15f) + 10f);
+    }
+
+    /** Spawn a burst of randomly-oriented slash crescents centred at (cx,cy,cz).
+     *  Each crescent sweeps through an arc (like a real swing), expands, and fades. */
     private void spawnSlashBurst(float cx, float cy, float cz, int count,
                                  float startMin, float startMax) {
         for (int i = 0; i < count; i++) {
-            if (depSlashFx.size() > 140) break;
+            if (depSlashFx.size() > 160) break;
             float yaw   = (float) (Math.random() * Math.PI * 2.0);
             float pitch = (float) (Math.random() * Math.PI * 2.0);
             float roll  = (float) (Math.random() * Math.PI * 2.0);
             float s0    = startMin + (float) Math.random() * (startMax - startMin);
-            float s1    = s0 + 2.0f + (float) Math.random() * 1.2f;   // expand ~2–3 blocks
-            float life  = 0.16f + (float) Math.random() * 0.07f;       // ~0.2 s
-            depSlashFx.add(new float[]{cx, cy, cz, yaw, pitch, roll, 0f, life, s0, s1});
+            float s1    = s0 + 2.0f + (float) Math.random() * 1.4f;   // expand ~2–3 blocks
+            // Longer life so the swing is readable; randomised so they don't sync up.
+            float life  = GameConfig.depSlashLife * (0.8f + (float) Math.random() * 0.5f);
+            // Sweep: how far the blade rotates through its arc over its life (the swing).
+            float sweep = (Math.random() < 0.5 ? -1f : 1f) * (1.8f + (float) Math.random() * 1.6f);
+            depSlashFx.add(new float[]{cx, cy, cz, yaw, pitch, roll, 0f, life, s0, s1, sweep});
         }
     }
 
@@ -5121,19 +5190,19 @@ public class Window {
     private void spawnSliceGibs(float cx, float cy, float cz) {
         float ang = (float) (Math.random() * Math.PI);
         float nx = (float) Math.cos(ang), nz = (float) Math.sin(ang);   // cut-plane normal (XZ)
-        int chunks = 10 + (int) (Math.random() * 6);
+        int chunks = 16 + (int) (Math.random() * 8);                    // juicier: more chunks
         for (int i = 0; i < chunks; i++) {
-            if (depGibs.size() > 260) break;
+            if (depGibs.size() > 320) break;
             float side = (i % 2 == 0) ? 1f : -1f;                       // alternate halves
             float px = cx + (float) (Math.random() - 0.5) * 0.5f;
-            float py = cy + (float) (Math.random() - 0.5) * 1.2f;
+            float py = cy + (float) (Math.random() - 0.5) * 1.3f;
             float pz = cz + (float) (Math.random() - 0.5) * 0.5f;
-            float spd = 2.5f + (float) Math.random() * 3.5f;
-            float vx = nx * side * spd + (float) (Math.random() - 0.5) * 1.5f;
-            float vz = nz * side * spd + (float) (Math.random() - 0.5) * 1.5f;
-            float vy = 2.5f + (float) Math.random() * 4.0f;
-            float size = 0.12f + (float) Math.random() * 0.18f;
-            float life = 0.9f + (float) Math.random() * 0.6f;
+            float spd = 3.5f + (float) Math.random() * 4.5f;            // flung apart harder
+            float vx = nx * side * spd + (float) (Math.random() - 0.5) * 1.8f;
+            float vz = nz * side * spd + (float) (Math.random() - 0.5) * 1.8f;
+            float vy = 3.5f + (float) Math.random() * 5.0f;             // bigger upward pop
+            float size = 0.12f + (float) Math.random() * 0.20f;
+            float life = 0.9f + (float) Math.random() * 0.7f;
             depGibs.add(new float[]{px, py, pz, vx, vy, vz, size, 0f, life});
         }
     }
@@ -5143,9 +5212,11 @@ public class Window {
                                          Matrix4f renderMvp) {
         if (!depActive) return;
         if (depCrescent == null) depCrescent = buildSlashCrescent(22);
-        if (orbCube == null) orbCube = orbBuildCube();
+        if (depBlade == null)    depBlade    = buildPhantomBlade();
+        if (orbCube == null)     orbCube     = orbBuildCube();
 
         Matrix4f pv = new Matrix4f(projection).mul(view);
+        float tnow = (float) glfwGetTime();
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);   // additive — everything glows + blooms
@@ -5154,17 +5225,37 @@ public class Window {
         glDisable(GL_CULL_FACE);
         shader.setUniform("emissiveMode", 1);
 
-        // ── THE SLASH STORM: expanding crescents, white-hot gold ─────────────
+        // ── READY-SWORD AURA: a slow orbiting ring of phantom blades around you,
+        //    flaring "occasionally" (and on every strike) — you are armed in 360°. ──
+        if (depAuraGlow > 0.02f) {
+            int N = 8;
+            float ringR = GameConfig.depRadius * 0.82f;
+            for (int i = 0; i < N; i++) {
+                float th = depRingPhase + i * (float) (Math.PI * 2.0 / N);
+                float bx = depX + (float) Math.cos(th) * ringR;
+                float bz = depZ + (float) Math.sin(th) * ringR;
+                float glint = depAuraGlow * (0.55f + 0.45f * (float) Math.sin(tnow * 6.0 + i * 1.7));
+                float br = glint * 2.4f;
+                if (br <= 0.02f) continue;
+                Matrix4f m = new Matrix4f().translate(bx, depY + 0.2f, bz)
+                        .rotateY(-th + (float) (Math.PI * 0.5))   // flat face toward the player
+                        .rotateX(-0.22f)                          // lean outward, tip up-and-out
+                        .scale(1.35f);
+                orbDraw(shader, pv, depBlade, m, br * 1.3f, br * 0.95f, br * 0.30f);
+            }
+        }
+
+        // ── THE SLASH STORM: expanding + SWEEPING crescents, white-hot gold ──
         for (float[] s : depSlashFx) {
             float f    = s[6] / s[7];                       // 0→1 over its life
-            float ease = 1f - (1f - f) * (1f - f);          // easeOut for the expansion
+            float ease = 1f - (1f - f) * (1f - f);          // easeOut for expansion + sweep
             float scale = s[8] + (s[9] - s[8]) * ease;
-            float rise = (f < 0.20f) ? f / 0.20f : 1f;      // snap to full brightness
-            float fall = (f > 0.50f) ? (1f - (f - 0.50f) / 0.50f) : 1f;  // then fade out
+            float rise = (f < 0.12f) ? f / 0.12f : 1f;      // snap to full brightness
+            float fall = (f > 0.55f) ? (1f - (f - 0.55f) / 0.45f) : 1f;  // then fade out
             float br   = rise * fall * 4.5f;                // HDR — feeds the bloom
             if (br <= 0.01f) continue;
             Matrix4f m = new Matrix4f().translate(s[0], s[1], s[2])
-                    .rotateY(s[3]).rotateX(s[4]).rotateZ(s[5])
+                    .rotateY(s[3]).rotateX(s[4]).rotateZ(s[5] + s[10] * ease)  // sweep through the arc
                     .scale(scale);
             orbDraw(shader, pv, depCrescent, m, br * 1.35f, br * 1.0f, br * 0.32f);
         }
@@ -5228,6 +5319,37 @@ public class Window {
             idx[ii++] = a; idx[ii++] = c; idx[ii++] = b;
             idx[ii++] = b; idx[ii++] = c; idx[ii++] = d;
         }
+        return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    /**
+     * Build a flat phantom-sword silhouette (tip at +Y, flat in the local XY plane):
+     * a white-hot blade triangle, a gold crossguard, and a darker-gold hilt.
+     * Used for the idle "ready-sword" aura ring. (10 floats/vertex.)
+     */
+    private com.leaf.game.render.Mesh buildPhantomBlade() {
+        float[] v = {
+            //  x       y      z    r     g     b     a    nx ny nz
+            // blade (white-hot) — triangle
+             0.000f, 1.50f, 0f,  1.0f, 0.95f, 0.70f, 1f,  0f,0f,1f,
+            -0.060f, 0.30f, 0f,  1.0f, 0.95f, 0.70f, 1f,  0f,0f,1f,
+             0.060f, 0.30f, 0f,  1.0f, 0.95f, 0.70f, 1f,  0f,0f,1f,
+            // crossguard (gold) — quad
+            -0.220f, 0.24f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
+             0.220f, 0.24f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
+             0.220f, 0.32f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
+            -0.220f, 0.32f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
+            // hilt (dark gold) — quad
+            -0.045f, 0.00f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
+             0.045f, 0.00f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
+             0.045f, 0.26f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
+            -0.045f, 0.26f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
+        };
+        int[] idx = {
+            0, 1, 2,            // blade
+            3, 4, 5,  3, 5, 6,  // guard
+            7, 8, 9,  7, 9, 10, // hilt
+        };
         return new com.leaf.game.render.Mesh(v, idx);
     }
 
