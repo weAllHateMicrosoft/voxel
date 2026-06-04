@@ -437,6 +437,9 @@ public class Window {
                                ORB_CARVE  = 7.2f, ORB_LASER   = 7.6f, ORB_END     = 11.5f;
     private static final float ORB_DARK_START = 0.6f;  // blackout begins shortly after fire
     private static final int   ORB_CRATER_R   = 12;    // crater radius (blocks)
+    // Tinnitus post-effect (runs after ORB_END, independent of orbitalActive).
+    private float  tinnitusTimer = 0f;
+    private static final float TINNITUS_DUR = 7.0f;   // seconds
     // ─────────────────────────────────────────────────────────────────────────
 
     public void run() {
@@ -2481,6 +2484,38 @@ public class Window {
             if (welcomeTimer > 0f) welcomeTimer = Math.max(0f, welcomeTimer - rawDeltaTime);
             if (hintTimer    > 0f) hintTimer    = Math.max(0f, hintTimer    - rawDeltaTime);
 
+            // ── TINNITUS ARC ──────────────────────────────────────────────────
+            // Runs for TINNITUS_DUR seconds after ORB_END, completely independent
+            // of orbitalActive so it survives the sequence ending cleanly.
+            //
+            // The shape of real tinnitus (per the user, who has it):
+            //   0–1.5 s  : near-total silence — the ring is the only thing you hear.
+            //              Master gain drops to ~5%, muffle at max (heavy low-pass).
+            //   1.5–5.5 s: sound slowly bleeds back, still very muffled/distorted.
+            //              Gain climbs back; muffle stays high so it sounds under water.
+            //   5.5–7 s  : muffle fades last — you hear things again but muffled/wrong
+            //              for a beat before full clarity returns.
+            if (tinnitusTimer > 0f) {
+                tinnitusTimer = Math.max(0f, tinnitusTimer - rawDeltaTime);
+                float p   = 1f - tinnitusTimer / TINNITUS_DUR;  // 0 = just started, 1 = done
+
+                // Volume envelope: nearly silent at first, recovers with an ease-out curve.
+                float silencePhase = Math.min(1f, p / 0.22f);               // 0→1 over first 1.5 s
+                float gainEnv      = 0.05f + 0.95f * (silencePhase * silencePhase * silencePhase);
+                AudioManager.setMasterGain(gainEnv);
+
+                // Muffle envelope: high-pass stays cut for longer than volume recovers.
+                // Stays near-max until ~p=0.5, then fades out by p=1.
+                float muffleEnv = Math.max(0f, 1f - Math.max(0f, (p - 0.5f) / 0.5f));
+                AudioManager.setListenerMuffle(muffleEnv);
+
+                if (tinnitusTimer == 0f) {
+                    // Fully restored when the arc completes.
+                    AudioManager.setMasterGain(1f);
+                    AudioManager.setListenerMuffle(0f);
+                }
+            }
+
             // ── RENDER ────────────────────────────────────────────────────────
 
             // ── KAMUI DISTORTION FBO ──────────────────────────────────────────
@@ -4205,24 +4240,15 @@ public class Window {
         if (Math.abs(t - ORB_IMPLODE) < dt * 1.5f) {
             orbShake(0.45f, 0.42f);
             ScreenEffectManager.INSTANCE.flash(0.7f, 1f, 0.8f, 0.55f, 0.14f);
-            // Muffle all other audio briefly as if the blast deafened the player.
-            AudioManager.setListenerMuffle(0.9f);
-        }
-        // Fade the muffle out over ~3 s (called every frame, driven by the timer).
-        if (t > ORB_IMPLODE && t < ORB_IMPLODE + 3.0f) {
-            float mf = Math.max(0f, 0.9f * (1f - (t - ORB_IMPLODE) / 3.0f));
-            AudioManager.setListenerMuffle(mf);
-        }
-        if (Math.abs(t - (ORB_IMPLODE + 3.0f)) < dt * 1.5f) {
-            AudioManager.setListenerMuffle(0f);   // fully restore at the end
         }
 
         updateOrbParticles(dt);
 
         if (t >= ORB_END) {
             orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear();
-            AudioManager.setListenerMuffle(0f);
-            AudioManager.play("tinnitus", 0.65f, 2.2f);   // ears ringing after the whole thing
+            // Hand off to the 7-second tinnitus arc (it takes over muffle + gain from here).
+            tinnitusTimer = TINNITUS_DUR;
+            AudioManager.play("tinnitus", 0.85f, 2.2f);
         }
     }
 
