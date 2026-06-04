@@ -364,7 +364,6 @@ public class Enemy {
                         boolean both = (comboIndex == 2);
                         framePlayerDamage = GameConfig.guardianHitDamage * (both ? 2f : 1f);
                         attackCooldown = GameConfig.guardianAttackTime; // prevent double-hit this swing
-                        com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 45f);
                     }
                 }
                 if (swingTimer <= 0f) {
@@ -453,7 +452,6 @@ public class Enemy {
                     framePlayerDamage = GameConfig.golemSlamDamage;
                     slamCooldown = GameConfig.golemSlamCooldown;
                     state        = State.CHASE;
-                    com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 70f);
                 }
             }
 
@@ -914,7 +912,6 @@ public class Enemy {
                         // Golem smash-break sound + brief slam-wind-up for effect
                         state     = State.SLAMMING;
                         slamWindUp = 0.4f;
-                        com.leaf.game.core.AudioManager.playAt("ground_smash", position, (Vector3f) null, 55f);
                     }
                 } else if (stuckTimer > 0.3f) {
                     // Non-golem enemies: strafe

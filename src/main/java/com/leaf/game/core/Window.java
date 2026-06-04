@@ -1351,10 +1351,10 @@ public class Window {
                                     }
                                 }
                                 // Play massive sound and shake the screen!
-                                AudioManager.playAt("ground_smash", e.position, (Vector3f)null, 40f);
-                                activeShakeDuration = 0.25f;
-                                activeShakeAmplitude = 0.15f;
-                                smashShakeTimer = Math.max(smashShakeTimer, activeShakeDuration);
+                                //AudioManager.playAt("ground_smash", e.position, (Vector3f)null, 40f);
+                                //activeShakeDuration = 0.25f;
+                                //activeShakeAmplitude = 0.15f;
+                                //smashShakeTimer = Math.max(smashShakeTimer, activeShakeDuration);
                             }
                         }
                         if (tutorial != null) tutorial.update(deltaTime);
