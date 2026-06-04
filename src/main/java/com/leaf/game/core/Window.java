@@ -2584,7 +2584,10 @@ public class Window {
             // run the searing-bloom pass over the emissive scan + laser flash.
             boolean doOrbitalBloom = orbitalActive && !isPreloading && bloomShader != null
                     && orbitalT >= ORB_DARK_START && orbitalT < ORB_END;
-            boolean useSceneFbo = doKamuiDistort || doOrbitalBloom;
+            // The radar also blooms (bright green lines + searing enemy pings bleed).
+            boolean doRadarBloom = vlActive && !isPreloading && bloomShader != null && vlAmountNow > 0.05f;
+            boolean doBloom = doOrbitalBloom || doRadarBloom;
+            boolean useSceneFbo = doKamuiDistort || doBloom;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
                 // CRITICAL FIX: Use physical framebuffer size (fw, fh) for FBO on Retina/High-DPI displays!
@@ -3190,7 +3193,7 @@ public class Window {
                     if (radarWire) {
                         org.lwjgl.opengl.GL11.glPolygonMode(
                                 org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_LINE);
-                        org.lwjgl.opengl.GL11.glLineWidth(1.5f);
+                        org.lwjgl.opengl.GL11.glLineWidth(2.5f);   // bold contact lines
                         glDisable(GL_DEPTH_TEST);
                     }
                     if (enemyAnimModel != null) {
@@ -3271,6 +3274,25 @@ public class Window {
                                     .rotateY(faceY)
                                     .scale(sv[0], sv[1], sv[2]);
 
+                            // RADAR: bright-green tint, depth off (through walls), and a
+                            // searing glow spike the instant the sweep arm crosses this
+                            // enemy's bearing — fading over the afterglow. Always at least
+                            // base-bright so every contact (even far/hidden) reads clearly.
+                            if (radarWire) {
+                                float dxb = enemy.position.x - vlCx, dzb = enemy.position.z - vlCz;
+                                float bearing = (float) Math.atan2(dzb, dxb);
+                                float behind = ((vlSweepNow - bearing) % 6.2831853f + 6.2831853f) % 6.2831853f;
+                                float ping = (float) Math.exp(-behind * 2.2f);   // sharp flare just behind the arm
+                                // Resting = bright green; on contact the colour shifts white-hot
+                                // (reads as "hotter" even through 8-bit clamping) + a glow boost
+                                // so the bloom halo flares. Always ≥ base-bright so every contact
+                                // (far or wall-occluded) is clearly visible.
+                                float tr = 0.1f + 0.85f * ping;
+                                float tb = 0.35f + 0.6f * ping;
+                                com.leaf.game.anim.ModelRenderer.setOverride(
+                                        tr, 1.0f, tb, 1.0f, 1.6f + 2.4f * ping, false);
+                            }
+
                             com.leaf.game.anim.ModelRenderer.render(
                                     targetModel, ap.getPose(), worldMat, view, projection);
 
@@ -3300,6 +3322,7 @@ public class Window {
                     shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
                     shader.setUniform("alphaMultiplier", 1.0f);
                     if (radarWire) {   // restore solid fill + depth after the wireframe pass
+                        com.leaf.game.anim.ModelRenderer.clearOverride();
                         glEnable(GL_DEPTH_TEST);
                         org.lwjgl.opengl.GL11.glPolygonMode(
                                 org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK, org.lwjgl.opengl.GL11.GL_FILL);
@@ -3472,8 +3495,8 @@ public class Window {
                     glEnable(GL_DEPTH_TEST);
 
                     distortShader.unbind();
-                } else if (doOrbitalBloom) {
-                    // ── ORBITAL SEARING-BLOOM POST-PROCESS ────────────────────
+                } else if (doBloom) {
+                    // ── SEARING-BLOOM POST-PROCESS (orbital strike OR radar) ──
                     // Bleed the emissive scan lines + laser flash into the dark.
                     org.lwjgl.opengl.GL30.glBindFramebuffer(
                             org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);

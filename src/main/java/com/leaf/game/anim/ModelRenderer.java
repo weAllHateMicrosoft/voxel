@@ -41,6 +41,18 @@ public class ModelRenderer {
                 "src/main/resources/shaders/model_fragment.glsl");
     }
 
+    // ── Radar override (set by Window during the radar sweep) ──────────────────
+    private static final Vector3f tintColor = new Vector3f(0.1f, 1f, 0.35f);
+    private static float   tintAmt  = 0f;     // 0 = normal model, 1 = full radar tint
+    private static float   glow     = 1f;     // output brightness (>1 = searing ping)
+    private static boolean depthOn  = true;   // false = draw through terrain (detection)
+
+    /** Configure the radar look for subsequent render() calls. amt=0,glow=1,depth=true = normal. */
+    public static void setOverride(float r, float g, float b, float amt, float gl, boolean depth) {
+        tintColor.set(r, g, b); tintAmt = amt; glow = gl; depthOn = depth;
+    }
+    public static void clearOverride() { tintAmt = 0f; glow = 1f; depthOn = true; }
+
     /**
      * Render a posed model.
      *
@@ -57,8 +69,12 @@ public class ModelRenderer {
         shader.bind();
         shader.setUniform("lightDir", new Vector3f(0.6f, 1f, 0.4f).normalize());
         shader.setUniform("ambient", 0.35f);
+        // Radar override (defaults are a no-op: tintAmt 0, glow 1, depth on).
+        shader.setUniform("tintColor", tintColor);
+        shader.setUniform("tintAmt", tintAmt);
+        shader.setUniform("glow", glow);
 
-        glEnable(GL_DEPTH_TEST);
+        if (depthOn) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE); // <── FORCE DISABLE CULLING FOR ANIMATED MODELS HERE!
 
         shader.setUniform("tex", 0);        // sampler reads texture unit 0
