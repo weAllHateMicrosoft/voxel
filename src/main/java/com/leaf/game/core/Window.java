@@ -4248,7 +4248,7 @@ public class Window {
             orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear();
             // Hand off to the 7-second tinnitus arc (it takes over muffle + gain from here).
             tinnitusTimer = TINNITUS_DUR;
-            AudioManager.play("tinnitus", 0.85f, 2.2f);
+            AudioManager.play("tinnitus", 1.6f, 2.2f);   // loud — it has to cut through the silence
         }
     }
 
@@ -4366,10 +4366,14 @@ public class Window {
         float ex = orbEpiX, ey = orbEpiY, ez = orbEpiZ;
         Matrix4f pv = new Matrix4f(projection).mul(view);
 
-        // Additive glow; depth-tested against terrain but no depth writes.
+        // Additive glow — no depth writes, and depth func = ALWAYS so the rings
+        // draw on top of terrain (matching the shader-based green lidar rings that
+        // are also never occluded by blocks). Particles + laser still look fine
+        // because the crater is open by the time they appear.
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
         glDepthMask(false);
+        glDepthFunc(GL_ALWAYS);
         shader.setUniform("emissiveMode", 1);
 
         // ── Pulsing core sphere (charge → carve) ──
@@ -4474,6 +4478,7 @@ public class Window {
         // ── Restore render state for the passes that follow ──
         shader.setUniform("emissiveMode", 0);
         shader.setUniform("mvp", renderMvp);
+        glDepthFunc(GL_LESS);   // restore normal depth test
         glDepthMask(true);
         glDisable(GL_BLEND);
     }
