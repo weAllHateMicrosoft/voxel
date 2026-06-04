@@ -452,6 +452,13 @@ public class Window {
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
+    // ── "VOXEL LINES" fullscreen showcase (F10) — Inigo Quilez port ─────────────
+    private com.leaf.game.render.Shader voxelLinesShader = null;
+    private boolean voxelLinesActive = false;
+    private boolean voxelLinesFailed = false; // shader failed to compile — don't retry
+    private double  voxelLinesStart  = 0.0;   // glfwGetTime() when activated → drives iTime
+    private boolean lastF10          = false;
+
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
     private static final float TS_SHRINK = 0.9f;   // collapse duration (s)
@@ -800,6 +807,8 @@ public class Window {
         bloomShader = new com.leaf.game.render.Shader(
                 "src/main/resources/shaders/distort_vertex.glsl",
                 "src/main/resources/shaders/bloom_fragment.glsl");
+        // (voxelLinesShader is loaded lazily on first F10 so a GLSL issue in that
+        //  fancy showcase shader can never crash the game at startup.)
 
         // Full-screen quad: two triangles covering NDC [-1,1]
         float[] quadVerts = {
@@ -2489,6 +2498,30 @@ public class Window {
                     lastF8 = f8Now;
                     if (timeStopActive) updateTimeStop(rawDeltaTime);
 
+                    // ── VOXEL LINES showcase (F10 toggles fullscreen) ─────────
+                    boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
+                    if (f10Now && !lastF10) {
+                        if (voxelLinesShader == null && !voxelLinesFailed) {
+                            try {
+                                voxelLinesShader = new com.leaf.game.render.Shader(
+                                        "src/main/resources/shaders/distort_vertex.glsl",
+                                        "src/main/resources/shaders/voxellines_fragment.glsl");
+                            } catch (Exception e) {
+                                voxelLinesFailed = true;
+                                System.err.println("[VoxelLines] shader load failed: " + e.getMessage());
+                                hintText = "Voxel Lines shader failed to compile (see console)"; hintTimer = 4f;
+                            }
+                        }
+                        if (voxelLinesShader != null) {
+                            voxelLinesActive = !voxelLinesActive;
+                            if (voxelLinesActive) {
+                                voxelLinesStart = org.lwjgl.glfw.GLFW.glfwGetTime();
+                                hintText = "VOXEL LINES  —  press F10 to exit"; hintTimer = 4f;
+                            }
+                        }
+                    }
+                    lastF10 = f10Now;
+
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -3443,6 +3476,23 @@ public class Window {
                     bloomShader.unbind();
                 }
             }
+            // ── VOXEL LINES showcase — overwrite the whole view with the IQ effect ──
+            if (voxelLinesActive && voxelLinesShader != null) {
+                org.lwjgl.opengl.GL30.glBindFramebuffer(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+                glViewport(0, 0, Math.max(1, fw[0]), Math.max(1, fh[0]));
+                voxelLinesShader.bind();
+                voxelLinesShader.setUniform("iTime",
+                        (float) (org.lwjgl.glfw.GLFW.glfwGetTime() - voxelLinesStart));
+                voxelLinesShader.setUniform("iResolution",
+                        (float) Math.max(1, fw[0]), (float) Math.max(1, fh[0]));
+                glDisable(GL_DEPTH_TEST);
+                org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                org.lwjgl.opengl.GL30.glBindVertexArray(0);
+                glEnable(GL_DEPTH_TEST);
+                voxelLinesShader.unbind();
+            }
+
             // ── IMGUI ─────────────────────────────────────────────────────────
             imguiGlfw.newFrame();
             ImGui.newFrame();

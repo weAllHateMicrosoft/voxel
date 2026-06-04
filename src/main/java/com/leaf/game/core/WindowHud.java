@@ -1809,6 +1809,7 @@ class WindowHud {
         helpRow("[F1]", "This screen.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
         helpRow("[F6]", "Non-Euclidean 'Layered Rooms' (testing). Teleports you into a 2x2 building with a central pillar. Walk CLOCKWISE around the pillar and you pass through endless distinct rooms (1,2,3,4,5,6...) instead of looping after four. Press [F6] again to leave.");
+        helpRow("[F10]", "'Voxel Lines' (testing). Fullscreen showcase ported from Inigo Quilez — a morphing clay-grey voxel landscape that steps up/down in stop-motion waves with soft ambient-occlusion shadows, periodically sweeping into a charcoal-black mode with glowing neon-orange edge lines. Press F10 again to exit. (Heavy raymarched shader — may drop FPS.)");
         helpRow("[F8]", "'The World' (testing). A sphere of photographic-negative reality bursts from your feet — everything inside inverts and shifts to electric blue, enemies and projectiles freeze in place while you keep moving, then the domain collapses back. DIO's time stop.");
         helpRow("[F7]", "'Orbital Annihilation' (testing). Aim at a block and press F7 for a ~12s fully-3D cinematic: a spinning gyroscope of energy rings + pulsing core, accelerating implosion rings that detonate, a blackout with the terrain glowing as a wireframe scan + floating embers, a CARVED crater, then a volumetric orbital laser with helix beams, shockwave, and debris. Stand back.");
         ImGui.spacing();
