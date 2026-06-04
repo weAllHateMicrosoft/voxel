@@ -2485,34 +2485,34 @@ public class Window {
             if (hintTimer    > 0f) hintTimer    = Math.max(0f, hintTimer    - rawDeltaTime);
 
             // ── TINNITUS ARC ──────────────────────────────────────────────────
-            // Runs for TINNITUS_DUR seconds after ORB_END, completely independent
-            // of orbitalActive so it survives the sequence ending cleanly.
+            // Runs for TINNITUS_DUR seconds completely independently of orbitalActive.
             //
-            // The shape of real tinnitus (per the user, who has it):
-            //   0–1.5 s  : near-total silence — the ring is the only thing you hear.
-            //              Master gain drops to ~5%, muffle at max (heavy low-pass).
-            //   1.5–5.5 s: sound slowly bleeds back, still very muffled/distorted.
-            //              Gain climbs back; muffle stays high so it sounds under water.
-            //   5.5–7 s  : muffle fades last — you hear things again but muffled/wrong
-            //              for a beat before full clarity returns.
+            // KEY: we use ONLY setMasterGain here (no muffle). Muffle applies its
+            // lowpass to every source in the pool via rerouteAll(), including the
+            // tinnitus one-shot — at 2.2× pitch that kills 95% of its signal.
+            // setMasterGain only re-applies to loop sources, so the tinnitus
+            // one-shot (spawned at masterGain=1.0) keeps its full 6.0 gain.
+            //
+            // Shape (real tinnitus, per the user):
+            //   0 – 1.0 s : world CUTS to near-silence instantly (masterGain→0.0)
+            //   1.0 – 5.5 s: world bleeds back very slowly with cubic ease-out
+            //   5.5 – 7.0 s: world returns to normal; faint distorted bleed becomes clear
             if (tinnitusTimer > 0f) {
                 tinnitusTimer = Math.max(0f, tinnitusTimer - rawDeltaTime);
-                float p   = 1f - tinnitusTimer / TINNITUS_DUR;  // 0 = just started, 1 = done
+                float p = 1f - tinnitusTimer / TINNITUS_DUR; // 0=just started, 1=done
 
-                // Volume envelope: nearly silent at first, recovers with an ease-out curve.
-                float silencePhase = Math.min(1f, p / 0.22f);               // 0→1 over first 1.5 s
-                float gainEnv      = 0.05f + 0.95f * (silencePhase * silencePhase * silencePhase);
-                AudioManager.setMasterGain(gainEnv);
-
-                // Muffle envelope: high-pass stays cut for longer than volume recovers.
-                // Stays near-max until ~p=0.5, then fades out by p=1.
-                float muffleEnv = Math.max(0f, 1f - Math.max(0f, (p - 0.5f) / 0.5f));
-                AudioManager.setListenerMuffle(muffleEnv);
+                // Cut to silence fast (first 14% ≈ 1 s), then recover slowly.
+                float gain;
+                if (p < 0.14f) {
+                    gain = 1f - (p / 0.14f); // 1→0 over first second
+                } else {
+                    float q = (p - 0.14f) / 0.86f;  // 0→1 over remaining 6 s
+                    gain = q * q * q;                 // cubic: very slow then accelerates
+                }
+                AudioManager.setMasterGain(gain);
 
                 if (tinnitusTimer == 0f) {
-                    // Fully restored when the arc completes.
-                    AudioManager.setMasterGain(1f);
-                    AudioManager.setListenerMuffle(0f);
+                    AudioManager.setMasterGain(1f);   // fully restored
                 }
             }
 
@@ -4246,9 +4246,15 @@ public class Window {
 
         if (t >= ORB_END) {
             orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear();
-            // Hand off to the 7-second tinnitus arc (it takes over muffle + gain from here).
+            // Restore clean audio state BEFORE spawning the tinnitus source so:
+            //   • masterGain = 1.0  → tinnitus one-shot created at full gain (6.0×1.0=6.0)
+            //   • muffle = 0        → routeSource attaches NO lowpass to the tinnitus source
+            // The arc then uses setMasterGain to suppress world loops without touching
+            // the already-spawned tinnitus one-shot (setMasterGain only re-applies to loops).
+            AudioManager.setMasterGain(1.0f);
+            AudioManager.setListenerMuffle(0.0f);
+            AudioManager.play("tinnitus", 6.0f, 2.2f);
             tinnitusTimer = TINNITUS_DUR;
-            AudioManager.play("tinnitus", 1.6f, 2.2f);   // loud — it has to cut through the silence
         }
     }
 
@@ -4441,13 +4447,19 @@ public class Window {
             float flick = 0.85f + 0.30f * (float) Math.sin(t * 50.0);
             float top   = ey + 150f, bot = ey - 50f, hgt = top - bot;
 
-            // Blinding white core (outer soft + inner hot).
+            // Three-layer beam — widest to narrowest so bloom reads as depth:
+            //   outer glow : wide (3.5 r) soft halo  — mostly invisible, just feeds bloom
+            //   mid column : 1.0 r visible light body — the "beam" you can see
+            //   hot core   : 0.25 r perfectly on target — razor-thin, exactly on the block
             orbDraw(shader, pv, orbCyl,
-                    new Matrix4f().translate(ex, bot, ez).scale(2.6f * fade, hgt, 2.6f * fade),
-                    2.4f * flick, 2.4f * flick, 2.4f * flick);
+                    new Matrix4f().translate(ex, bot, ez).scale(3.5f * fade, hgt, 3.5f * fade),
+                    1.2f * flick, 1.2f * flick, 1.2f * flick);
             orbDraw(shader, pv, orbCyl,
-                    new Matrix4f().translate(ex, bot, ez).scale(1.1f * fade, hgt, 1.1f * fade),
-                    4f, 4f, 4f);
+                    new Matrix4f().translate(ex, bot, ez).scale(1.0f * fade, hgt, 1.0f * fade),
+                    3.0f * flick, 3.0f * flick, 3.0f * flick);
+            orbDraw(shader, pv, orbCyl,
+                    new Matrix4f().translate(ex, bot, ez).scale(0.25f * fade, hgt, 0.25f * fade),
+                    6f, 6f, 6f);   // hottest — searing white, locks the eye onto the exact target
 
             // Helix satellites orbiting the core.
             for (int s = 0; s < 4; s++) {
