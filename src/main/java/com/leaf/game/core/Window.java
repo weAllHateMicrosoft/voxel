@@ -480,6 +480,30 @@ public class Window {
     private static final float VL_END    = VL_RAMP + VL_HOLD + VL_RETURN;
     private static final float VL_SWEEP_SPEED = 3.14159f;  // rad/s (~1 rotation / 2 s)
 
+    // ── CHOCOLATE DISCO GRID (K key) ─────────────────────────────────────────
+    // Inspired by Chocolate Disco (Steel Ball Run): spawns a 9×9 grid of glowing
+    // geometry. Crosshair + LMB to mark cells; K again to detonate all marked cells
+    // simultaneously — white-hot wireframe boxes sear and crush blocks/enemies inside.
+    private static final int   CD_ROWS    = 9;
+    private static final int   CD_COLS    = 9;
+    private static final float CD_CELL    = 3f;    // blocks per cell side (27×27 footprint)
+    private static final float CD_LW      = 0.10f; // grid-line width
+    private static final float CD_WALL    = 5.5f;  // wireframe box height
+    private static final float CD_SPAWN   = 0.30f; // spawn-in animation seconds
+    private static final float CD_DET_DUR = 0.55f; // detonation flash duration (s)
+    private static final int   CD_CRUSH_H = 18;    // blocks above grid crushed on detonation
+
+    private boolean cdActive   = false;
+    private float   cdSpawnT   = 0f;               // 0→1 spawn animation
+    private boolean lastK      = false;
+    private float   cdGridX, cdGridY, cdGridZ;     // world-space grid centre
+    private final boolean[][] cdMarked  = new boolean[CD_ROWS][CD_COLS];
+    private final float[][]   cdDetT    = new float[CD_ROWS][CD_COLS];    // >0 = detonating
+    private final boolean[][] cdBlasted = new boolean[CD_ROWS][CD_COLS];  // blocks already carved
+    private int   cdHoverR = -1, cdHoverC = -1;
+    private com.leaf.game.render.Mesh cdMesh = null;    // rebuilt when state changes
+    private boolean cdMeshDirty = true;
+
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
     private static final float TS_SHRINK = 0.9f;   // collapse duration (s)
@@ -630,6 +654,15 @@ public class Window {
                 return;
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
+                // Chocolate Disco: LMB marks/unmarks the hovered grid cell.
+                // Consumes the click so it doesn't break a block at the same time.
+                if (cdActive && action == GLFW_PRESS && cdHoverR >= 0 && cdHoverC >= 0) {
+                    cdMarked[cdHoverR][cdHoverC] = !cdMarked[cdHoverR][cdHoverC];
+                    if (!cdMarked[cdHoverR][cdHoverC]) { cdDetT[cdHoverR][cdHoverC] = 0f; cdBlasted[cdHoverR][cdHoverC] = false; }
+                    cdMeshDirty = true;
+                    return; // consumed
+                }
+
                 // While piloting the stand drone OR auto-aiming at an enemy, LMB is
                 // consumed by the stand — block normal block-breaking.
                 // While Kamui is active, LMB drives the absorption system instead.
@@ -2578,6 +2611,34 @@ public class Window {
                     lastF10 = f10Now;
                     if (vlActive) updateVoxelLines(rawDeltaTime);
 
+                    // ── CHOCOLATE DISCO GRID (K key) ─────────────────────────
+                    boolean kNow = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS;
+                    if (kNow && !lastK) {
+                        if (!cdActive) {
+                            spawnDiscoGrid(camera, world);
+                        } else {
+                            boolean anyMarked = false;
+                            for (int r = 0; r < CD_ROWS; r++)
+                                for (int c = 0; c < CD_COLS; c++)
+                                    if (cdMarked[r][c] && cdDetT[r][c] <= 0) { anyMarked = true; break; }
+                            if (anyMarked) {
+                                for (int r = 0; r < CD_ROWS; r++)
+                                    for (int c = 0; c < CD_COLS; c++)
+                                        if (cdMarked[r][c] && cdDetT[r][c] <= 0) cdDetT[r][c] = CD_DET_DUR;
+                                cdMeshDirty = true;
+                            } else {
+                                // no marked cells → dismiss the grid
+                                cdActive = false;
+                                if (cdMesh != null) { cdMesh.cleanup(); cdMesh = null; }
+                                for (boolean[] row : cdMarked) java.util.Arrays.fill(row, false);
+                                for (float[] row : cdDetT)    java.util.Arrays.fill(row, 0f);
+                                for (boolean[] row : cdBlasted) java.util.Arrays.fill(row, false);
+                            }
+                        }
+                    }
+                    lastK = kNow;
+                    if (cdActive) updateDiscoGrid(rawDeltaTime, camera, world);
+
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -2646,7 +2707,10 @@ public class Window {
                     && orbitalT >= ORB_DARK_START && orbitalT < ORB_END;
             // The radar also blooms (bright green lines + searing enemy pings bleed).
             boolean doRadarBloom = vlActive && !isPreloading && bloomShader != null && vlAmountNow > 0.05f;
-            boolean doBloom = doOrbitalBloom || doRadarBloom;
+            // Disco grid also blooms — the wireframe boxes and detonation pillars are
+            // HDR-bright and need the bloom pass to look correct.
+            boolean doDiscoBloom = cdActive && !isPreloading && bloomShader != null && cdSpawnT > 0.05f;
+            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom;
             boolean useSceneFbo = doKamuiDistort || doBloom;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
@@ -3021,6 +3085,11 @@ public class Window {
                 // ── RADAR: 3D sweep blade, afterglow wedge, enemy wireframes ────
                 if (vlActive && !isPreloading) {
                     renderRadar3D(shader, projection, view, renderMvp);
+                }
+
+                // ── CHOCOLATE DISCO: 9×9 glowing geometry grid ───────────────
+                if (cdActive && !isPreloading) {
+                    renderDiscoGrid(shader, projection, view, renderMvp);
                 }
 
                 // ── PASS 2: TRANSPARENT ───────────────────────────────────────
@@ -4874,6 +4943,412 @@ public class Window {
             idx[ii++]=a; idx[ii++]=c; idx[ii++]=b; idx[ii++]=b; idx[ii++]=c; idx[ii++]=d;
         }
         return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  CHOCOLATE DISCO — 9×9 GRID ABILITY  (K key)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** Spawn the grid: ray-cast the crosshair onto the ground and anchor the
+     *  grid centre there, or fall back to 20 blocks ahead at player Y. */
+    private void spawnDiscoGrid(com.leaf.game.util.Camera cam,
+                                com.leaf.game.world.World world) {
+        Vector3f ld = cam.getLookDirection();
+        float gx = player.position.x, gy = player.position.y, gz = player.position.z;
+        // Walk along the look ray until we hit a solid block or run out of reach.
+        boolean found = false;
+        for (float t = 1f; t < 35f; t += 0.4f) {
+            int bx = (int) Math.floor(gx + ld.x * t);
+            int by = (int) Math.floor(gy + 1.6f + ld.y * t);
+            int bz = (int) Math.floor(gz + ld.z * t);
+            if (world.getBlock(bx, by, bz).isSolid()) {
+                // Land the grid on the top face of the hit block
+                cdGridX = bx + 0.5f;
+                cdGridY = by + 1.0f;
+                cdGridZ = bz + 0.5f;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // Aim too flat or too high — drop grid 20 blocks ahead at eye level
+            cdGridX = gx + ld.x * 20f;
+            cdGridY = gy;
+            cdGridZ = gz + ld.z * 20f;
+        }
+        cdActive  = true;
+        cdSpawnT  = 0f;
+        cdMeshDirty = true;
+        cdHoverR = -1; cdHoverC = -1;
+        for (boolean[] row : cdMarked)  java.util.Arrays.fill(row, false);
+        for (float[]   row : cdDetT)    java.util.Arrays.fill(row, 0f);
+        for (boolean[] row : cdBlasted) java.util.Arrays.fill(row, false);
+        hintText  = "CHOCOLATE DISCO  —  LMB mark cell  ·  K detonate marked  ·  K (no marks) dismiss";
+        hintTimer = 6f;
+    }
+
+    private void updateDiscoGrid(float dt, com.leaf.game.util.Camera cam,
+                                 com.leaf.game.world.World world) {
+        // Spawn animation
+        if (cdSpawnT < 1f) {
+            cdSpawnT = Math.min(1f, cdSpawnT + dt / CD_SPAWN);
+            cdMeshDirty = true;
+        }
+
+        // Hover detection: ray-plane intersection at Y = cdGridY
+        {
+            Vector3f ro  = new Vector3f(cam.position.x,
+                                        cam.position.y + 0.1f,
+                                        cam.position.z);
+            Vector3f rd  = cam.getLookDirection();
+            float halfW  = CD_COLS * CD_CELL * 0.5f;
+            float halfH  = CD_ROWS * CD_CELL * 0.5f;
+            int newHR = -1, newHC = -1;
+            if (Math.abs(rd.y) > 1e-4f) {
+                float t = (cdGridY - ro.y) / rd.y;
+                if (t > 0.5f) {
+                    float hx = ro.x + rd.x * t - cdGridX;
+                    float hz = ro.z + rd.z * t - cdGridZ;
+                    int c = (int) Math.floor((hx + halfW) / CD_CELL);
+                    int r = (int) Math.floor((hz + halfH) / CD_CELL);
+                    if (c >= 0 && c < CD_COLS && r >= 0 && r < CD_ROWS) {
+                        newHR = r; newHC = c;
+                    }
+                }
+            }
+            if (newHR != cdHoverR || newHC != cdHoverC) {
+                cdHoverR = newHR; cdHoverC = newHC;
+                cdMeshDirty = true;
+            }
+        }
+
+        // Detonation timers
+        boolean anyDetonating = false;
+        boolean allDone       = true;
+        for (int r = 0; r < CD_ROWS; r++) {
+            for (int c = 0; c < CD_COLS; c++) {
+                if (cdDetT[r][c] > 0f) {
+                    anyDetonating = true;
+                    allDone = false;
+                    cdDetT[r][c] -= dt;
+                    cdMeshDirty = true;
+                    // Destroy blocks + kill enemies at 80% of the flash (near peak)
+                    float peak = CD_DET_DUR * 0.80f;
+                    if (cdDetT[r][c] <= peak && !cdBlasted[r][c]) {
+                        cdBlasted[r][c] = true;
+                        cdDetonateCell(r, c, world);
+                    }
+                    if (cdDetT[r][c] <= 0f) {
+                        cdDetT[r][c] = 0f;
+                        cdMarked[r][c] = false;
+                    }
+                } else if (cdMarked[r][c]) {
+                    allDone = false;  // still has pending marks
+                }
+            }
+        }
+
+        // Auto-dismiss the grid a moment after ALL detonating cells finish
+        if (!anyDetonating && allDone) {
+            boolean hasAnyMark = false;
+            for (boolean[] row : cdMarked) for (boolean b : row) if (b) { hasAnyMark = true; break; }
+            if (!hasAnyMark) {
+                boolean anyBlasted = false;
+                for (boolean[] row : cdBlasted) for (boolean b : row) if (b) { anyBlasted = true; break; }
+                if (anyBlasted) {
+                    // Post-detonation: linger 1.5 s then despawn
+                    // (Reuse cdSpawnT as a despawn countdown: set negative to start countdown)
+                    if (cdSpawnT > 0f) cdSpawnT = -1.5f;   // countdown begins
+                }
+            }
+        }
+        if (cdSpawnT < 0f) {
+            cdSpawnT += dt;
+            cdMeshDirty = true;
+            if (cdSpawnT >= 0f) {
+                // Despawn
+                cdActive = false;
+                if (cdMesh != null) { cdMesh.cleanup(); cdMesh = null; }
+                for (boolean[] row : cdBlasted) java.util.Arrays.fill(row, false);
+            }
+        }
+    }
+
+    /** Destroy all non-bedrock blocks in a cell's XZ column, and kill enemies inside. */
+    private void cdDetonateCell(int row, int col, com.leaf.game.world.World world) {
+        float halfW = CD_COLS * CD_CELL * 0.5f;
+        float halfH = CD_ROWS * CD_CELL * 0.5f;
+        float x0 = cdGridX - halfW + col * CD_CELL;
+        float x1 = x0 + CD_CELL;
+        float z0 = cdGridZ - halfH + row * CD_CELL;
+        float z1 = z0 + CD_CELL;
+        int y0 = Math.max(2, (int) cdGridY - 1);
+        int y1 = Math.min(com.leaf.game.world.Chunk.HEIGHT - 1, y0 + CD_CRUSH_H);
+
+        // Destroy blocks
+        for (int bx = (int) x0; bx < (int) x1; bx++) {
+            for (int bz = (int) z0; bz < (int) z1; bz++) {
+                for (int by = y0; by <= y1; by++) {
+                    com.leaf.game.world.Block b = world.getBlock(bx, by, bz);
+                    if (b != com.leaf.game.world.Block.AIR && b.hardness < 9f) {
+                        world.setBlock(bx, by, bz, com.leaf.game.world.Block.AIR);
+                    }
+                }
+            }
+        }
+
+        // Kill enemies inside the cell
+        if (enemyManager == null) return;
+        for (com.leaf.game.entity.Enemy e : enemyManager.getEnemies()) {
+            if (!e.alive) continue;
+            float ex = e.position.x, ez = e.position.z;
+            if (ex >= x0 && ex <= x1 && ez >= z0 && ez <= z1) {
+                e.health = 0;
+                e.alive  = false;
+            }
+        }
+    }
+
+    private void renderDiscoGrid(com.leaf.game.render.Shader shader,
+                                 Matrix4f projection, Matrix4f view,
+                                 Matrix4f renderMvp) {
+        float spawnFade = Math.max(0f, Math.min(1f, cdSpawnT));  // 0→1 on spawn, constant after
+        if (spawnFade < 0.01f) return;
+
+        // Rebuild mesh when state changes
+        if (cdMeshDirty || cdMesh == null) {
+            if (cdMesh != null) cdMesh.cleanup();
+            cdMesh = cdBuildMesh(spawnFade);
+            cdMeshDirty = false;
+        }
+
+        Matrix4f pv = new Matrix4f(projection).mul(view);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);   // additive — so stacked edges bloom hot
+        glDepthMask(false);
+        glDepthFunc(GL_ALWAYS);        // draw through terrain (grid always visible)
+        glDisable(GL_CULL_FACE);
+        shader.setUniform("emissiveMode", 1);
+
+        // Draw the combined grid mesh (identity model: mesh is already in world space)
+        shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
+        shader.setUniform("mvp", pv);
+        cdMesh.render();
+
+        // Draw detonation pillars (vertical cylinders of light per detonating cell)
+        if (orbCyl == null) orbCyl = orbBuildCylinder(28);
+        float halfW = CD_COLS * CD_CELL * 0.5f;
+        float halfH = CD_ROWS * CD_CELL * 0.5f;
+        for (int r = 0; r < CD_ROWS; r++) {
+            for (int c = 0; c < CD_COLS; c++) {
+                float t = cdDetT[r][c];
+                if (t <= 0f) continue;
+                float frac  = t / CD_DET_DUR;              // 1→0
+                float peak  = 1f - Math.abs(frac - 0.5f) * 2f; // triangle 0→1→0
+                float bright = 4f + peak * 12f;
+                float cx = cdGridX - halfW + (c + 0.5f) * CD_CELL;
+                float cz = cdGridZ - halfH + (r + 0.5f) * CD_CELL;
+                float pRadius = CD_CELL * 0.45f * (0.5f + peak * 0.5f);
+                float pHeight = (20f + peak * 40f) * spawnFade;
+                // Inner bright core
+                orbDraw(shader, pv, orbCyl,
+                        new Matrix4f().translate(cx, cdGridY, cz).scale(pRadius * 0.3f, pHeight, pRadius * 0.3f),
+                        bright, bright, bright * 0.92f);
+                // Outer bloom halo
+                orbDraw(shader, pv, orbCyl,
+                        new Matrix4f().translate(cx, cdGridY, cz).scale(pRadius, pHeight * 0.7f, pRadius),
+                        bright * 0.35f, bright * 0.35f, bright * 0.30f);
+            }
+        }
+
+        // Restore
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("mvp", renderMvp);
+        glDepthFunc(GL_LESS);
+        glDepthMask(true);
+        glEnable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
+    }
+
+    /**
+     * Build the disco grid mesh in world space.
+     *
+     * Structure (all 10 floats/vertex: pos3, rgba4, normal3):
+     *   • Grid floor lines at cdGridY: thin flat slabs tracing each cell boundary
+     *   • Per-cell wireframe box  (12 edges × 2 tri ribbons each) for marked/hover cells
+     *
+     * Colours:
+     *   Grid lines idle   — dim blue-white (0.25, 0.40, 0.90) × 0.20
+     *   Outer border      — slightly brighter × 0.35
+     *   Hover cell        — cyan (0.00, 0.70, 1.00) × 0.50
+     *   Marked cell       — gold (1.00, 0.55, 0.00) × 0.90
+     *   Detonating cell   — white (1.00, 1.00, 1.00) × up to 8+ (HDR bloom)
+     */
+    private com.leaf.game.render.Mesh cdBuildMesh(float spawnFade) {
+        java.util.ArrayList<Float>   vl = new java.util.ArrayList<>(8192);
+        java.util.ArrayList<Integer> il = new java.util.ArrayList<>(8192);
+
+        float halfW = CD_COLS * CD_CELL * 0.5f;
+        float halfH = CD_ROWS * CD_CELL * 0.5f;
+        float ox = cdGridX, oy = cdGridY, oz = cdGridZ;
+        float lw = CD_LW * spawnFade;
+        float wh = CD_WALL * spawnFade;
+
+        // ── Grid floor lines ────────────────────────────────────────────────
+        // (ROWS+1) lines parallel to X (running in X direction, at each Z boundary)
+        // (COLS+1) lines parallel to Z (running in Z direction, at each X boundary)
+        for (int i = 0; i <= CD_ROWS; i++) {
+            float zLine = oz - halfH + i * CD_CELL;
+            boolean isOuter = (i == 0 || i == CD_ROWS);
+            float bright = isOuter ? 0.35f : 0.20f;
+            // Thin slab: thin rectangle at floor height, width lw, extends full grid
+            addCDQuad(vl, il,
+                ox - halfW,  oy, zLine - lw * 0.5f,
+                ox + halfW,  oy, zLine - lw * 0.5f,
+                ox + halfW,  oy, zLine + lw * 0.5f,
+                ox - halfW,  oy, zLine + lw * 0.5f,
+                0.25f * bright, 0.45f * bright, 1.00f * bright, 1f,
+                0, 1, 0);
+        }
+        for (int j = 0; j <= CD_COLS; j++) {
+            float xLine = ox - halfW + j * CD_CELL;
+            boolean isOuter = (j == 0 || j == CD_COLS);
+            float bright = isOuter ? 0.35f : 0.20f;
+            addCDQuad(vl, il,
+                xLine - lw * 0.5f,  oy, oz - halfH,
+                xLine + lw * 0.5f,  oy, oz - halfH,
+                xLine + lw * 0.5f,  oy, oz + halfH,
+                xLine - lw * 0.5f,  oy, oz + halfH,
+                0.25f * bright, 0.45f * bright, 1.00f * bright, 1f,
+                0, 1, 0);
+        }
+
+        // ── Per-cell wireframe boxes ─────────────────────────────────────────
+        for (int r = 0; r < CD_ROWS; r++) {
+            for (int c = 0; c < CD_COLS; c++) {
+                boolean isHover  = (r == cdHoverR && c == cdHoverC && !cdMarked[r][c]);
+                boolean isMarked = cdMarked[r][c] && cdDetT[r][c] <= 0f;
+                float   detFrac  = cdDetT[r][c] / CD_DET_DUR;  // 1→0 while flashing
+                boolean isDet    = cdDetT[r][c] > 0f;
+
+                if (!isHover && !isMarked && !isDet) continue;  // blank cells: skip
+
+                float cellR, cellG, cellB;
+                float edgeBright;
+                if (isDet) {
+                    // Detonating: white hot, peaks at mid-timer (triangle profile)
+                    float peak = 1f - Math.abs(detFrac - 0.5f) * 2f;
+                    edgeBright = 2.5f + peak * 5.5f;   // 2.5 → 8.0 → 2.5
+                    cellR = 1f; cellG = 1f; cellB = 0.92f;
+                } else if (isMarked) {
+                    edgeBright = 0.90f;
+                    cellR = 1.0f; cellG = 0.55f; cellB = 0.00f;  // gold
+                } else {   // hover
+                    edgeBright = 0.50f;
+                    cellR = 0.00f; cellG = 0.70f; cellB = 1.00f;  // cyan
+                }
+
+                float x0 = ox - halfW + c * CD_CELL;
+                float x1 = x0 + CD_CELL;
+                float z0 = oz - halfH + r * CD_CELL;
+                float z1 = z0 + CD_CELL;
+                float y0 = oy;
+                float y1 = oy + wh;
+
+                float er = cellR * edgeBright * spawnFade;
+                float eg = cellG * edgeBright * spawnFade;
+                float eb = cellB * edgeBright * spawnFade;
+
+                // 12 edges of the wireframe box, each as a thin ribbon:
+                // ── 4 bottom edges ──
+                addCDEdgeX(vl, il, x0, x1, y0, z0, er, eg, eb, lw);
+                addCDEdgeX(vl, il, x0, x1, y0, z1, er, eg, eb, lw);
+                addCDEdgeZ(vl, il, z0, z1, y0, x0, er, eg, eb, lw);
+                addCDEdgeZ(vl, il, z0, z1, y0, x1, er, eg, eb, lw);
+                // ── 4 top edges ──
+                addCDEdgeX(vl, il, x0, x1, y1, z0, er, eg, eb, lw);
+                addCDEdgeX(vl, il, x0, x1, y1, z1, er, eg, eb, lw);
+                addCDEdgeZ(vl, il, z0, z1, y1, x0, er, eg, eb, lw);
+                addCDEdgeZ(vl, il, z0, z1, y1, x1, er, eg, eb, lw);
+                // ── 4 vertical pillars ──
+                addCDEdgeY(vl, il, y0, y1, x0, z0, er, eg, eb, lw);
+                addCDEdgeY(vl, il, y0, y1, x1, z0, er, eg, eb, lw);
+                addCDEdgeY(vl, il, y0, y1, x0, z1, er, eg, eb, lw);
+                addCDEdgeY(vl, il, y0, y1, x1, z1, er, eg, eb, lw);
+
+                // Floor fill (very transparent tint covering the whole cell)
+                float fillAlpha = isDet ? edgeBright * 0.08f : 0.12f;
+                addCDQuad(vl, il,
+                    x0, oy + 0.02f, z0,  x1, oy + 0.02f, z0,
+                    x1, oy + 0.02f, z1,  x0, oy + 0.02f, z1,
+                    er * fillAlpha, eg * fillAlpha, eb * fillAlpha, 1f,
+                    0, 1, 0);
+            }
+        }
+
+        // Convert to arrays
+        float[] va = new float[vl.size()];
+        for (int i = 0; i < va.length; i++) va[i] = vl.get(i);
+        int[] ia = new int[il.size()];
+        for (int i = 0; i < ia.length; i++) ia[i] = il.get(i);
+        return new com.leaf.game.render.Mesh(va, ia);
+    }
+
+    // ── Ribbon helpers for cdBuildMesh ──────────────────────────────────────
+
+    /** Horizontal edge running along X at (y=ey, z=ez). */
+    private static void addCDEdgeX(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                   float ax, float bx, float ey, float ez,
+                                   float r, float g, float b, float lw) {
+        float h = lw * 0.5f;
+        addCDQuad(vl, il,
+            ax, ey, ez-h,   bx, ey, ez-h,   bx, ey, ez+h,   ax, ey, ez+h,
+            r, g, b, 1f, 0, 1, 0);
+    }
+
+    /** Horizontal edge running along Z at (y=ey, x=ex). */
+    private static void addCDEdgeZ(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                   float az, float bz, float ey, float ex,
+                                   float r, float g, float b, float lw) {
+        float h = lw * 0.5f;
+        addCDQuad(vl, il,
+            ex-h, ey, az,   ex+h, ey, az,   ex+h, ey, bz,   ex-h, ey, bz,
+            r, g, b, 1f, 0, 1, 0);
+    }
+
+    /** Vertical edge running along Y at (x=ex, z=ez) — TWO crossed faces for visibility. */
+    private static void addCDEdgeY(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                   float ay, float by_, float ex, float ez,
+                                   float r, float g, float b, float lw) {
+        float h = lw * 0.5f;
+        // Face A: thin slab in the XY plane (facing ±Z)
+        addCDQuad(vl, il,
+            ex-h, ay, ez,   ex+h, ay, ez,   ex+h, by_, ez,   ex-h, by_, ez,
+            r, g, b, 1f, 0, 0, 1);
+        // Face B: thin slab in the ZY plane (facing ±X)
+        addCDQuad(vl, il,
+            ex, ay, ez-h,   ex, ay, ez+h,   ex, by_, ez+h,   ex, by_, ez-h,
+            r, g, b, 1f, 1, 0, 0);
+    }
+
+    /** Add one quad as 2 triangles into the geometry lists. */
+    private static void addCDQuad(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                  float x0, float y0, float z0,
+                                  float x1, float y1, float z1,
+                                  float x2, float y2, float z2,
+                                  float x3, float y3, float z3,
+                                  float r, float g, float b, float a,
+                                  float nx, float ny, float nz) {
+        int base = vl.size() / 10;
+        float[] pts = {x0,y0,z0, x1,y1,z1, x2,y2,z2, x3,y3,z3};
+        for (int i = 0; i < 4; i++) {
+            vl.add(pts[i*3]); vl.add(pts[i*3+1]); vl.add(pts[i*3+2]);
+            vl.add(r); vl.add(g); vl.add(b); vl.add(a);
+            vl.add(nx); vl.add(ny); vl.add(nz);
+        }
+        il.add(base); il.add(base+1); il.add(base+2);
+        il.add(base); il.add(base+2); il.add(base+3);
     }
 
     /** Unit cube centred on the origin (size 1). */
