@@ -452,10 +452,10 @@ public class Window {
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
-    private static final float TS_MAXR   = 78f;        // domain reach (blocks)
-    private static final float TS_EXPAND = 0.40f;      // fast burst out
-    private static final float TS_HOLD   = 3.6f;       // time-stopped beat
-    private static final float TS_SHRINK = 0.55f;      // collapse back
+    private static final float TS_MAXR   = 220f;       // domain reach (blocks) — as large as possible
+    private static final float TS_EXPAND = 1.8f;       // slower, more dramatic expansion
+    private static final float TS_HOLD   = 4.0f;       // time-stopped beat
+    private static final float TS_SHRINK = 0.9f;       // collapse back
     private static final float TS_END    = TS_EXPAND + TS_HOLD + TS_SHRINK;
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -2446,7 +2446,7 @@ public class Window {
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
                         DroppedItem item = droppedItems.get(i);
-                        item.update(deltaTime, player.position);
+                        item.update(timeStopActive ? 0f : deltaTime, player.position);
                         if (chestPos.distance(item.position) < 0.5f) {
                             inventory.addBlock(item.blockType);
                             addBlockToHotbar(item.blockType);
@@ -2492,7 +2492,7 @@ public class Window {
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
                         DroppedItem item = droppedItems.get(i);
-                        item.update(deltaTime, player.position);
+                        item.update(timeStopActive ? 0f : deltaTime, player.position);
                         if (chestPos.distance(item.position) < 0.5f) {
                             inventory.addBlock(item.blockType);
                             addBlockToHotbar(item.blockType);
@@ -3197,7 +3197,9 @@ public class Window {
                                     ap.crossfade(want, 0.12f);
                                 }
                             }
-                            ap.tick(rawDeltaTime);
+                            // Time stop: freeze the animation clock for every enemy
+                            // so idle/walk/attack loops halt mid-frame.
+                            ap.tick(timeStopActive ? 0f : rawDeltaTime);
 
                             // Face the player (Y-axis rotation only).
                             // The golem's front is on the +Z face, so it needs NO +PI flip
@@ -4352,6 +4354,7 @@ public class Window {
         tsCenterY = player.position.y + 1.0f;   // centre on the body, not the soles
         tsCenterZ = player.position.z;
         timeStopT = 0f; tsRadiusNow = 0f; timeStopActive = true;
+        AudioManager.play("copyrighted/time_stop", 1.0f);
         // The "ZA WARUDO" freeze flash — a hard electric-blue pop.
         ScreenEffectManager.INSTANCE.flash(0.45f, 0.7f, 1.0f, 0.7f, 0.18f);
         orbShake(0.25f, 0.18f);                 // a sharp jolt as time seizes
