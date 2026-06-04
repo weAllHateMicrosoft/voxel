@@ -1515,6 +1515,27 @@ public class Window {
                             substituteCooldown = GameConfig.substituteCooldown;
                         }
 
+                        // ── VOID DEATH — player fell past y=0 into the abyss ─────
+                        if (player.fellIntoVoid && !showDeathScreen && !deathCutscenePending) {
+                            player.fellIntoVoid = false;
+                            player.health = 0f;
+                            AudioManager.stopContinuous("kamui_duration");
+                            AudioManager.stopContinuous("kamui_distortion");
+                            ScreenEffectManager.INSTANCE.flash(0f, 0f, 0f, 1.0f, 0.5f);
+                            deathScreenLines = RunRecords.INSTANCE.recordDeath(
+                                    enemyManager.getWaveNumber(),
+                                    (float) org.lwjgl.glfw.GLFW.glfwGetTime());
+                            deathCutscenePending = true;
+                            if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
+                                player.progression.grantKamui();
+                                kamuiJustUnlockedThisRevival = true;
+                                cutscene.startKamuiAwaken();
+                            } else {
+                                cutscene.startRevival();
+                            }
+                        }
+                        player.fellIntoVoid = false; // clear every frame
+
                         // ── DRAIN remaining enemy damage into player health ────
                         if (enemyManager.pendingPlayerDamage > 0f) {
                             if (player.abilities.isKamui || immunityTimer > 0f) {
@@ -4127,6 +4148,8 @@ public class Window {
         }
         orbitalT = 0f; orbCarved = false; orbStruck = false; orbitalActive = true;
         orbParticles.clear();
+        AudioManager.preload("laser_gun");
+        AudioManager.preload("tinnitus");
         hintText = "ORBITAL ANNIHILATION  —  stand back."; hintTimer = 3f;
     }
 
@@ -4167,15 +4190,16 @@ public class Window {
                 ScreenEffectManager.INSTANCE.flash(0.4f, 1f, 0.5f, 0.4f, 0.16f);
             }
         } else {
-            // LASER: environmental flash sears the dead world, then it lifts to
-            // reveal the crater as the beam fades.
+            // LASER: fire the 10-second laser_gun audio on the frame it begins,
+            // then the environmental flash sears the dead world and the beam fades.
             float p = (t - ORB_LASER) / (ORB_END - ORB_LASER);
             orbFlashAmt = Math.max(0f, 1.7f * (1f - p * 2.4f));
             orbShake(0.22f, 0.36f);
             if (!orbStruck) {
                 orbStruck = true;
+                AudioManager.play("laser_gun", 1.0f);          // the 10-s laser audio
                 ScreenEffectManager.INSTANCE.flash(1f, 1f, 1f, 0.9f, 0.22f);
-                spawnDebris();                       // voxel debris bursts from the impact
+                spawnDebris();                                  // voxel debris bursts from impact
             }
         }
 
@@ -4183,11 +4207,28 @@ public class Window {
         if (Math.abs(t - ORB_IMPLODE) < dt * 1.5f) {
             orbShake(0.45f, 0.42f);
             ScreenEffectManager.INSTANCE.flash(0.7f, 1f, 0.8f, 0.55f, 0.14f);
+            // Shockwave tinnitus — a high-pitched ringing that fades over ~4 s.
+            // Pitch 2.2 × normal gives the "ears screaming" frequency; volume 0.65
+            // keeps it eerie rather than just loud.
+            AudioManager.play("tinnitus", 0.65f, 2.2f);
+            // Also briefly muffle all other audio as if the blast deafened the player.
+            AudioManager.setListenerMuffle(0.9f);
+        }
+        // Fade the muffle out over ~3 s (called every frame, driven by the timer).
+        if (t > ORB_IMPLODE && t < ORB_IMPLODE + 3.0f) {
+            float mf = Math.max(0f, 0.9f * (1f - (t - ORB_IMPLODE) / 3.0f));
+            AudioManager.setListenerMuffle(mf);
+        }
+        if (Math.abs(t - (ORB_IMPLODE + 3.0f)) < dt * 1.5f) {
+            AudioManager.setListenerMuffle(0f);   // fully restore at the end
         }
 
         updateOrbParticles(dt);
 
-        if (t >= ORB_END) { orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear(); }
+        if (t >= ORB_END) {
+            orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear();
+            AudioManager.setListenerMuffle(0f);   // ensure muffle cleared if sequence ended early
+        }
     }
 
     /** Continuously spawn slow-rising green embers within the crater radius. */
@@ -4247,13 +4288,14 @@ public class Window {
     /** Erase a vertical cylinder of voxels at the epicentre and remesh the hit chunks. */
     private void carveOrbitalCrater() {
         int cxB = (int) Math.floor(orbEpiX);
-        int cyB = (int) Math.floor(orbEpiY);
         int czB = (int) Math.floor(orbEpiZ);
         int R = ORB_CRATER_R;
-        int yTop = cyB + 5;
-        int yBot = Math.max(1, cyB - 45);
+        // Full column: sky limit → void.  Every block in the cylinder is erased,
+        // exposing the void below bedrock so falling in is instant death.
+        int yBot = 0;
+        int yTop = Chunk.HEIGHT - 1;
 
-        java.util.Set<Long> cols = new java.util.HashSet<>();   // affected (cx,cz) chunk columns
+        java.util.Set<Long> cols = new java.util.HashSet<>();
         for (int dx = -R; dx <= R; dx++) {
             for (int dz = -R; dz <= R; dz++) {
                 if (dx * dx + dz * dz > R * R) continue;
@@ -4268,7 +4310,8 @@ public class Window {
                         cols.add(((long) (ccx + ax + 32768) << 20) | (ccz + az + 32768));
             }
         }
-        int cyLo = Math.floorDiv(yBot, Chunk.HEIGHT), cyHi = Math.floorDiv(yTop, Chunk.HEIGHT);
+        // Rebuild every vertical chunk slab in the affected columns.
+        int cyLo = 0, cyHi = Math.floorDiv(yTop, Chunk.HEIGHT);
         for (long key : cols) {
             int kcx = (int) ((key >> 20) & 0xFFFFF) - 32768;
             int kcz = (int) (key & 0xFFFFF) - 32768;

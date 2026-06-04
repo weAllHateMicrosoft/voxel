@@ -21,9 +21,11 @@ public class Player {
     public boolean can(Progression.Ability a) { return progression.isUnlocked(a); }
 
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
-    public float health    = 50.0f;
-    public float maxHealth = 50.0f;
-    public float highestY  = -1000f;
+    public float   health      = 50.0f;
+    public float   maxHealth   = 50.0f;
+    public float   highestY    = -1000f;
+    /** Set true the frame the player falls below y=0 (the void). Window kills them. */
+    public boolean fellIntoVoid = false;
 
     // ── MANA ──────────────────────────────────────────────────────────────────
     // Consumed by abilities; regenerates passively over time.
@@ -185,7 +187,7 @@ public class Player {
             }
             if (onGround) highestY = position.y;
             else if (position.y > highestY) highestY = position.y;
-            if (position.y < 1f) { position.y = 1f; velocityY = 0f; }
+            if (position.y < 0f) { fellIntoVoid = true; }   // void death — Window handles it
             return;
         }
 
@@ -363,8 +365,9 @@ public class Player {
             highestY = position.y;
         }
 
-        // Hard floor — never fall below the bedrock layer
-        if (position.y < 1f) { position.y = 1f; velocityY = 0f; }
+        // Void — if the player falls below y=0 the void consumed them.
+        // We don't hard-clamp anymore; Window.java reads fellIntoVoid and kills them.
+        if (position.y < 0f) { fellIntoVoid = true; }
         camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
     }
 
