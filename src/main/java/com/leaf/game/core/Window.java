@@ -399,32 +399,44 @@ public class Window {
     private boolean lastF6 = false;
 
     // ═══════════════════════════════════════════════════════════════════════════
-    //  "ORBITAL ANNIHILATION"  — dramatic cinematic strike (toggle/fire with F7)
+    //  "ORBITAL ANNIHILATION"  — fully-3D cinematic strike (fire with F7)
     // ═══════════════════════════════════════════════════════════════════════════
-    // A timed, phased set-piece, rendered almost entirely as screen-space neon VFX
-    // over a near-black backdrop (so there's zero risk to the real render pipeline):
-    //   P0 INITIATE  (0.0–2.0): green targeting box, cardinal cross beams, ground rings
-    //   P1 BLACKOUT  (2.0–6.0): world snaps black; cyan core; expanding scan dome
-    //   P2 MANDALA   (6.0–8.0): sky sigil + glitch rain at full dome radius
-    //   P3 IMPLOSION (8.0–10.0): everything sucks back to a point → CARVE crater → silence
-    //   P4 STRIKE    (10.0–12.8): RGB-split orbital laser, white flash, violent shake
+    // Everything is real 3D geometry + the terrain "lidar" scan shader; the only
+    // remaining 2D is nothing (no decals/rain). Phases:
+    //   CHARGE  (0.0–3.0): gyroscope torus rings spin up + pulsing core; the world
+    //                      darkens; flat ground rings spawn and creep outward.
+    //   IMPLODE (3.0–4.2): all rings whip inward (exp ease-in), collide at the core
+    //                      → detonation flash, and the lidar wavefront fires OUT.
+    //   SCANOUT (4.2–6.6): wavefront sweeps the terrain (glowing voxel wireframe);
+    //                      anti-gravity green embers float up filling the volume.
+    //   CARVE   (6.6–7.2): wavefront implodes back → the crater is carved → a beat.
+    //   LASER   (7.2–11.5): volumetric core beam + helix satellites + 3D shockwave
+    //                      + voxel debris + environmental flash + violent shake.
     private boolean orbitalActive  = false;
     private float   orbitalT       = 0f;     // seconds since fire
     private float   orbEpiX, orbEpiY, orbEpiZ; // epicentre (block centre)
     private boolean orbCarved      = false;   // one-shot: crater carved
-    private boolean orbStruck      = false;   // one-shot: laser flash fired
+    private boolean orbStruck      = false;   // one-shot: laser flash + debris burst
     private boolean lastF7         = false;
-    private final Matrix4f orbProjView = new Matrix4f(); // last frame's proj*view, for projecting the epicentre
+    private final Matrix4f orbProjView = new Matrix4f(); // last frame's proj*view (unused by 3D path; kept for safety)
     // Live scan parameters driven by the phase timeline (read by the render path).
     private float   orbScanRadiusW  = 0f;   // wavefront radius in WORLD units
     private float   orbScanIntensity= 0f;   // emissive gain for the lidar scan
-    private float   orbFlashAmt     = 0f;   // environmental white flash (0..~1.6)
+    private float   orbFlashAmt     = 0f;   // environmental white flash (0..~1.7)
     private boolean orbDark         = false;// true = real lighting blackout (sun/ambient/sky → black)
     private com.leaf.game.render.Shader bloomShader = null; // searing-bloom post-process
+    // 3D effect meshes (unit-sized, built once, drawn emissive with per-object MVP).
+    private com.leaf.game.render.Mesh orbTorus, orbSphere, orbCyl, orbCube;
+    /** Lightweight 3D particles for embers (float up) and debris (burst out). */
+    private static final class OrbParticle {
+        float x, y, z, vx, vy, vz, life, maxLife, size, r, g, b;
+    }
+    private final java.util.List<OrbParticle> orbParticles = new java.util.ArrayList<>();
     // Phase boundaries (seconds)
-    private static final float ORB_P1 = 2.0f, ORB_P2 = 6.0f, ORB_P3 = 8.0f,
-                               ORB_CARVE = 9.3f, ORB_P4 = 10.0f, ORB_END = 12.8f;
-    private static final int   ORB_CRATER_R = 12;   // crater radius (blocks)
+    private static final float ORB_CHARGE = 3.0f, ORB_IMPLODE = 4.2f, ORB_SCANOUT = 6.6f,
+                               ORB_CARVE  = 7.2f, ORB_LASER   = 7.6f, ORB_END     = 11.5f;
+    private static final float ORB_DARK_START = 0.6f;  // blackout begins shortly after fire
+    private static final int   ORB_CRATER_R   = 12;    // crater radius (blocks)
     // ─────────────────────────────────────────────────────────────────────────
 
     public void run() {
@@ -2460,7 +2472,7 @@ public class Window {
             // The orbital cinematic also redirects the scene into the FBO so we can
             // run the searing-bloom pass over the emissive scan + laser flash.
             boolean doOrbitalBloom = orbitalActive && !isPreloading && bloomShader != null
-                    && orbitalT >= ORB_P1 && orbitalT < ORB_END;
+                    && orbitalT >= ORB_DARK_START && orbitalT < ORB_END;
             boolean useSceneFbo = doKamuiDistort || doOrbitalBloom;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
@@ -2536,6 +2548,7 @@ public class Window {
                 boolean orbBlack = orbitalActive && orbDark;
                 shader.setUniform("sunStrength",     orbBlack ? 0f : GameConfig.sunStrength);
                 shader.setUniform("ambientStrength", orbBlack ? 0f : GameConfig.ambientStrength);
+                shader.setUniform("emissiveMode", 0);   // reset each frame (effects toggle it locally)
                 // Orbital "lidar" scan + environmental flash uniforms.
                 shader.setUniform("orbActive",    (orbitalActive && orbScanIntensity > 0.001f) ? 1 : 0);
                 shader.setUniform("orbEpicenter", new Vector3f(orbEpiX, orbEpiY, orbEpiZ));
@@ -2812,6 +2825,12 @@ public class Window {
                             }
                         }
                     }
+                }
+
+                // ── ORBITAL ANNIHILATION: 3D effect geometry (inside the FBO so
+                //    it gets the searing bloom) — drawn over opaque terrain ──────
+                if (orbitalActive && !isPreloading) {
+                    renderOrbital3D(shader, projection, view, renderMvp);
                 }
 
                 // ── PASS 2: TRANSPARENT ───────────────────────────────────────
@@ -3358,8 +3377,8 @@ public class Window {
                     if (showUnlockCard)         hud.renderUnlockCard((float)ww[0], (float)wh[0]);
                     if (practiceAbility != null) hud.renderPractice((float)ww[0], (float)wh[0]);
                     if (showDeathScreen)         hud.renderDeathScreen((float)ww[0], (float)wh[0]);
-                    // Orbital Annihilation cinematic (screen-space neon over a black backdrop)
-                    if (orbitalActive) renderOrbitalOverlay((float)ww[0], (float)wh[0], orbProjView);
+                    // (The Orbital Annihilation cinematic is now drawn as real 3D
+                    //  geometry during the world pass — see renderOrbital3D.)
                     // Screen flash overlay (snipe, explosion, melee hit, etc.)
                     ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
                     // Snow particle overlay — drawn on top of world, under flash
@@ -4107,59 +4126,116 @@ public class Window {
             orbEpiX = tx; orbEpiY = ey; orbEpiZ = tz;
         }
         orbitalT = 0f; orbCarved = false; orbStruck = false; orbitalActive = true;
+        orbParticles.clear();
         hintText = "ORBITAL ANNIHILATION  —  stand back."; hintTimer = 3f;
     }
 
-    /** Drive the scan/blackout parameters, shake, one-shots; end the sequence. */
+    /** Drive the scan/blackout parameters, shake, particles, one-shots; end it. */
     private void updateOrbitalStrike(float dt) {
         orbitalT += dt;
         float t = orbitalT;
         final float MAXR = 85f;   // world radius the lidar wavefront reaches
 
-        orbDark = false; orbScanRadiusW = 0f; orbScanIntensity = 0f; orbFlashAmt = 0f;
-        if (t < ORB_P1) {
-            // P0: still daylight; building eruption rumble.
-            orbShake(0.18f, 0.02f + 0.05f * (t / ORB_P1));
-        } else if (t < ORB_P2) {
-            // P1: blackout; wavefront sweeps outward tracing the voxel terrain.
-            orbDark = true;
-            float p = (t - ORB_P1) / (ORB_P2 - ORB_P1);
+        orbScanRadiusW = 0f; orbScanIntensity = 0f; orbFlashAmt = 0f;
+        // Blackout from a hair after fire, lifting partway through the laser.
+        orbDark = (t >= ORB_DARK_START) && (t < ORB_LASER + 1.6f);
+
+        if (t < ORB_CHARGE) {
+            // CHARGE: gyroscope spins up; gentle, building rumble.
+            orbShake(0.16f, 0.02f + 0.05f * (t / ORB_CHARGE));
+        } else if (t < ORB_IMPLODE) {
+            // IMPLODE: rings whip inward; rumble tightens toward the collision.
+            float p = (t - ORB_CHARGE) / (ORB_IMPLODE - ORB_CHARGE);
+            orbShake(0.14f, 0.05f + 0.18f * p);
+        } else if (t < ORB_SCANOUT) {
+            // SCANOUT: detonation has fired the wavefront; it sweeps the terrain.
+            orbScanIntensity = 2.3f;
+            float p = (t - ORB_IMPLODE) / (ORB_SCANOUT - ORB_IMPLODE);
             orbScanRadiusW = p * MAXR;
-            orbScanIntensity = 2.4f;
-        } else if (t < ORB_P3) {
-            // P2: hold the scan at full radius (sky mandala overhead).
-            orbDark = true;
-            orbScanRadiusW = MAXR;
-            orbScanIntensity = 1.9f;
+            spawnEmbers(dt);                         // anti-gravity embers fill the volume
         } else if (t < ORB_CARVE) {
-            // P3a: implosion — the wavefront collapses inward, searing brighter.
-            orbDark = true;
-            float p = (t - ORB_P3) / (ORB_CARVE - ORB_P3);
+            // The wavefront implodes back toward the centre, searing brighter.
+            float p = (t - ORB_SCANOUT) / (ORB_CARVE - ORB_SCANOUT);
+            orbScanIntensity = 2.3f + p * 3f;
             orbScanRadiusW = (1f - p) * MAXR;
-            orbScanIntensity = 2.4f + p * 3f;
-        } else if (t < ORB_P4) {
-            // P3b: the world-erasing carve, then a beat of pure-black silence.
-            orbDark = true;
+        } else if (t < ORB_LASER) {
+            // Carve the world, then a short, dark beat before the strike.
             if (!orbCarved) {
                 carveOrbitalCrater();
                 orbCarved = true;
                 orbShake(0.6f, 0.55f);
-                ScreenEffectManager.INSTANCE.flash(0.4f, 1f, 0.5f, 0.5f, 0.18f);
+                ScreenEffectManager.INSTANCE.flash(0.4f, 1f, 0.5f, 0.4f, 0.16f);
             }
         } else {
-            // P4: orbital laser — a massive environmental flash lights the dead
-            // world, then the blackout lifts to reveal the fresh crater.
-            float p = (t - ORB_P4) / (ORB_END - ORB_P4);
-            orbDark = (p < 0.45f);
-            orbFlashAmt = Math.max(0f, 1.7f * (1f - p * 2.2f));   // sears at impact, fades fast
-            orbShake(0.22f, 0.34f);
+            // LASER: environmental flash sears the dead world, then it lifts to
+            // reveal the crater as the beam fades.
+            float p = (t - ORB_LASER) / (ORB_END - ORB_LASER);
+            orbFlashAmt = Math.max(0f, 1.7f * (1f - p * 2.4f));
+            orbShake(0.22f, 0.36f);
             if (!orbStruck) {
                 orbStruck = true;
                 ScreenEffectManager.INSTANCE.flash(1f, 1f, 1f, 0.9f, 0.22f);
+                spawnDebris();                       // voxel debris bursts from the impact
             }
         }
 
-        if (t >= ORB_END) { orbitalActive = false; orbDark = false; orbFlashAmt = 0f; }
+        // Detonation kick the instant the implosion rings collide.
+        if (Math.abs(t - ORB_IMPLODE) < dt * 1.5f) {
+            orbShake(0.45f, 0.42f);
+            ScreenEffectManager.INSTANCE.flash(0.7f, 1f, 0.8f, 0.55f, 0.14f);
+        }
+
+        updateOrbParticles(dt);
+
+        if (t >= ORB_END) { orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear(); }
+    }
+
+    /** Continuously spawn slow-rising green embers within the crater radius. */
+    private void spawnEmbers(float dt) {
+        int n = Math.min(3, orbParticles.size() < 90 ? 3 : 0);   // cap the population
+        for (int i = 0; i < n; i++) {
+            OrbParticle p = new OrbParticle();
+            double a = Math.random() * Math.PI * 2;
+            float  rad = (float) Math.sqrt(Math.random()) * (ORB_CRATER_R + 4);
+            p.x = orbEpiX + (float) Math.cos(a) * rad;
+            p.z = orbEpiZ + (float) Math.sin(a) * rad;
+            p.y = orbEpiY - 2f + (float) Math.random() * 3f;
+            p.vx = (float) (Math.random() - 0.5) * 0.4f;
+            p.vz = (float) (Math.random() - 0.5) * 0.4f;
+            p.vy = 1.5f + (float) Math.random() * 2.5f;          // anti-gravity: float UP
+            p.maxLife = p.life = 2.5f + (float) Math.random() * 2f;
+            p.size = 0.12f + (float) Math.random() * 0.18f;
+            p.r = 0.25f; p.g = 1f; p.b = 0.35f;
+            orbParticles.add(p);
+        }
+    }
+
+    /** Burst of glowing voxel debris flying outward+up from the impact. */
+    private void spawnDebris() {
+        for (int i = 0; i < 60; i++) {
+            OrbParticle p = new OrbParticle();
+            double a = Math.random() * Math.PI * 2;
+            float  out = 6f + (float) Math.random() * 10f;
+            p.x = orbEpiX; p.y = orbEpiY; p.z = orbEpiZ;
+            p.vx = (float) Math.cos(a) * out;
+            p.vz = (float) Math.sin(a) * out;
+            p.vy = 8f + (float) Math.random() * 14f;
+            p.maxLife = p.life = 1.2f + (float) Math.random() * 1.3f;
+            p.size = 0.3f + (float) Math.random() * 0.5f;
+            p.r = 0.4f; p.g = 1f; p.b = 0.5f;
+            orbParticles.add(p);
+        }
+    }
+
+    private void updateOrbParticles(float dt) {
+        boolean debrisPhase = orbitalT >= ORB_LASER;
+        for (int i = orbParticles.size() - 1; i >= 0; i--) {
+            OrbParticle p = orbParticles.get(i);
+            p.life -= dt;
+            if (p.life <= 0f) { orbParticles.remove(i); continue; }
+            if (debrisPhase) p.vy -= 22f * dt;   // debris falls under gravity
+            p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+        }
     }
 
     private void orbShake(float dur, float amp) {
@@ -4203,188 +4279,222 @@ public class Window {
         }
     }
 
-    // ── Screen-space VFX ────────────────────────────────────────────────────────
+    // ── 3D effect geometry ──────────────────────────────────────────────────────
 
-    private static int orbCol(float r, float g, float b, float a) {
-        return ImGui.colorConvertFloat4ToU32(
-                Math.min(1f, r), Math.min(1f, g), Math.min(1f, b), Math.max(0f, Math.min(1f, a)));
+    /** Draw one unit mesh with a model transform and an emissive colour×intensity. */
+    private void orbDraw(com.leaf.game.render.Shader shader, Matrix4f pv,
+                         com.leaf.game.render.Mesh m, Matrix4f model, float r, float g, float b) {
+        shader.setUniform("mvp", new Matrix4f(pv).mul(model));
+        shader.setUniform("emissiveTint", new Vector3f(r, g, b));
+        m.render();
     }
 
-    /** Project a world point to screen pixels, or null if behind the camera. */
-    private float[] orbProject(Matrix4f pv, float wx, float wy, float wz, float w, float h) {
-        org.joml.Vector4f c = new org.joml.Vector4f(wx, wy, wz, 1f);
-        pv.transform(c);
-        if (c.w <= 0.0001f) return null;
-        return new float[]{ (c.x / c.w * 0.5f + 0.5f) * w, (1f - (c.y / c.w * 0.5f + 0.5f)) * h };
-    }
-
-    private void orbStrokeEllipse(imgui.ImDrawList d, float cx, float cy,
-                                  float rx, float ry, int col, float thick) {
-        int N = 48; float px = 0, py = 0;
-        for (int i = 0; i <= N; i++) {
-            double a = 2 * Math.PI * i / N;
-            float x = cx + (float) Math.cos(a) * rx;
-            float y = cy + (float) Math.sin(a) * ry;
-            if (i > 0) d.addLine(px, py, x, y, col, thick);
-            px = x; py = y;
+    /** The whole 3D set-piece: gyroscope, implosion rings, core, embers, laser. */
+    private void renderOrbital3D(com.leaf.game.render.Shader shader,
+                                 Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
+        if (orbTorus == null) {
+            orbTorus  = orbBuildTorus(0.05f, 72, 8);
+            orbSphere = orbBuildSphere(14, 20);
+            orbCyl    = orbBuildCylinder(28);
+            orbCube   = orbBuildCube();
         }
-    }
+        float t  = orbitalT;
+        float ex = orbEpiX, ey = orbEpiY, ez = orbEpiZ;
+        Matrix4f pv = new Matrix4f(projection).mul(view);
 
-    /** Arc of an ellipse between two angles (radians). */
-    private void orbStrokeArc(imgui.ImDrawList d, float cx, float cy, float rx, float ry,
-                              double a0, double a1, int col, float thick) {
-        int N = 40; float px = 0, py = 0;
-        for (int i = 0; i <= N; i++) {
-            double a = a0 + (a1 - a0) * i / N;
-            float x = cx + (float) Math.cos(a) * rx;
-            float y = cy + (float) Math.sin(a) * ry;
-            if (i > 0) d.addLine(px, py, x, y, col, thick);
-            px = x; py = y;
+        // Additive glow; depth-tested against terrain but no depth writes.
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        glDepthMask(false);
+        shader.setUniform("emissiveMode", 1);
+
+        // ── Pulsing core sphere (charge → carve) ──
+        if (t < ORB_LASER) {
+            float pulse  = 0.55f + 0.18f * (float) Math.sin(t * 8.0);
+            float coreR  = 0.7f * pulse + 0.2f;
+            float bright = 1.4f;
+            if (Math.abs(t - ORB_IMPLODE) < 0.3f) bright = 3.4f;   // flare at collision
+            orbDraw(shader, pv, orbSphere,
+                    new Matrix4f().translate(ex, ey, ez).scale(coreR), bright, bright, bright * 0.9f);
         }
-    }
 
-    private void orbGlowDot(imgui.ImDrawList d, float cx, float cy, float r,
-                            float rr, float gg, float bb) {
-        for (int i = 5; i >= 1; i--) {
-            float radius = r * i / 5f;
-            d.addCircleFilled(cx, cy, radius, orbCol(rr, gg, bb, 0.5f / i), 24);
+        // ── Gyroscope: 3 torus rings spinning on different axes (charge→implode) ──
+        if (t < ORB_IMPLODE) {
+            float gs = 3.6f;
+            if (t > ORB_CHARGE) {                                  // collapse into the core
+                float p = (t - ORB_CHARGE) / (ORB_IMPLODE - ORB_CHARGE);
+                gs *= (1f - p * p * p);
+            }
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(ex, ey, ez).rotateX(t * 2.0f).scale(gs),
+                    0.6f, 1f, 0.7f);
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(ex, ey, ez).rotateZ(t * 2.7f).scale(gs * 0.85f),
+                    0.7f, 1f, 0.85f);
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(ex, ey, ez).rotateY(t * 1.6f).rotateX(0.5f).scale(gs * 1.15f),
+                    0.5f, 1f, 0.6f);
         }
-        d.addCircleFilled(cx, cy, Math.max(2f, r * 0.18f), orbCol(1f, 1f, 1f, 0.95f), 16);
-    }
 
-    /** Wireframe box around the epicentre voxel. */
-    private void orbDrawBox(imgui.ImDrawList d, Matrix4f pv, float w, float h,
-                            float bx, float by, float bz, int col) {
-        float[][] c = new float[8][];
-        int idx = 0;
-        for (int xi = 0; xi <= 1; xi++)
-            for (int yi = 0; yi <= 1; yi++)
-                for (int zi = 0; zi <= 1; zi++)
-                    c[idx++] = orbProject(pv, bx + xi, by + yi, bz + zi, w, h);
-        int[][] edges = {
-            {0,1},{0,2},{0,4},{1,3},{1,5},{2,3},{2,6},{3,7},{4,5},{4,6},{5,7},{6,7}
-        };
-        for (int[] e : edges) {
-            float[] a = c[e[0]], b = c[e[1]];
-            if (a != null && b != null) d.addLine(a[0], a[1], b[0], b[1], col, 2f);
-        }
-    }
-
-    private void orbMandala(imgui.ImDrawList d, float cx, float cy, float R, float t) {
-        float rot = t * 0.6f;
-        int blue  = orbCol(0.5f, 0.8f, 1f, 0.85f);
-        int faint = orbCol(0.4f, 0.7f, 1f, 0.35f);
-        for (int k = 1; k <= 3; k++) d.addCircle(cx, cy, R * k / 3f, blue, 48, 2f);
-        for (int i = 0; i < 12; i++) {                      // radial spokes
-            double a = rot + i * Math.PI / 6;
-            d.addLine(cx, cy, cx + (float) Math.cos(a) * R, cy + (float) Math.sin(a) * R, faint, 1.5f);
-        }
-        float hx = 0, hy = 0;                               // rotating hexagon
-        for (int i = 0; i <= 6; i++) {
-            double a = -rot + i * Math.PI / 3;
-            float x = cx + (float) Math.cos(a) * R * 0.8f, y = cy + (float) Math.sin(a) * R * 0.8f;
-            if (i > 0) d.addLine(hx, hy, x, y, blue, 2f);
-            hx = x; hy = y;
-        }
-    }
-
-    private void orbGlitchRain(imgui.ImDrawList d, float w, float h, float t) {
-        int col = orbCol(1f, 1f, 1f, 0.55f);
-        for (int i = 0; i < 70; i++) {
-            float fx = ((i * 73) % 100) / 100f * w;
-            float speed = 320 + (i % 5) * 130;
-            float y = ((i * 137) % (int) h + t * speed) % h;
-            d.addLine(fx, y, fx, y + 26f, col, 1.6f);
-        }
-    }
-
-    private void orbRgbLaser(imgui.ImDrawList d, float ex, float h, float t, float fade) {
-        float wc    = (16f + 6f * (float) Math.sin(t * 40)) * fade;     // flickering core width
-        float split = (10f + 5f * (float) Math.sin(t * 33)) * fade;     // chromatic separation
-        // Wide soft halo first (fake bloom — this beam is 2D, outside the bloom FBO).
-        for (int i = 4; i >= 1; i--) {
-            float hw = wc * (1.2f + i * 1.4f);
-            d.addRectFilled(ex - hw, 0, ex + hw, h, orbCol(0.6f, 1f, 0.7f, 0.10f * fade));
-        }
-        // RGB fringes (offset bands), then the bright white core on top.
-        d.addRectFilled(ex - wc - split, 0, ex + wc - split, h, orbCol(1f, 0.1f, 0.1f, 0.55f)); // red ←
-        d.addRectFilled(ex - wc + split, 0, ex + wc + split, h, orbCol(0.1f, 0.3f, 1f, 0.55f)); // blue →
-        d.addRectFilled(ex - wc * 0.8f,  0, ex + wc * 0.8f,  h, orbCol(0.1f, 1f, 0.2f, 0.5f));  // green
-        d.addRectFilled(ex - wc * 0.45f, 0, ex + wc * 0.45f, h, orbCol(1f, 1f, 1f, 0.95f));     // white core
-    }
-
-    /** Draw the whole cinematic in screen space over a black backdrop. */
-    private void renderOrbitalOverlay(float w, float h, Matrix4f pv) {
-        imgui.ImDrawList d = ImGui.getForegroundDrawList();
-        float t = orbitalT;
-        float[] epi = orbProject(pv, orbEpiX, orbEpiY, orbEpiZ, w, h);
-        float ex = (epi != null) ? epi[0] : w * 0.5f;
-        float ey = (epi != null) ? epi[1] : h * 0.62f;
-        float maxR = Math.min(w, h) * 0.55f;
-
-        // NOTE: the blackout + expanding ground rings + voxel-edge contours are now
-        // REAL 3D light (the lidar scan in the terrain shader, bloomed). The 2D layer
-        // here only adds the elements that read better in screen space: the daylight
-        // initiation, the dome silhouette, the sky mandala, and the orbital laser.
-
-        // ── P0: targeting box, cardinal cross beams, ground rings (in daylight) ──
-        if (t < ORB_P1) {
-            float[] xp = orbProject(pv, orbEpiX + 60f, orbEpiY, orbEpiZ, w, h);
-            float[] xm = orbProject(pv, orbEpiX - 60f, orbEpiY, orbEpiZ, w, h);
-            float[] zp = orbProject(pv, orbEpiX, orbEpiY, orbEpiZ + 60f, w, h);
-            float[] zm = orbProject(pv, orbEpiX, orbEpiY, orbEpiZ - 60f, w, h);
-            int beam = orbCol(0.85f, 1f, 0.9f, 0.95f);
-            if (xp != null && xm != null) { d.addLine(xm[0], xm[1], xp[0], xp[1], orbCol(1f,1f,1f,0.35f), 14f);
-                                            d.addLine(xm[0], xm[1], xp[0], xp[1], beam, 5f); }
-            if (zp != null && zm != null) { d.addLine(zm[0], zm[1], zp[0], zp[1], orbCol(1f,1f,1f,0.35f), 14f);
-                                            d.addLine(zm[0], zm[1], zp[0], zp[1], beam, 5f); }
-            orbDrawBox(d, pv, w, h, (float) Math.floor(orbEpiX), (float) Math.floor(orbEpiY),
-                       (float) Math.floor(orbEpiZ), orbCol(0.2f, 1f, 0.3f, 1f));
-            orbGlowDot(d, ex, ey, 26f, 0.85f, 1f, 0.9f);
-            float p = t / ORB_P1;
-            for (int i = 0; i < 3; i++) {
-                float rr = ((p + i * 0.34f) % 1f) * maxR;
-                orbStrokeEllipse(d, ex, ey, rr, rr * 0.32f,
-                        orbCol(0.5f, 1f, 0.6f, 0.6f * (1f - rr / maxR)), 3f);
+        // ── Implosion ground rings: expand slowly, then whip inward together ──
+        if (t < ORB_IMPLODE) {
+            for (int k = 0; k < 6; k++) {
+                float tk = k * 0.45f;
+                if (t < tk) continue;
+                float r;
+                if (t < ORB_CHARGE) {
+                    r = 6f * (t - tk);                              // creep outward
+                } else {
+                    float rAt = 6f * (ORB_CHARGE - tk);
+                    float p   = (t - ORB_CHARGE) / (ORB_IMPLODE - ORB_CHARGE);
+                    r = rAt * (1f - p * p * p);                     // slow… then snap to centre
+                }
+                if (r < 0.4f) continue;
+                float b = 0.8f + (t >= ORB_CHARGE
+                        ? 1.6f * (t - ORB_CHARGE) / (ORB_IMPLODE - ORB_CHARGE) : 0f);
+                orbDraw(shader, pv, orbTorus,
+                        new Matrix4f().translate(ex, ey + 0.3f, ez).scale(r, 1f, r),
+                        b * 0.7f, b, b * 0.8f);
             }
         }
 
-        // ── P1+P2: faint dome silhouette + searing core (terrain does the rest) ──
-        if (t >= ORB_P1 && t < ORB_P3) {
-            float p = Math.min(1f, (t - ORB_P1) / (ORB_P2 - ORB_P1));
-            float domeR = p * maxR;
-            orbStrokeArc(d, ex, ey, domeR, domeR, Math.PI, 2 * Math.PI,
-                         orbCol(0.4f, 1f, 0.6f, 0.5f), 2f);   // just the dome outline
-            orbGlowDot(d, ex, ey - 6f, 18f, 0.6f, 1f, 1f);
+        // ── Particles: anti-gravity embers + impact debris (drawn as cubes) ──
+        for (OrbParticle p : orbParticles) {
+            float lf = Math.max(0f, p.life / p.maxLife);
+            orbDraw(shader, pv, orbCube,
+                    new Matrix4f().translate(p.x, p.y, p.z).scale(p.size),
+                    p.r * (0.4f + lf), p.g * (0.4f + lf), p.b * (0.4f + lf));
         }
 
-        // ── P2: sky mandala + glitch rain ──
-        if (t >= ORB_P2 && t < ORB_P3) {
-            float[] sky = orbProject(pv, orbEpiX, orbEpiY + 80f, orbEpiZ, w, h);
-            float mx = (sky != null) ? sky[0] : ex, my = (sky != null) ? sky[1] : h * 0.18f;
-            orbMandala(d, mx, my, Math.min(w, h) * 0.16f, t);
-            orbGlitchRain(d, w, h, t);
-        }
+        // ── The volumetric orbital laser ──
+        if (t >= ORB_LASER) {
+            float p     = (t - ORB_LASER) / (ORB_END - ORB_LASER);
+            float fade  = (p < 0.7f) ? 1f : Math.max(0f, 1f - (p - 0.7f) / 0.3f);
+            float flick = 0.85f + 0.30f * (float) Math.sin(t * 50.0);
+            float top   = ey + 150f, bot = ey - 50f, hgt = top - bot;
 
-        // ── P3: implosion → a lone pixel of light in the silence ──
-        if (t >= ORB_P3 && t < ORB_P4) {
-            if (t < ORB_CARVE) {
-                float p = (t - ORB_P3) / (ORB_CARVE - ORB_P3);
-                orbGlowDot(d, ex, ey, 10f + (1f - p) * 44f, 0.8f, 1f, 0.85f);
-            } else {
-                orbGlowDot(d, ex, ey, 6f, 1f, 1f, 1f);
+            // Blinding white core (outer soft + inner hot).
+            orbDraw(shader, pv, orbCyl,
+                    new Matrix4f().translate(ex, bot, ez).scale(2.6f * fade, hgt, 2.6f * fade),
+                    2.4f * flick, 2.4f * flick, 2.4f * flick);
+            orbDraw(shader, pv, orbCyl,
+                    new Matrix4f().translate(ex, bot, ez).scale(1.1f * fade, hgt, 1.1f * fade),
+                    4f, 4f, 4f);
+
+            // Helix satellites orbiting the core.
+            for (int s = 0; s < 4; s++) {
+                float ang = t * 4.5f + s * (float) (Math.PI / 2);
+                float ox  = (float) Math.cos(ang) * 4.8f, oz = (float) Math.sin(ang) * 4.8f;
+                orbDraw(shader, pv, orbCyl,
+                        new Matrix4f().translate(ex + ox, bot, ez + oz).scale(0.5f * fade, hgt, 0.5f * fade),
+                        0.4f, 1.5f, 0.6f);
+            }
+
+            // Expanding ground shockwave ring at the crater rim.
+            float swb = Math.max(0f, 1.6f * (1f - p * 3f));
+            if (swb > 0.01f) {
+                float swr = Math.min(1f, p * 3f) * (ORB_CRATER_R + 6);
+                orbDraw(shader, pv, orbTorus,
+                        new Matrix4f().translate(ex, ey + 0.4f, ez).scale(swr, 1f, swr),
+                        0.4f * swb, 1.6f * swb, 0.6f * swb);
+            }
+
+            // Impact flash sphere collapsing at the base.
+            float fr = Math.max(0f, 1f - p * 4f) * 9f;
+            if (fr > 0.3f) {
+                orbDraw(shader, pv, orbSphere,
+                        new Matrix4f().translate(ex, ey, ez).scale(fr), 3f, 3f, 2.8f);
             }
         }
 
-        // ── P4: RGB orbital laser + impact bloom ──
-        if (t >= ORB_P4) {
-            float p = (t - ORB_P4) / (ORB_END - ORB_P4);
-            float fade = (p < 0.8f) ? 1f : Math.max(0f, 1f - (p - 0.8f) / 0.2f);
-            orbRgbLaser(d, ex, h, t, fade);
-            orbGlowDot(d, ex, ey, 24f + 50f * fade, 1f, 1f, 1f);
-            float ringR = p * maxR * 1.2f;
-            orbStrokeEllipse(d, ex, ey, ringR, ringR * 0.32f, orbCol(1f, 1f, 1f, 0.6f * fade), 4f);
+        // ── Restore render state for the passes that follow ──
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("mvp", renderMvp);
+        glDepthMask(true);
+        glDisable(GL_BLEND);
+    }
+
+    // ── Procedural unit meshes (10 floats/vertex: pos, white RGBA, normal) ──
+
+    private com.leaf.game.render.Mesh orbBuildTorus(float mr, int nMaj, int nMin) {
+        float[] v = new float[nMaj * nMin * 10];
+        int[]   idx = new int[nMaj * nMin * 6];
+        int vi = 0, ii = 0;
+        for (int i = 0; i < nMaj; i++) {
+            double th = 2 * Math.PI * i / nMaj, ct = Math.cos(th), st = Math.sin(th);
+            for (int j = 0; j < nMin; j++) {
+                double ph = 2 * Math.PI * j / nMin;
+                float rr = (float) (1 + mr * Math.cos(ph));
+                int o = (vi++) * 10;
+                v[o]=(float)(ct*rr); v[o+1]=(float)(mr*Math.sin(ph)); v[o+2]=(float)(st*rr);
+                v[o+3]=1; v[o+4]=1; v[o+5]=1; v[o+6]=1; v[o+7]=0; v[o+8]=1; v[o+9]=0;
+            }
         }
+        for (int i = 0; i < nMaj; i++)
+            for (int j = 0; j < nMin; j++) {
+                int a = i*nMin+j, b = ((i+1)%nMaj)*nMin+j,
+                    c = ((i+1)%nMaj)*nMin+(j+1)%nMin, dd = i*nMin+(j+1)%nMin;
+                idx[ii++]=a; idx[ii++]=b; idx[ii++]=c; idx[ii++]=a; idx[ii++]=c; idx[ii++]=dd;
+            }
+        return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    private com.leaf.game.render.Mesh orbBuildSphere(int rings, int sectors) {
+        float[] v = new float[(rings + 1) * (sectors + 1) * 10];
+        int vi = 0;
+        for (int i = 0; i <= rings; i++) {
+            double lat = Math.PI * i / rings, y = Math.cos(lat), rr = Math.sin(lat);
+            for (int j = 0; j <= sectors; j++) {
+                double lon = 2 * Math.PI * j / sectors;
+                int o = (vi++) * 10;
+                v[o]=(float)(rr*Math.cos(lon)); v[o+1]=(float)y; v[o+2]=(float)(rr*Math.sin(lon));
+                v[o+3]=1; v[o+4]=1; v[o+5]=1; v[o+6]=1; v[o+7]=0; v[o+8]=1; v[o+9]=0;
+            }
+        }
+        int[] idx = new int[rings * sectors * 6];
+        int ii = 0, stride = sectors + 1;
+        for (int i = 0; i < rings; i++)
+            for (int j = 0; j < sectors; j++) {
+                int a = i*stride+j, b = a+stride;
+                idx[ii++]=a; idx[ii++]=b; idx[ii++]=a+1; idx[ii++]=a+1; idx[ii++]=b; idx[ii++]=b+1;
+            }
+        return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    /** Open cylinder, radius 1, spanning Y in [0,1]. */
+    private com.leaf.game.render.Mesh orbBuildCylinder(int seg) {
+        float[] v = new float[(seg + 1) * 2 * 10];
+        int vi = 0;
+        for (int j = 0; j <= seg; j++) {
+            double a = 2 * Math.PI * j / seg; float cx = (float) Math.cos(a), cz = (float) Math.sin(a);
+            int o = (vi++) * 10;
+            v[o]=cx; v[o+1]=0; v[o+2]=cz; v[o+3]=1; v[o+4]=1; v[o+5]=1; v[o+6]=1; v[o+7]=cx; v[o+8]=0; v[o+9]=cz;
+            o = (vi++) * 10;
+            v[o]=cx; v[o+1]=1; v[o+2]=cz; v[o+3]=1; v[o+4]=1; v[o+5]=1; v[o+6]=1; v[o+7]=cx; v[o+8]=0; v[o+9]=cz;
+        }
+        int[] idx = new int[seg * 6];
+        int ii = 0;
+        for (int j = 0; j < seg; j++) {
+            int a = j*2, b = j*2+1, c = j*2+2, d = j*2+3;
+            idx[ii++]=a; idx[ii++]=c; idx[ii++]=b; idx[ii++]=b; idx[ii++]=c; idx[ii++]=d;
+        }
+        return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    /** Unit cube centred on the origin (size 1). */
+    private com.leaf.game.render.Mesh orbBuildCube() {
+        float[] c = { -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,  0.5f,0.5f,-0.5f,  -0.5f,0.5f,-0.5f,
+                      -0.5f,-0.5f, 0.5f,  0.5f,-0.5f, 0.5f,  0.5f,0.5f, 0.5f,  -0.5f,0.5f, 0.5f };
+        float[] v = new float[8 * 10];
+        for (int i = 0; i < 8; i++) {
+            int o = i * 10;
+            v[o]=c[i*3]; v[o+1]=c[i*3+1]; v[o+2]=c[i*3+2];
+            v[o+3]=1; v[o+4]=1; v[o+5]=1; v[o+6]=1; v[o+7]=0; v[o+8]=1; v[o+9]=0;
+        }
+        int[] idx = {
+            0,1,2, 0,2,3,  4,6,5, 4,7,6,  0,4,5, 0,5,1,
+            3,2,6, 3,6,7,  1,5,6, 1,6,2,  0,3,7, 0,7,4 };
+        return new com.leaf.game.render.Mesh(v, idx);
     }
 
 }

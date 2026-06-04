@@ -57,6 +57,14 @@ uniform float alphaMultiplier;
 uniform int   portalMode;
 uniform vec2  viewportSize;   // FBO dimensions (set to PORTAL_FBO_W/H)
 
+// ── EMISSIVE (unlit) PASS ─────────────────────────────────────────────────────
+// Used by the Orbital Annihilation 3D effect meshes (rings, core, beams, embers).
+// When emissiveMode == 1 the fragment ignores ALL lighting/fog/scan and outputs
+// vertexColor × emissiveTint directly, so the geometry glows at full intensity in
+// the blackout and the bloom pass picks it up.
+uniform int  emissiveMode;
+uniform vec3 emissiveTint;   // per-object colour × intensity (additive-bloomed)
+
 out vec4 FragColor;
 
 void main() {
@@ -64,6 +72,12 @@ void main() {
     if (portalMode == 1) {
         vec2 screenUV = gl_FragCoord.xy / viewportSize;
         FragColor = texture(texSampler, screenUV);
+        return;
+    }
+
+    // ── EMISSIVE (unlit) ──────────────────────────────────────────────────────
+    if (emissiveMode == 1) {
+        FragColor = vec4(vertexColor.rgb * emissiveTint, 1.0);
         return;
     }
 
