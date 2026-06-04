@@ -20,6 +20,17 @@ public class Inventory {
         items.put(Block.CRYSTAL_CITRINE, 256);
         items.put(Block.CRYSTAL_ROSE, 256);
         items.put(Block.CRATER_BLOOM, 256);
+        // Mesa / canyon blocks — warm + blue palettes
+        items.put(Block.MESA_GRASS,       64);
+        items.put(Block.MESA_CLAY,        64);
+        items.put(Block.MESA_TERRACOTTA,  64);
+        items.put(Block.MESA_SAND,        64);
+        items.put(Block.MESA_STONE,       64);
+        items.put(Block.MESA_BLUE_SNOW,   64);
+        items.put(Block.MESA_BLUE_MID,    64);
+        items.put(Block.MESA_BLUE_LIGHT,  64);
+        items.put(Block.MESA_BLUE_DARK,   64);
+        items.put(Block.MESA_BLUE_STONE,  64);
     }
 
     /** Add one block to the inventory. Called when a block is broken. */

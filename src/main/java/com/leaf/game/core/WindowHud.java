@@ -1808,6 +1808,7 @@ class WindowHud {
         helpRow("[ESC]", "Open the pause menu.");
         helpRow("[F1]", "This screen.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
+        helpRow("[F5]", "Warp to the 'Canyon' (testing). Teleports you to a warm mesa region (banded terracotta cliffs, arches, turquoise pools). Fly ~450 blocks north for the BLUE version (snow biome — blue-grey rock, white tops). Press [F5] again to return. Press [V] mid-flight to cycle SKIM → SOAR → GRAPPLE.");
         helpRow("[F6]", "Non-Euclidean 'Layered Rooms' (testing). Teleports you into a 2x2 building with a central pillar. Walk CLOCKWISE around the pillar and you pass through endless distinct rooms (1,2,3,4,5,6...) instead of looping after four. Press [F6] again to leave.");
         helpRow("[F10]", "'Radar Sweep' (testing). Your world becomes a 3D radar scope from where you stand — range rings + bearing spokes on the terrain, a rotating sweep arm with an opaque→transparent afterglow that pings the landscape, and a wireframe box around every enemy that flares as the arm passes it. One ~8s scan, then back to normal.");
         helpRow("[F8]", "'The World' (testing). A sphere of photographic-negative reality bursts from your feet — everything inside inverts and shifts to electric blue, enemies and projectiles freeze in place while you keep moving, then the domain collapses back. DIO's time stop.");

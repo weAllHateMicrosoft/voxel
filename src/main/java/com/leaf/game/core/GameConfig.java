@@ -67,6 +67,37 @@ public class GameConfig {
     public static int caveSurfaceBuffer = 6;
     public static int caveBedrockFloor  = 4;
 
+    // ── CANYON / MESA REGION (faithful gelami Shadertoy port) ─────────────────
+    // A fixed circular region rendered as a PURE 3D isosurface (no heightmap):
+    // solid wherever fbm3D(x,y,z) < canyonSurfaceFactor, isotropic, capped flat
+    // at the top — giving caverns, arches, overhangs, banded terracotta masses,
+    // vivid grass tops and turquoise pools, exactly like the sample.
+    // Spawn stays a snow mountain; press F5 in-game to warp here and back.
+    // Location of the canyon centre (far from spawn 777,777 and the Abyss 2000,2000).
+    public static int   canyonCenterX        = -1400;
+    public static int   canyonCenterZ        = 900;
+    public static float canyonRadius         = 260f;   // full-canyon core radius (blocks)
+    public static float canyonEdgeBand       = 80f;    // smooth rim band outside the core
+    // ★ THE TWO KNOBS TO TWEAK:
+    public static float canyonFreq           = 0.040f; // feature size (BIGGER = smaller, busier rock; ~0.03 chunky … 0.06 detailed)
+    public static float canyonSurfaceFactor  = 0.50f;  // density (LOWER = more open/airy & more arches; HIGHER = more solid)
+    // Vertical extent (the visible band of terrain):
+    public static int   canyonCeilingY       = 268;    // mesa tops cap — open sky above this
+    public static int   canyonFloorY         = 200;    // solid foundation below this (buried)
+    public static int   canyonWaterLevel     = 222;    // turquoise pools fill basins below this Y
+    public static float canyonTopFade        = 16f;    // how rounded/tapered the mesa tops are
+    // Cosmetic:
+    public static int   canyonBandThickness  = 5;      // thickness of each sedimentary strata band
+
+    // ── BLUE CANYON / SNOW BIOME (Shadertoy snow biome — blue-grey rock, white tops) ─
+    // Same isosurface shape as the warm canyon but with the Shadertoy's snow palette.
+    // Placed 450 blocks north of the warm zone; walk/fly there from the F5 warp.
+    public static int   canyonBlueCenterX   = -1400;
+    public static int   canyonBlueCenterZ   = 450;
+    public static float canyonBlueRadius    = 220f;
+    public static float canyonBlueEdgeBand  = 70f;
+    // Uses the same freq / surfaceFactor / ceiling / floor / water / topFade / bandThickness.
+
 
     public static float sunDirX         = 0.6f;
     public static float sunDirY         = 1.0f;

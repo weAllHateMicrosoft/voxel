@@ -9,6 +9,7 @@ import com.leaf.game.world.Block;
 import com.leaf.game.world.Chunk;
 import com.leaf.game.world.gen.terrain.AbyssGenerator;
 import com.leaf.game.world.gen.terrain.AbyssConfig;
+import com.leaf.game.world.gen.terrain.CanyonGenerator;
 import com.leaf.game.world.gen.terrain.ErodedFbmGenerator;
 import com.leaf.game.world.gen.biome.BlockCladder;
 import com.leaf.game.world.gen.feature.FeatureGenerator;
@@ -28,6 +29,9 @@ public class WorldGen {
 
     // ── The Abyss Generator (Non-final so it can be initialized in init()) ──
     private AbyssGenerator abyss;
+
+    // ── The Canyon / Mesa Generator (fixed Shadertoy-style region) ──
+    private CanyonGenerator canyon;
 
     // ── Surface Feature Generator ──
     private FeatureGenerator features;
@@ -76,6 +80,7 @@ public class WorldGen {
 
         // Single, clean initialization
         abyss           = new AbyssGenerator(seed);
+        canyon          = new CanyonGenerator(seed);
 
         eroFbm  = new ErodedFbmGenerator(
                 seed + 20000L,
@@ -240,6 +245,18 @@ public class WorldGen {
             for (int lz = 0; lz < Chunk.SIZE; lz++) {
                 int wx = worldX + lx;
                 int wz = worldZ + lz;
+
+                // ── CANYON REGIONS: fixed Shadertoy-style mesa zones override the
+                //    whole column. Blue zone checked first (its own palette).
+                //    Spawn and the rest of the world are untouched. ───────────────
+                if (canyon.isInBlueZone(wx, wz)) {
+                    canyon.generateBlueColumn(chunk, lx, lz, wx, wz);
+                    continue;
+                }
+                if (canyon.isInZone(wx, wz)) {
+                    canyon.generateColumn(chunk, lx, lz, wx, wz, this);
+                    continue;
+                }
 
                 // ── ABYSS HOOK ①: Precompute Column Constants (With Cull Check) ──
                 AbyssGenerator.ColData aCol = null;
@@ -419,7 +436,13 @@ public class WorldGen {
 
         // ── Surface features: sky islands, fossils, crystals, megaliths,
         //    petrified forest, starfall craters ─────────────────────────
-        features.applyFeatures(chunk, this);
+        //    Skip them inside the canyon so its mesa look stays clean.
+        int chunkCenterX = chunk.cx * Chunk.SIZE + Chunk.SIZE / 2;
+        int chunkCenterZ = chunk.cz * Chunk.SIZE + Chunk.SIZE / 2;
+        if (!canyon.isInZone(chunkCenterX, chunkCenterZ)
+                && !canyon.isInBlueZone(chunkCenterX, chunkCenterZ)) {
+            features.applyFeatures(chunk, this);
+        }
     }
 
     private float computeFinalShape(float c, float e, float pv) {

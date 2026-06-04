@@ -398,6 +398,15 @@ public class Window {
     private boolean nerPrevWaves = true;   // wave-spawner state to restore on exit
     private boolean lastF6 = false;
 
+    // ── CANYON WARP (F5) ───────────────────────────────────────────────────────
+    // F5 toggles a teleport to the fixed Shadertoy-style canyon region and back.
+    // We drop the player in high above the centre, hover while its chunks stream
+    // in, then snap them to the surface (no death-fall).
+    private boolean lastF5 = false;
+    private boolean atCanyon = false;            // currently warped to the canyon?
+    private boolean canyonSettlePending = false; // waiting for canyon chunks to mesh
+    private float   canyonReturnX, canyonReturnY, canyonReturnZ; // where to warp back to
+
     // ═══════════════════════════════════════════════════════════════════════════
     //  "ORBITAL ANNIHILATION"  — fully-3D cinematic strike (fire with F7)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -984,6 +993,7 @@ public class Window {
                     deathCutscenePending = false;
                     player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
                     player.setVelocityY(0f);
+                    atCanyon = false; canyonSettlePending = false;  // died at the canyon → reset F5 toggle
                     player.health = player.maxHealth;   // full HP — crystal fully healed you
                     player.mana   = player.maxMana;
                     player.abilities.isKamui          = false;
@@ -2495,6 +2505,56 @@ public class Window {
                     // While inside, watch for the player rounding the pillar and
                     // re-skin the hidden diagonal room to keep the sequence going.
                     if (nerActive) updateLayeredRooms();
+
+                    // ── CANYON WARP (F5 toggles to the mesa region and back) ───
+                    boolean f5Now = glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS;
+                    if (f5Now && !lastF5) {
+                        if (!atCanyon) {
+                            canyonReturnX = player.position.x;
+                            canyonReturnY = player.position.y;
+                            canyonReturnZ = player.position.z;
+                            player.position.set(GameConfig.canyonCenterX + 0.5f,
+                                                GameConfig.canyonCeilingY + 50f,
+                                                GameConfig.canyonCenterZ + 0.5f);
+                            player.setVelocityY(0f);
+                            atCanyon = true;
+                            canyonSettlePending = true;
+                            hintText = "WARPED TO CANYON  —  press F5 to return";
+                            hintTimer = 5f;
+                        } else {
+                            player.position.set(canyonReturnX, canyonReturnY, canyonReturnZ);
+                            player.setVelocityY(0f);
+                            atCanyon = false;
+                            canyonSettlePending = false;
+                            hintText = "Returned to where you were";
+                            hintTimer = 2.5f;
+                        }
+                    }
+                    lastF5 = f5Now;
+                    // Hover high above the canyon until its chunk meshes, then snap
+                    // to the surface — avoids a long fall onto ungenerated terrain.
+                    if (canyonSettlePending) {
+                        int ccx = Math.floorDiv((int) Math.floor(player.position.x), Chunk.SIZE);
+                        int ccz = Math.floorDiv((int) Math.floor(player.position.z), Chunk.SIZE);
+                        Chunk cch = world.getChunk(ccx, 0, ccz);
+                        if (cch != null && cch.state == Chunk.ChunkState.MESHED) {
+                            int bx = (int) Math.floor(player.position.x);
+                            int bz = (int) Math.floor(player.position.z);
+                            settle:
+                            for (int ly = Chunk.HEIGHT - 2; ly >= 1; ly--) {
+                                if (!world.getBlock(bx, ly, bz).isSolid()) continue;
+                                for (int sy = ly + 1; sy < Chunk.HEIGHT; sy++)
+                                    if (world.getBlock(bx, sy, bz).isSolid()) continue settle;
+                                player.position.y = ly + 1.5f;
+                                break;
+                            }
+                            player.setVelocityY(0f);
+                            canyonSettlePending = false;
+                        } else {
+                            player.position.y = GameConfig.canyonCeilingY + 50f; // hover while loading
+                            player.setVelocityY(0f);
+                        }
+                    }
 
                     // ── ORBITAL ANNIHILATION (F7 fires the cinematic) ─────────
                     boolean f7Now = glfwGetKey(window, GLFW_KEY_F7) == GLFW_PRESS;
@@ -4010,8 +4070,10 @@ public class Window {
                  CRYSTAL_BASE, STAR_IRON,
                  OAK_LOG, OAK_LEAVES, PETRIFIED_WOOD,
                  PETRIFIED_BARK, HANGING_ROOT                    -> "block_stone";
-            case DIRT, GRASS, MUD, ANCIENT_SOIL                  -> "block_soil";
-            case SAND, RED_SAND, GRAVEL, SNOW                    -> "block_sand";
+            case DIRT, GRASS, MUD, ANCIENT_SOIL,
+                 MESA_GRASS, MESA_DIRT,
+                 MESA_BLUE_SNOW, MESA_BLUE_SOIL                  -> "block_soil";
+            case SAND, RED_SAND, GRAVEL, SNOW, MESA_SAND         -> "block_sand";
             case CRYSTAL_AMETHYST, CRYSTAL_QUARTZ,
                  CRYSTAL_CITRINE, CRYSTAL_ROSE                   -> "block_crystal";
             default                                              -> "block_stone";
@@ -4026,8 +4088,10 @@ public class Window {
                  CRYSTAL_BASE, STAR_IRON,
                  OAK_LOG, OAK_LEAVES, PETRIFIED_WOOD,
                  PETRIFIED_BARK, HANGING_ROOT                    -> "block_stone";
-            case DIRT, GRASS, MUD, ANCIENT_SOIL                  -> "block_soil";
-            case SAND, RED_SAND, GRAVEL, SNOW                    -> "block_sand";
+            case DIRT, GRASS, MUD, ANCIENT_SOIL,
+                 MESA_GRASS, MESA_DIRT,
+                 MESA_BLUE_SNOW, MESA_BLUE_SOIL                  -> "block_soil";
+            case SAND, RED_SAND, GRAVEL, SNOW, MESA_SAND         -> "block_sand";
             case CRYSTAL_AMETHYST, CRYSTAL_QUARTZ,
                  CRYSTAL_CITRINE, CRYSTAL_ROSE                   -> "block_crystal";
             default                                              -> "block_stone";
@@ -4047,8 +4111,11 @@ public class Window {
                  CRYSTAL_BASE, STAR_IRON,
                  OAK_LOG, OAK_LEAVES, PETRIFIED_WOOD,
                  PETRIFIED_BARK, HANGING_ROOT                    -> "stone_digging";
-            case DIRT, GRASS, MUD, ANCIENT_SOIL                  -> "soil_digging";
-            case SAND, RED_SAND, GRAVEL, SNOW                    -> "sand_digging";
+            case DIRT, GRASS, MUD, ANCIENT_SOIL,
+                 MESA_GRASS, MESA_DIRT,
+                 MESA_BLUE_SNOW, MESA_BLUE_SOIL                  -> "soil_digging";
+            case SAND, RED_SAND, GRAVEL, SNOW,
+                 MESA_SAND, MESA_BLUE_LIGHT                      -> "sand_digging";
             case CRYSTAL_AMETHYST, CRYSTAL_QUARTZ,
                  CRYSTAL_CITRINE, CRYSTAL_ROSE                   -> "crystal_clank_seq";
             default                                              -> "stone_digging";

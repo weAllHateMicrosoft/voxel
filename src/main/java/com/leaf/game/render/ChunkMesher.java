@@ -347,8 +347,8 @@ public class ChunkMesher {
                 int nx = cornerX + dx;
                 int nz = cornerZ + dz;
                 Block b = cache[nx][ly + 1][nz];
-                if (b == Block.WATER) {
-                    if (cache[nx][ly + 2][nz] == Block.WATER) return 1.0f;
+                if (b.isLiquid()) {
+                    if (cache[nx][ly + 2][nz].isLiquid()) return 1.0f;
                     byte meta = metaCache[nx][ly + 1][nz];
                     totalHeight += 0.88f - (meta * 0.11f);
                     waterCount++;
