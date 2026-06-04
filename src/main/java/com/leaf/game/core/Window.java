@@ -2847,11 +2847,17 @@ public class Window {
                 shader.setUniform("vlAmount", vlAmountNow);
                 shader.setUniform("vlSweep",  vlSweepNow);
 
-                // Deprivation Domain world-shader tinting
+                // Deprivation Domain world-shader tinting + special domain lighting.
+                // depSweep is a ring radius that grows ~14 blocks/s and resets — the
+                // repeating "360° detection" pulse traced across the terrain.
+                float depSweepR = depActive
+                        ? (depT * 14f) % Math.max(1f, GameConfig.depRadius)
+                        : 0f;
                 shader.setUniform("depActive", depActive ? 1 : 0);
                 shader.setUniform("depCenter", new Vector3f(depX, depY + 0.9f, depZ));
                 shader.setUniform("depRadius", GameConfig.depRadius);
                 shader.setUniform("depStrike", depStrike);
+                shader.setUniform("depSweep",  depSweepR);
                 shader.setUniform("desaturate", ScreenEffectManager.INSTANCE.getDesaturate());
 
                 boolean isCameraUnderwater = world.getBlock(
@@ -5022,11 +5028,12 @@ public class Window {
         for (java.util.Iterator<float[]> it = depSlashFx.iterator(); it.hasNext(); ) {
             float[] s = it.next(); s[6] += dt; if (s[6] >= s[7]) it.remove();
         }
-        // Age + integrate voxel gibs (gravity, drag, fade)
+        // Age + integrate voxel gibs (gravity, drag, fade).
+        // Gib layout: [0]x [1]y [2]z [3]vx [4]vy [5]vz [6]size [7]age [8]life
         for (java.util.Iterator<float[]> it = depGibs.iterator(); it.hasNext(); ) {
             float[] g = it.next();
-            g[8] += dt;
-            if (g[8] >= g[9]) { it.remove(); continue; }
+            g[7] += dt;
+            if (g[7] >= g[8]) { it.remove(); continue; }
             g[4] -= 26f * dt;                      // gravity on vy
             g[0] += g[3] * dt; g[1] += g[4] * dt; g[2] += g[5] * dt;
             g[3] *= 0.96f; g[5] *= 0.96f;          // horizontal air drag
@@ -5164,7 +5171,7 @@ public class Window {
 
         // ── VOXEL GIBS: sliced bodies, white-hot gold → charred ──────────────
         for (float[] g : depGibs) {
-            float f   = g[8] / g[9];
+            float f   = g[7] / g[8];                         // age / life
             float hot = 1f - f;                              // 1 fresh → 0 cold
             float r  = 2.6f * hot + 0.14f;                   // searing gold → dark char
             float gg = 2.0f * hot + 0.11f;

@@ -42,6 +42,7 @@ uniform int   depActive;      // 1 = domain live
 uniform vec3  depCenter;      // player's locked world position (feet)
 uniform float depRadius;      // domain detection + visual radius (blocks)
 uniform float depStrike;      // 0→1 strike flash intensity (decays ~6×/sec)
+uniform float depSweep;       // current radius of the repeating detection sweep ring
 
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
@@ -251,15 +252,16 @@ void main() {
         }
     }
 
-    // ── DEPRIVATION DOMAIN world colour grade ────────────────────────────────
-    // Three zones: inside = desaturated gold (hyper-real standoff),
-    //              boundary = searing HDR gold ring (the "edge of death"),
-    //              outside  = cooler and slightly darker.
+    // ── DEPRIVATION DOMAIN: special "absolute domain" lighting + colour grade ──
+    // Inside = desaturated gold (hyper-real standoff) with every voxel EDGE traced
+    // in glowing gold (the world looks razor-cut and lethal); a gold detection ring
+    // sweeps outward on repeat; surfaces facing the player catch a gold sheen.
+    // Boundary = searing HDR gold ring. Outside = cooler, distant.
     if (depActive == 1) {
         float d3d    = length(vWorldPos - depCenter);
         float inside = 1.0 - smoothstep(depRadius - 1.5, depRadius + 0.5, d3d);
 
-        // Inside: desaturate + warm gold tint — everything looks hyper-sharp and golden
+        // Inside: desaturate + warm gold tint
         float lum   = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
         vec3 desat  = mix(gammaCorrected, vec3(lum * 0.90), inside * 0.52);
         vec3 goldIn = mix(desat, desat * vec3(1.32, 1.08, 0.60), inside * 0.40);
@@ -274,6 +276,28 @@ void main() {
         vec3 edgeGlow = vec3(3.2, 2.3, 0.55) * edge;
 
         gammaCorrected = mix(coolOut, goldIn, inside) + edgeGlow;
+
+        // ── Golden voxel-edge rim: trace the 90° block edges inside the domain ──
+        // (Same edge test as the orbital lidar.) Edges flare on every strike.
+        vec3  dE  = 0.5 - abs(fract(vWorldPos) - 0.5);
+        vec3  nAx = abs(normalize(vertexNormal));
+        float elw = 0.06;
+        float wEx = (1.0 - nAx.x) * (1.0 - smoothstep(0.0, elw, dE.x));
+        float wEy = (1.0 - nAx.y) * (1.0 - smoothstep(0.0, elw, dE.y));
+        float wEz = (1.0 - nAx.z) * (1.0 - smoothstep(0.0, elw, dE.z));
+        float wire = clamp(wEx + wEy + wEz, 0.0, 1.0);
+        float rimI = inside * (0.40 + 1.10 * depStrike);
+        gammaCorrected += vec3(1.50, 1.05, 0.30) * wire * rimI;
+
+        // ── Repeating detection sweep ring expanding from the player ──
+        float sweepRing = 1.0 - smoothstep(0.0, 1.6, abs(d3d - depSweep));
+        float sweepFade = 1.0 - depSweep / max(depRadius, 0.001);   // dim as it nears the edge
+        gammaCorrected += vec3(1.30, 0.95, 0.28) * sweepRing * sweepFade * inside * 0.70;
+
+        // ── Radial domain light: surfaces facing the player catch a gold sheen ──
+        vec3  toCtr  = normalize(depCenter - vWorldPos);
+        float facing = max(0.0, dot(normalize(vertexNormal), toCtr));
+        gammaCorrected += vec3(0.90, 0.65, 0.18) * facing * inside * 0.18;
 
         // Strike flash: white-gold pulse searing through the entire scene
         if (depStrike > 0.001) {
