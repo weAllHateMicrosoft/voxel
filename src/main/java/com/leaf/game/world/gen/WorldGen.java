@@ -383,8 +383,10 @@ public class WorldGen {
                         // ── ABYSS HOOK ③a: Suppress Water (worldY = ly for cy=0) ──
                         boolean noWater = aCol != null && abyss.suppressWater(aCol, ly);
 
-                        // Only place water if we are NOT underground (prevents flooded caves)
-                        boolean isOcean = !underGround && ly <= GameConfig.seaLevel;
+                        // Only place water if we are NOT underground (prevents flooded caves).
+                        // floodLevel ≥ seaLevel raises the water so the ground is submerged.
+                        boolean isOcean = !underGround
+                                && ly <= Math.max(GameConfig.seaLevel, GameConfig.floodLevel);
 
                         chunk.setBlock(lx, ly, lz,
                                 (!noWater && isOcean) ? Block.WATER : Block.AIR);
@@ -397,10 +399,13 @@ public class WorldGen {
                             if (!hitSurface) {
                                 hitSurface = true;
                                 dirtCount = 0;
-                                if (ly >= GameConfig.seaLevel) {
+                                int dryLevel = Math.max(GameConfig.seaLevel, GameConfig.floodLevel);
+                                if (ly >= dryLevel) {
+                                    // Dry land surface (emerges above the flood) → biome block.
                                     Block surf = isAlpine ? cladder.surfaceBlock(ly, fbmSlope) : biome.surfaceBlock();
                                     chunk.setBlock(lx, ly, lz, surf);
                                 } else if (ly >= GameConfig.seaLevel - 4) {
+                                    // Submerged lakebed / shore → sand.
                                     chunk.setBlock(lx, ly, lz, Block.SAND);
                                 } else {
                                     chunk.setBlock(lx, ly, lz, (wx + wz) % 2 == 0 ? Block.GRAVEL : Block.CLAY);

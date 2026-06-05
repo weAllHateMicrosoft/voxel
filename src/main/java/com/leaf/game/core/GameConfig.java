@@ -8,6 +8,10 @@ public class GameConfig {
     public static int heightBase  = 200;
     public static int heightRange = 100;
     public static int seaLevel    = 220;
+    // FLOOD: raise the global water level so the ground is covered by water.
+    // Open-sky columns fill with water up to here; hills/mountains/spawn emerge.
+    // Set == seaLevel for the old dry world.
+    public static int floodLevel  = 240;
 
     // ── BIOME THRESHOLDS ─────────────────────────────────────────────────────
     public static int   beachMaxAltitude     = 2;
