@@ -104,10 +104,10 @@ void main() {
         vec3 viewDir = normalize(camPos - vWorldPos);
         float fres   = pow(1.0 - abs(dot(nrm, viewDir)), 3.0);   // bright at the silhouette rim
 
-        // Hex grid in (azimuth, latitude) space, scrolling upward (flowing energy).
+        // Hex grid in (azimuth, latitude) space, scrolling slowly upward.
         float u = atan(nrm.z, nrm.x);
-        float v = acos(clamp(nrm.y, -1.0, 1.0));                 // 0 pole → ~π/2 base
-        vec2  huv = vec2(u * 3.0, (v - domeTime * 0.15) * 6.0);
+        float v = acos(clamp(nrm.y, -1.0, 1.0));                 // 0 pole → ~1.57 base (ground)
+        vec2  huv = vec2(u * 2.6, (v - domeTime * 0.10) * 5.2);
         vec2  rr = vec2(1.0, 1.7320508);
         vec2  hh = rr * 0.5;
         vec2  pa = mod(huv, rr) - hh;
@@ -115,16 +115,20 @@ void main() {
         vec2  gv = dot(pa, pa) < dot(pb, pb) ? pa : pb;
         vec2  ag = abs(gv);
         float hd = max(dot(ag, normalize(vec2(1.0, 1.7320508))), ag.x);  // 0 centre → ~0.5 edge
-        float border = smoothstep(0.41, 0.50, hd);               // thin crisp hex outlines only
+        // THICK, solid hexagon outline (a wide bright band along each cell edge).
+        float line = smoothstep(0.32, 0.46, hd);
+        // Bright ring where the dome meets the ground (so it clearly "ends at the ground").
+        float baseRing = smoothstep(1.40, 1.54, v);
 
-        float pulse = 0.6 + 0.4 * sin(v * 7.0 - domeTime * 2.0); // gentle energy travelling up
-        vec3  gold  = vec3(1.25, 0.90, 0.32);
-        // A clean, DIM hex WIREFRAME: only the cell edges + a faint silhouette rim glow;
-        // fully transparent between the lines so the dome's shape reads clearly.
-        float bright = border * (0.85 + 0.40 * pulse)   // the hexagon wireframe (the lines)
-                     + fres   * 0.55                      // faint silhouette so the dome reads
-                     + depStrike * 0.9;
-        if (bright <= 0.001) discard;                    // truly see-through between the lines
+        float pulse = 0.75 + 0.25 * sin(v * 6.0 - domeTime * 2.0);
+        vec3  gold  = vec3(1.30, 0.92, 0.30);
+        // A SOLID hex wireframe cage: thick glowing cell edges + a ground ring, fully
+        // transparent between the lines (no fill → not a screen-filter you sit inside).
+        float bright = line * 1.5 * pulse        // the solid hexagon wireframe
+                     + baseRing * 2.2            // ground ring
+                     + fres * 0.5                // faint silhouette so the dome reads
+                     + depStrike * 1.0;
+        if (bright <= 0.04) discard;                     // truly see-through between the lines
         FragColor = vec4(gold * bright, 1.0);
         return;
     }

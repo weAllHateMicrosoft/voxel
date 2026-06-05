@@ -533,6 +533,10 @@ public class Window {
     private com.leaf.game.render.Mesh depDomeWire = null;
     /** Solid hemisphere for the hex force-field shader (domeMode). */
     private com.leaf.game.render.Mesh depDomeSolid = null;
+    /** Real hexagon-cage geometry (solid glowing tubes) — the actual wireframe dome. */
+    private com.leaf.game.render.Mesh depHexDome = null;
+    /** Thin gold ground ring where the cage meets the floor. */
+    private com.leaf.game.render.Mesh depBaseRing = null;
     private float   depAuraEmit  = 0f;   // emit timer for the vigorous slash aura
     private float   depSlashSnd  = 0f;   // timer for ambient slash swishes
     // ── Sliced corpses: the actual enemy model chopped into 8 octants that scatter ──
@@ -3005,7 +3009,7 @@ public class Window {
                 shader.setUniform("isUnderwater", isCameraUnderwater ? 1 : 0);
                 shader.setUniform("cameraY", camera.position.y);
                 shader.setUniform("camPos", new Vector3f(camera.position.x, camera.position.y, camera.position.z));
-                shader.setUniform("domeMode", 0);   // default off; the dome draw flips it on
+                shader.setUniform("domeMode", 0);   // off — the dome is now real tube geometry, not a shader fill
 
                 // ── SNOW BIOME ATMOSPHERE ─────────────────────────────────────
                 // Fades in as the player climbs into snow-mountain altitude.
@@ -5499,17 +5503,35 @@ public class Window {
         glDisable(GL_CULL_FACE);
         shader.setUniform("emissiveMode", 1);
 
-        // ── THE HALF-DOME: a hex ENERGY-FIELD shield (shader pattern, not lines) —
-        //    glowing hex cells + a fresnel silhouette rim + energy flowing upward. ──
-        if (depDomeSolid == null) depDomeSolid = buildSolidHemisphere(40, 64);
+        // ── THE CAGE: a SOLID hexagon-WIREFRAME SPHERE ─────────────────────────
+        // A full sphere is used instead of a hemisphere. The lower half clips
+        // into the terrain via the depth buffer, creating a perfect seal that
+        // follows any uneven ground/canyons perfectly without floating.
+        if (depHexDome == null) depHexDome = buildHexDomeWire(56, 0.010f);
         float domR = GameConfig.depRadius;
-        shader.setUniform("domeMode", 1);
-        shader.setUniform("domeCenter", new Vector3f(depX, depY, depZ));
-        shader.setUniform("domeTime", tnow);
-        shader.setUniform("mvp", new Matrix4f(pv)
-                .mul(new Matrix4f().translate(depX, depY, depZ).scale(domR)));
-        depDomeSolid.render();
-        shader.setUniform("domeMode", 0);     // back to normal emissive for the rest
+
+        // Fade in on cast, out on expiry; gentle breathing pulse + a flare on each strike.
+        float fin   = Math.min(1f, depT / 0.40f);
+        float fout  = Math.min(1f, (GameConfig.depDuration - depT) / 0.60f);
+        float fade  = Math.max(0f, Math.min(fin, fout));
+        fade        = fade * fade * (3f - 2f * fade); // smoothstep ease
+        float pulse = 0.5f + 0.5f * (float) Math.sin(tnow * 2.6);
+        float gb    = (0.42f + 0.16f * pulse + depStrike * 0.45f) * fade;
+
+        float spin  = tnow * 0.8f;
+
+        // Center the sphere on the player's torso.
+        // It will plunge 8 blocks into the earth and rise 8 blocks above.
+        float centerY = depY + 1.0f;
+
+        orbDraw(shader, pv, depHexDome,
+                new Matrix4f().translate(depX, centerY, depZ).rotateY(spin).scale(domR),
+                1.10f * gb, 0.78f * gb, 0.24f * gb);
+
+        // (We completely removed the 2D 'depBaseRing' because the sphere now
+        // creates a natural, organic intersection line with the terrain!)
+
+        // ── THE SLASH STORM ──────────────────────────────────────────────────
 
         // ── THE SLASH STORM: crescents that SNAP through their arc fast, then linger
         //    + fade. (Fast expansion/sweep front-loaded so the cut reads as instant.) ─
@@ -5970,6 +5992,63 @@ public class Window {
                 idx[ii++]=a; idx[ii++]=b; idx[ii++]=a+1; idx[ii++]=a+1; idx[ii++]=b; idx[ii++]=b+1;
             }
         return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    /**
+     * Build a SOLID hexagon-cage hemisphere out of glowing tubes (real geometry, not a
+     * shader pattern — so it stays crisp through bloom and reads as a clear cage).
+     * Base sits on the ground (y=0), curving up to the pole (y=1).
+     * {@code cols} = hex columns around (more ⇒ smaller, denser cells; azimuth wraps
+     * seamlessly); {@code hw} = tube half-width in unit-sphere space (smaller ⇒ thinner
+     * lines). Both are scaled by the dome radius at draw time.
+     */
+    /**
+     * Build a SOLID hexagon-cage SPHERE out of glowing tubes.
+     * The sphere naturally clips into the terrain using the depth buffer,
+     * perfectly sealing against uneven ground.
+     */
+    private com.leaf.game.render.Mesh buildHexDomeWire(int cols, float hw) {
+        java.util.ArrayList<Float>   vl = new java.util.ArrayList<>(1 << 19); // Doubled capacity
+        java.util.ArrayList<Integer> il = new java.util.ArrayList<>(1 << 19);
+        final float SQRT3 = 1.7320508f;
+        final float PI    = (float) Math.PI;
+        final float HALF  = PI * 0.5f;
+        final float s  = (float) (2 * Math.PI) / (cols * SQRT3);   // hex size → columns wrap
+
+        // For a full sphere, elevation angle goes from -HALF (south pole) to HALF (north pole).
+        int numRows = (int) (PI / (1.5f * s)) + 2;
+        int startRow = -numRows / 2;
+        int endRow   = numRows / 2;
+
+        for (int r = startRow; r <= endRow; r++) {
+            float cb = r * 1.5f * s; // elevation of cell center
+            if (cb - s > HALF || cb + s < -HALF) continue; // cull outside poles
+
+            for (int c = 0; c < cols; c++) {
+                // Math.abs(r) % 2 ensures the brick-offset works safely for negative rows
+                float ca = c * SQRT3 * s + (Math.abs(r) % 2) * (SQRT3 * s * 0.5f);
+                float[][] cor = new float[6][];
+                for (int k = 0; k < 6; k++) {
+                    double ang = Math.PI / 6 + k * Math.PI / 3;
+                    float ka = ca + s * (float) Math.cos(ang);
+                    float kb = cb + s * (float) Math.sin(ang);
+
+                    // Clamp to poles to seal the top and bottom of the sphere
+                    kb = Math.max(-HALF, Math.min(HALF, kb));
+
+                    float theta = HALF - kb; // 0 at north pole, PI at south pole
+                    float st = (float) Math.sin(theta), ct = (float) Math.cos(theta);
+                    cor[k] = new float[]{ st * (float) Math.cos(ka), ct, st * (float) Math.sin(ka) };
+                }
+                for (int k = 0; k < 6; k++)
+                    addDomeTube(vl, il, cor[k], cor[(k + 1) % 6], 1f, 1f, hw);
+            }
+        }
+        float[] va = new float[vl.size()];
+        for (int i = 0; i < va.length; i++) va[i] = vl.get(i);
+        int[] ia = new int[il.size()];
+        for (int i = 0; i < ia.length; i++) ia[i] = il.get(i);
+        return new com.leaf.game.render.Mesh(va, ia);
     }
 
     /** A crossed-ribbon tube between two unit-sphere points A,B (visible from any angle). */
