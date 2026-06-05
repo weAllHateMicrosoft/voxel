@@ -2836,7 +2836,10 @@ public class Window {
             boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
             // Shared ability-FX (slashes, rings, bolts) bloom whenever any are live.
             boolean doFxBloom    = !fxList.isEmpty() && !isPreloading && bloomShader != null;
-            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom || doFxBloom;
+            // Stone Canon's charge gathers searing emissive energy → bloom it.
+            boolean doStoneBloom = isChargingStoneCanon && !isPreloading && bloomShader != null;
+            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom
+                    || doFxBloom || doStoneBloom;
             boolean useSceneFbo = doKamuiDistort || doBloom;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
@@ -3667,6 +3670,48 @@ public class Window {
                     shader.setUniform("overlayVignetteStrength", 0f);
                     shader.setUniform("overlayVignetteColor", new Vector3f(0f));
                     shader.setUniform("alphaMultiplier", 1.0f);
+
+                    // ── DRAMATIC CHARGE FX: hot core + spiralling rock shards being
+                    //    sucked in + contracting energy rings. Builds with charge. ──
+                    if (orbCube == null)   orbCube   = orbBuildCube();
+                    if (orbTorus == null)  orbTorus  = orbBuildTorus(0.05f, 72, 8);
+                    if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
+                    Matrix4f pvSC = new Matrix4f(projection).mul(view);
+                    float scCx = stoneCanonGroundPos.x, scCy = riseY, scCz = stoneCanonGroundPos.z;
+                    float cp = chargeProgress;
+                    glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE);
+                    glDepthMask(false); glDepthFunc(GL_LEQUAL); glDisable(GL_CULL_FACE);
+                    shader.setUniform("emissiveMode", 1);
+                    // Molten core pulsing inside the boulder (orange → white-hot).
+                    float coreR = chargeScale * (0.7f + 0.5f * cp) * (1f + 0.10f * (float) Math.sin(timeSecs2 * 12));
+                    orbDraw(shader, pvSC, orbSphere,
+                            new Matrix4f().translate(scCx, scCy, scCz).scale(coreR),
+                            0.9f + 1.9f * cp, 0.35f + 0.7f * cp, 0.10f + 0.15f * cp);
+                    // Rock shards spiralling inward (bigger far → small as they're devoured).
+                    int shards = 12;
+                    for (int i = 0; i < shards; i++) {
+                        float ph   = timeSecs2 * (2.2f + cp * 4.5f) + i * (6.2831853f / shards);
+                        float pull = (float) ((timeSecs2 * 1.4 + i * 0.27) % 1.0);   // 0→1 repeating
+                        float rad  = (2.6f - cp * 0.9f) * (1f - pull * 0.85f) + 0.35f;
+                        float sy   = (float) Math.sin(ph * 1.3) * 0.7f;
+                        float ssz  = (0.10f + 0.12f * (1f - pull)) * (0.7f + 0.5f * cp);
+                        float sb   = (0.5f + 0.9f * cp) * (0.4f + 0.6f * (1f - pull));
+                        orbDraw(shader, pvSC, orbCube,
+                                new Matrix4f().translate(scCx + (float) Math.cos(ph) * rad, scCy + sy,
+                                                         scCz + (float) Math.sin(ph) * rad)
+                                        .rotateY(ph).rotateX(ph * 0.7f).scale(ssz),
+                                sb, sb * 0.55f, sb * 0.2f);
+                    }
+                    // Contracting energy ring — a power-gathering pulse collapsing inward.
+                    float rp   = (float) ((timeSecs2 * 1.3) % 1.0);
+                    float rgR  = 3.2f * (1f - rp) + 0.4f;
+                    float rgB  = (1f - rp) * (0.6f + cp);
+                    orbDraw(shader, pvSC, orbTorus,
+                            new Matrix4f().translate(scCx, scCy, scCz).scale(rgR, 0.18f, rgR),
+                            1.6f * rgB, 0.9f * rgB, 0.2f * rgB);
+                    shader.setUniform("emissiveMode", 0);
+                    shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
+                    glDepthFunc(GL_LESS); glDepthMask(true); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
                 }
 
                 // 6c. Render Stone Canon shots
