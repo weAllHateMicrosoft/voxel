@@ -70,7 +70,7 @@ public class GameConfig {
     // ── DEPRIVATION DOMAIN (Water God Stance) ─────────────────────────────────
     // Tap ['] to enter a locked defensive stance. Any entity moving inside the
     // radius is instantly counter-struck with a golden thread and killed.
-    public static float depRadius          = 6f;    // tight kill-bubble radius (blocks) — anyone who steps in dies
+    public static float depRadius          = 8f;    // tight kill-bubble radius (blocks) — anyone who steps in dies
     public static float depDuration        = 10f;   // max stance seconds before auto-exit
     public static float depCooldownSecs    = 1f;    // recovery cooldown after stance ends
     public static float depDamage          = 9999f; // counter-strike damage (instant kill)
