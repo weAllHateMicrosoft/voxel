@@ -394,12 +394,8 @@ public class Player {
                 float fallDist = highestY - hNow;
                 if (fallDist > 4.0f && !abilities.isKamui) {
                     health -= (fallDist * 0.5f - 2.0f);
-                    if (health <= 0f) {
-                        System.out.println("You died!");
-                        position.set(1000, 255, 1000);
-                        health = maxHealth;
-                        pendingGravityReset = true;   // respawn upright, not sideways
-                    }
+                    if (health < 0f) health = 0f;   // death + consistent respawn handled centrally by Window
+
                 }
             }
             highestY = hNow;

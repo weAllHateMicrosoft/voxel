@@ -77,8 +77,15 @@ public class NetworkSession {
             System.out.println("[Net] Disconnected.");
         } catch (IOException e) {
             System.err.println("[Net] Connection error: " + e.getMessage());
+        } catch (Throwable t) {
+            // A bug in a packet handler must NOT silently kill sync while leaving us
+            // "connected" (the symptom: remote freezes, chat/damage stop, but we still
+            // think we're online). Log it and fall through to mark disconnected.
+            System.err.println("[Net] Read loop crashed: " + t);
+            t.printStackTrace();
+        } finally {
+            connected = false;   // ALWAYS reflect the dead loop (no zombie connection)
         }
-        connected = false;
     }
 
     private Socket waitForConnection() throws IOException {
@@ -139,6 +146,11 @@ public class NetworkSession {
                 remoteSummons = arr;
                 break;
             }
+            default:
+                // An unknown id means the byte stream has DESYNCED (a sender wrote a
+                // packet a reader didn't fully consume). We can't recover the framing,
+                // so throw to drop the connection cleanly rather than read garbage.
+                throw new IOException("Desync: unknown packet id " + id);
         }
     }
 
@@ -173,7 +185,7 @@ public class NetworkSession {
         synchronized (writeLock) { try { if (out == null) return; out.writeByte(5); out.writeInt(x); out.writeInt(y); out.writeInt(z); out.writeInt(b.ordinal()); out.flush(); } catch (IOException ignored) {} }
     }
     public void sendChat(String msg) {
-        synchronized (writeLock) { try { if (out == null) return; out.writeByte(6); out.writeUTF("CHAT:" + msg); out.flush(); } catch (IOException ignored) {} }
+        synchronized (writeLock) { try { if (out == null) return; out.writeByte(6); out.writeUTF(msg); out.flush(); } catch (IOException ignored) {} }
     }
     public void sendPickup(int x, int y, int z) {
         synchronized (writeLock) { try { if (out == null) return; out.writeByte(7); out.writeInt(x); out.writeInt(y); out.writeInt(z); out.flush(); } catch (IOException ignored) {} }

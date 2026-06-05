@@ -498,6 +498,23 @@ class WindowHud {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
 
+        // ── MULTIPLAYER STATUS — confirm sync at a glance ─────────────────────
+        // Shows the live link + the peer's synced HP (drops when you damage them) +
+        // troop counts, so it's obvious whether syncing actually works.
+        if (win.network != null) {
+            boolean up = win.network.connected;
+            int foeTroops = win.network.remoteSummons.length / 3;
+            String line = up
+                ? String.format("MP LINK OK   Foe HP %.0f/%.0f   You troops %d  Foe troops %d  ([ ] ] spawn)",
+                        win.remotePlayer != null ? win.remotePlayer.health : 0f,
+                        win.remotePlayer != null ? win.remotePlayer.maxHealth : 0f,
+                        win.mySummons.size(), foeTroops)
+                : "MP LINK DOWN — check Host IP / firewall, or a desync dropped it (see console)";
+            int col = up ? ImGui.colorConvertFloat4ToU32(0.4f, 1f, 0.5f, 0.95f)
+                         : ImGui.colorConvertFloat4ToU32(1f, 0.4f, 0.3f, 0.95f);
+            draw.addText(14f, 40f, col, line);
+        }
+
         // ── LIGHTNING BOLT RENDERING ──────────────────────────────────────────
         // Multiple parallel zigzag paths per bolt for a thick, impressive look.
         if (!win.player.lightning.activeBolts.isEmpty()) {
@@ -1383,6 +1400,7 @@ class WindowHud {
 
             for (Enemy enemy : win.enemyManager.getEnemies()) {
                 if (!enemy.alive) continue;
+                if (enemy == win.mpProxy) continue;   // invisible PvP hitbox — never show its 999 HP bar
 
                 Vector3f headPos = new Vector3f(
                         enemy.position.x,

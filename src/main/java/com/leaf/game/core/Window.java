@@ -867,6 +867,30 @@ public class Window {
         mySummons.clear();
     }
 
+    /**
+     * Central death handler — the SINGLE place a death is triggered, so every damage
+     * source (enemy hits, fall damage, PvP/troop relay, the void) dies the same way and
+     * respawns at the same consistent spawn point via the revival flow. Idempotent: a
+     * no-op if a death is already in progress.
+     */
+    private void triggerDeath() {
+        if (showDeathScreen || deathCutscenePending) return;   // already dying
+        player.health = 0f;
+        AudioManager.stopContinuous("kamui_duration");
+        AudioManager.stopContinuous("kamui_distortion");
+        deathScreenLines = RunRecords.INSTANCE.recordDeath(
+                enemyManager.getWaveNumber(), (float) org.lwjgl.glfw.GLFW.glfwGetTime());
+        deathCutscenePending = true;
+        if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
+            player.progression.grantKamui();
+            kamuiJustUnlockedThisRevival = true;
+            cutscene.startKamuiAwaken();
+        } else {
+            cutscene.startRevival();
+        }
+        ScreenEffectManager.INSTANCE.desaturate(0.7f, 1.5f);
+    }
+
     /** Begin the next queued practice session, or start the next wave if the queue is empty. */
     private void startNextPractice() {
         Progression.Ability next = practiceQueue.poll();
@@ -1750,21 +1774,8 @@ public class Window {
                         // ── VOID DEATH — player fell past y=0 into the abyss ─────
                         if (player.fellIntoVoid && !showDeathScreen && !deathCutscenePending) {
                             player.fellIntoVoid = false;
-                            player.health = 0f;
-                            AudioManager.stopContinuous("kamui_duration");
-                            AudioManager.stopContinuous("kamui_distortion");
                             ScreenEffectManager.INSTANCE.flash(0f, 0f, 0f, 1.0f, 0.5f);
-                            deathScreenLines = RunRecords.INSTANCE.recordDeath(
-                                    enemyManager.getWaveNumber(),
-                                    (float) org.lwjgl.glfw.GLFW.glfwGetTime());
-                            deathCutscenePending = true;
-                            if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
-                                player.progression.grantKamui();
-                                kamuiJustUnlockedThisRevival = true;
-                                cutscene.startKamuiAwaken();
-                            } else {
-                                cutscene.startRevival();
-                            }
+                            triggerDeath();
                         }
                         player.fellIntoVoid = false; // clear every frame
 
@@ -1784,32 +1795,13 @@ public class Window {
 
                                 player.health -= dmg;
                                 enemyManager.pendingPlayerDamage = 0f;
-                                if (player.health <= 0f) {
-                                    player.health = 0f;  // clamp; actual reset happens on restart
-                                    if (!showDeathScreen && !deathCutscenePending) {
-                                        AudioManager.stopContinuous("kamui_duration");
-                                        AudioManager.stopContinuous("kamui_distortion");
-
-                                        // Record death — this also checks if it's the 3rd
-                                        // (Kamui awakening) and persists the flag.
-                                        deathScreenLines = RunRecords.INSTANCE.recordDeath(
-                                                enemyManager.getWaveNumber(),
-                                                (float) org.lwjgl.glfw.GLFW.glfwGetTime());
-
-                                        deathCutscenePending = true;
-
-                                        // 3rd death: play Kamui awakening first, then revival.
-                                        if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
-                                            player.progression.grantKamui();
-                                            kamuiJustUnlockedThisRevival = true; // shows tutorial once after revival
-                                            cutscene.startKamuiAwaken();
-                                        } else {
-                                            cutscene.startRevival();
-                                        }
-                                        ScreenEffectManager.INSTANCE.desaturate(0.7f, 1.5f);
-                                    }
-                                }
                             }
+                        }
+
+                        // ── CENTRAL DEATH — any source (enemy, FALL, PvP relay) that
+                        //    drained HP to 0 dies here, the same way, with the same spawn.
+                        if (player.health <= 0f && !player.abilities.isKamui && immunityTimer <= 0f) {
+                            triggerDeath();
                         }
 
                         // ── KAMUI MANA DRAIN (passive while active) ───────────────
@@ -2723,8 +2715,10 @@ public class Window {
                             player.health -= incoming;
                             damageFlashTimer = 0.5f;
                             ScreenEffectManager.INSTANCE.flash(0.75f, 0.02f, 0.02f, 0.22f, 0.3f);
-                            if (player.health < 0f) player.health = 0f;
                         }
+                    }
+                    if (player.health <= 0f && !player.abilities.isKamui && immunityTimer <= 0f) {
+                        triggerDeath();   // PvP/troop kill — die immediately, same flow + spawn
                     }
                 }
 
