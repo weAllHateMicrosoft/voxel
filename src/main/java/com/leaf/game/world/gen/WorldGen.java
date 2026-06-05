@@ -375,6 +375,15 @@ public class WorldGen {
                 boolean underGround = false; // Tracks if we have passed the terrain surface
                 int dirtCount = 0;
 
+                // FLOOD ZONE: this column's water level — raised only inside the
+                // drowned region, otherwise the normal sea level (no global flood).
+                int effFlood = GameConfig.seaLevel;
+                if (GameConfig.floodRadius > 0f) {
+                    float fdx = wx - GameConfig.floodCenterX, fdz = wz - GameConfig.floodCenterZ;
+                    if (fdx * fdx + fdz * fdz < GameConfig.floodRadius * GameConfig.floodRadius)
+                        effFlood = Math.max(GameConfig.seaLevel, GameConfig.floodLevel);
+                }
+
                 for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
                     if (solid[ly]) underGround = true; // We hit earth, everything below is underground
 
@@ -384,9 +393,8 @@ public class WorldGen {
                         boolean noWater = aCol != null && abyss.suppressWater(aCol, ly);
 
                         // Only place water if we are NOT underground (prevents flooded caves).
-                        // floodLevel ≥ seaLevel raises the water so the ground is submerged.
-                        boolean isOcean = !underGround
-                                && ly <= Math.max(GameConfig.seaLevel, GameConfig.floodLevel);
+                        // effFlood raises the water inside the drowned region only.
+                        boolean isOcean = !underGround && ly <= effFlood;
 
                         chunk.setBlock(lx, ly, lz,
                                 (!noWater && isOcean) ? Block.WATER : Block.AIR);
@@ -399,8 +407,7 @@ public class WorldGen {
                             if (!hitSurface) {
                                 hitSurface = true;
                                 dirtCount = 0;
-                                int dryLevel = Math.max(GameConfig.seaLevel, GameConfig.floodLevel);
-                                if (ly >= dryLevel) {
+                                if (ly >= effFlood) {
                                     // Dry land surface (emerges above the flood) → biome block.
                                     Block surf = isAlpine ? cladder.surfaceBlock(ly, fbmSlope) : biome.surfaceBlock();
                                     chunk.setBlock(lx, ly, lz, surf);

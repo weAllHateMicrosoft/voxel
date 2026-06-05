@@ -8,10 +8,13 @@ public class GameConfig {
     public static int heightBase  = 200;
     public static int heightRange = 100;
     public static int seaLevel    = 220;
-    // FLOOD: raise the global water level so the ground is covered by water.
-    // Open-sky columns fill with water up to here; hills/mountains/spawn emerge.
-    // Set == seaLevel for the old dry world.
-    public static int floodLevel  = 240;
+    // FLOOD ("drowned" terrain): a SINGLE circular region whose ground is covered
+    // by water up to floodLevel. Everywhere else stays dry (uses seaLevel). Set
+    // floodRadius = 0 to disable. Far from spawn (777,777) / canyon (−1400,900).
+    public static int   floodLevel   = 240;
+    public static int   floodCenterX = 1200;
+    public static int   floodCenterZ = 1200;
+    public static float floodRadius  = 260f;
 
     // ── BIOME THRESHOLDS ─────────────────────────────────────────────────────
     public static int   beachMaxAltitude     = 2;

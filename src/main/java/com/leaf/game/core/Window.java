@@ -5148,7 +5148,9 @@ public class Window {
                     spawnSlashBurst(ex, ey, ez, 4, 0.8f, 1.8f);  // a flurry of cuts on the body
                     spawnSliceGibs(ex, ey, ez);                  // blood-spark debris
                     captureCorpse(e);                            // chop the ACTUAL model into 8
-                    e.applyDamage(GameConfig.depDamage);
+                    // Kill SILENTLY — applyDamage() plays a death "smash" sound; we
+                    // want only the sword-slash cues here. Set state directly instead.
+                    e.health = 0f; e.alive = false;
                     e.hitFlashTimer = 0f;                        // suppress the normal corpse render
                     enemyAnimPlayers.remove(e.id);
                     // Lock the head onto the victim — but let the current turn settle
