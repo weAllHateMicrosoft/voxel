@@ -2770,7 +2770,7 @@ public class Window {
 
                     // ── QUANTUM BULLET (',' key) — fire a phasing bullet ─────────
                     qbCooldown     = Math.max(0f, qbCooldown - rawDeltaTime);
-                    qbWarpStrength = Math.max(0f, qbWarpStrength - rawDeltaTime * 3f);  // warp fades after exiting a wall
+                    qbWarpStrength = Math.max(0f, qbWarpStrength - rawDeltaTime);  // warp lasts ~1 s on the block
                     boolean quantumNow = glfwGetKey(window, KeyBindings.QUANTUM_BULLET) == GLFW_PRESS;
                     if (quantumNow && !lastQuantum && qbCooldown <= 0f && !player.debugMode) {
                         Vector3f d = camera.getLookDirection();
@@ -3870,7 +3870,10 @@ public class Window {
 
                     org.joml.Vector4f clip = new Matrix4f(projection).mul(view)
                             .transform(new org.joml.Vector4f(qbWarpX, qbWarpY, qbWarpZ, 1f));
-                    float sx = 0.5f, sy = 0.5f;
+                    // World-anchored: re-project every frame so the warp stays on the
+                    // block when you turn. If it's behind you, push it off-screen so it
+                    // fades cleanly (rather than snapping to screen centre).
+                    float sx = -5f, sy = -5f;
                     if (clip.w > 1e-4f) {
                         sx = (clip.x / clip.w) * 0.5f + 0.5f;
                         sy = (clip.y / clip.w) * 0.5f + 0.5f;
@@ -5602,18 +5605,12 @@ public class Window {
                 boolean solid = world.getBlock((int) Math.floor(b.pos.x),
                         (int) Math.floor(b.pos.y), (int) Math.floor(b.pos.z)).isSolid();
                 if (solid != b.wasSolid) {
-                    // Crossed a surface — kick the screen-space WARP (handled in the
-                    // distort pass) so the wall's texture itself ripples as we phase
-                    // through it. No spell-like rings.
+                    // Crossed a surface — pin a screen-space WARP to THIS world point
+                    // (frozen, so it stays on the block when you turn your head) for ~1 s.
                     qbWarpStrength = 1f;
+                    qbWarpX = b.pos.x; qbWarpY = b.pos.y; qbWarpZ = b.pos.z;
                     b.wasSolid = solid;
                 }
-            }
-            // Keep the warp strong the whole time the bullet is buried in a wall.
-            if (world.getBlock((int) Math.floor(b.pos.x), (int) Math.floor(b.pos.y),
-                    (int) Math.floor(b.pos.z)).isSolid()) {
-                qbWarpStrength = 1f;
-                qbWarpX = b.pos.x; qbWarpY = b.pos.y; qbWarpZ = b.pos.z;      // world pos; projected at blit
             }
             if (enemyManager != null) {
                 for (com.leaf.game.entity.Enemy e : enemyManager.getEnemies()) {

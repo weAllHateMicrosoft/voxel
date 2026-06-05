@@ -115,11 +115,18 @@ void main() {
         vec2  gv = dot(pa, pa) < dot(pb, pb) ? pa : pb;
         vec2  ag = abs(gv);
         float hd = max(dot(ag, normalize(vec2(1.0, 1.7320508))), ag.x);  // 0 centre → ~0.5 edge
-        float edge = smoothstep(0.40, 0.50, hd);                 // glowing hex-cell borders
+        float border = smoothstep(0.34, 0.50, hd);               // bright hex-cell rims
+        float cell   = smoothstep(0.50, 0.18, hd);               // soft fill INSIDE each cell
 
-        float pulse = 0.5 + 0.5 * sin(v * 8.0 - domeTime * 2.5); // energy wave rising up the dome
+        float pulse = 0.5 + 0.5 * sin(v * 7.0 - domeTime * 2.2); // energy wave rising up the dome
         vec3  gold  = vec3(1.5, 1.05, 0.35);
-        float bright = fres * 1.7 + edge * (0.45 + 0.75 * pulse) + 0.04 + depStrike * 1.2;
+        // A genuinely solid shell: a strong translucent base + filled cells + hot rims,
+        // all lifted by the fresnel silhouette so the dome reads clearly from any angle.
+        float bright = 0.45                       // base translucent shell (visible everywhere)
+                     + cell   * (0.45 + 0.5 * pulse)
+                     + border * 1.4
+                     + fres   * 2.2
+                     + depStrike * 1.5;
         FragColor = vec4(gold * bright, 1.0);
         return;
     }
