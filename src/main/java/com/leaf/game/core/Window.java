@@ -565,6 +565,25 @@ public class Window {
         }
     }
 
+    // ── GENERAL ABILITY-FX SYSTEM ───────────────────────────────────────────────
+    // Transient additive 3D effects shared by many abilities (slash crescents,
+    // shockwave rings, burst spheres, energy bolts). Rendered in the world pass
+    // through the bloom FBO. Spawn via fxSlash / fxRing / fxBurst / fxBolt.
+    private static final int FX_CRESCENT = 0, FX_RING = 1, FX_BURST = 2, FX_BOLT = 3;
+    private static final class Fx {
+        int   type;
+        float x, y, z;          // world position
+        float dx, dy, dz;       // crescent facing / ring axis / bolt direction
+        float roll, sweep;      // crescent roll + arc sweep
+        float age, life;
+        float s0, s1;           // start/end scale (or radius)
+        float r, g, b;          // emissive colour (HDR)
+        Fx(int type, float x, float y, float z) { this.type = type; this.x = x; this.y = y; this.z = z; }
+    }
+    private final java.util.ArrayList<Fx> fxList = new java.util.ArrayList<>();
+    // Rising-edge detectors so a teleport (blink / seal / substitute / swap) spawns FX once.
+    private float lastBlinkFlash = 0f, lastSealFlash = 0f;
+
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
     private static final float TS_SHRINK = 0.9f;   // collapse duration (s)
@@ -1456,6 +1475,17 @@ public class Window {
 
                         for (float[] ev : player.attacks.pendingMeleeArcs) {
                             enemyManager.processMeleeArc(ev);
+                            // ── RUNIC CLEAVE VFX: a big diagonal X-slash in the aim
+                            //    direction + a ground shockwave + an impact flash. ──
+                            float ox = ev[0], oy = ev[1], oz = ev[2];
+                            float adx = ev[3], ady = ev[4], adz = ev[5];
+                            float cx = ox + adx * 3.5f, cy = oy + ady * 3.5f, cz = oz + adz * 3.5f;
+                            float roll = (float) (Math.random() * Math.PI * 2.0);
+                            // Two crossing crescents (facing back at the player) → a searing X.
+                            fxSlash(cx, cy, cz, -adx, -ady, -adz, roll,        2.4f, 3.6f, 6.0f, 0.30f, 2.3f, 1.7f, 0.55f);
+                            fxSlash(cx, cy, cz, -adx, -ady, -adz, roll + 1.5f, -2.4f, 3.2f, 5.4f, 0.30f, 2.5f, 1.9f, 0.60f);
+                            fxRing(cx, oy + 0.15f, cz, 1.0f, 6.5f, 0.34f, 2.2f, 1.5f, 0.5f);
+                            fxBurst(cx, cy, cz, 0.5f, 2.6f, 0.20f, 2.8f, 2.0f, 0.8f);
                         }
                         player.attacks.pendingMeleeArcs.clear();
 
@@ -2714,6 +2744,22 @@ public class Window {
                     depCooldown = Math.max(0f, depCooldown - rawDeltaTime);
                     depStrike   = Math.max(0f, depStrike   - rawDeltaTime * 6f);
                     if (depActive) updateDeprivationDomain(rawDeltaTime, world, camera);
+                    updateFx(rawDeltaTime);   // age shared ability VFX
+
+                    // ── TELEPORT VFX (blink / substitute / swap / seal warp) ──────
+                    // Fire once on the rising edge of each teleport flash.
+                    float bfNow = player.abilities.blinkFlashTimer;
+                    if (bfNow > 0f && lastBlinkFlash <= 0.0001f) {
+                        Vector3f o = player.abilities.blinkOrigin, d = player.abilities.blinkDest;
+                        if (o != null) fxTeleport(o.x, o.y, o.z);
+                        if (d != null) fxTeleport(d.x, d.y, d.z);
+                    }
+                    lastBlinkFlash = bfNow;
+                    float sfNow = player.seals.teleportFlash;
+                    if (sfNow > 0f && lastSealFlash <= 0.0001f) {
+                        fxTeleport(player.position.x, player.position.y, player.position.z);
+                    }
+                    lastSealFlash = sfNow;
 
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
@@ -2788,7 +2834,9 @@ public class Window {
             boolean doDiscoBloom = cdActive && !isPreloading && bloomShader != null && cdSpawnT > 0.05f;
             // Domain always blooms — the HDR gold hemisphere + threads + boundary ring need it.
             boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
-            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom;
+            // Shared ability-FX (slashes, rings, bolts) bloom whenever any are live.
+            boolean doFxBloom    = !fxList.isEmpty() && !isPreloading && bloomShader != null;
+            boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom || doFxBloom;
             boolean useSceneFbo = doKamuiDistort || doBloom;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
@@ -3185,6 +3233,11 @@ public class Window {
                 // ── DEPRIVATION DOMAIN: golden hemisphere + thread web ────────
                 if (depActive && !isPreloading) {
                     renderDeprivationDomain(shader, projection, view, renderMvp);
+                }
+
+                // ── Shared ability FX (slashes, rings, bolts, bursts) ─────────
+                if (!fxList.isEmpty() && !isPreloading) {
+                    renderFx(shader, projection, view, renderMvp);
                 }
 
                 // ── PASS 2: TRANSPARENT ───────────────────────────────────────
@@ -5372,6 +5425,148 @@ public class Window {
         glDepthMask(true);
         glDisable(GL_CULL_FACE);
         glDisable(GL_BLEND);
+    }
+
+    // ── GENERAL ABILITY-FX: spawn / update / render ────────────────────────────
+    private void fxSlash(float x, float y, float z, float fx, float fy, float fz,
+                         float roll, float sweep, float s0, float s1, float life,
+                         float r, float g, float b) {
+        Fx e = new Fx(FX_CRESCENT, x, y, z);
+        e.dx = fx; e.dy = fy; e.dz = fz; e.roll = roll; e.sweep = sweep;
+        e.s0 = s0; e.s1 = s1; e.life = life; e.r = r; e.g = g; e.b = b;
+        fxList.add(e);
+    }
+    private void fxRing(float x, float y, float z, float r0, float r1, float life,
+                        float r, float g, float b) {
+        Fx e = new Fx(FX_RING, x, y, z);
+        e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
+        fxList.add(e);
+    }
+    private void fxBurst(float x, float y, float z, float r0, float r1, float life,
+                         float r, float g, float b) {
+        Fx e = new Fx(FX_BURST, x, y, z);
+        e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
+        fxList.add(e);
+    }
+    private void fxBolt(float x, float y, float z, float dx, float dy, float dz,
+                        float len, float life, float r, float g, float b) {
+        Fx e = new Fx(FX_BOLT, x, y, z);
+        e.dx = dx; e.dy = dy; e.dz = dz; e.s0 = len; e.life = life; e.r = r; e.g = g; e.b = b;
+        fxList.add(e);
+    }
+
+    private void updateFx(float dt) {
+        for (java.util.Iterator<Fx> it = fxList.iterator(); it.hasNext(); ) {
+            Fx e = it.next(); e.age += dt; if (e.age >= e.life) it.remove();
+        }
+    }
+
+    /** A vivid blue-white teleport burst: implosion-ish ring + flash + light column. */
+    private void fxTeleport(float x, float y, float z) {
+        fxBurst(x, y + 1.0f, z, 0.4f, 3.0f, 0.30f, 1.2f, 1.9f, 3.4f);   // blue-white flash
+        fxRing(x, y + 0.1f, z, 0.5f, 5.0f, 0.34f, 1.0f, 1.7f, 3.2f);    // expanding ground ring
+        fxBolt(x, y, z, 0f, 1f, 0f, 6.5f, 0.26f, 1.5f, 2.1f, 3.4f);     // vertical light pillar
+        AudioManager.play("teleport", 0.7f, 0.95f + (float) Math.random() * 0.2f);
+    }
+
+    private void renderFx(com.leaf.game.render.Shader shader,
+                          Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
+        if (fxList.isEmpty()) return;
+        if (depCrescent == null) depCrescent = buildSlashCrescent(22);
+        if (orbTorus  == null) orbTorus  = orbBuildTorus(0.05f, 72, 8);
+        if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
+        if (orbCyl    == null) orbCyl    = orbBuildCylinder(28);
+        Matrix4f pv = new Matrix4f(projection).mul(view);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);
+        glDepthMask(false);
+        glDepthFunc(GL_LEQUAL);
+        glDisable(GL_CULL_FACE);
+        shader.setUniform("emissiveMode", 1);
+
+        for (Fx e : fxList) {
+            float f = Math.min(1f, e.age / e.life);
+            switch (e.type) {
+                case FX_CRESCENT: {
+                    float snap  = Math.min(1f, f / 0.2f);
+                    float snapE = 1f - (1f - snap) * (1f - snap);
+                    float scale = e.s0 + (e.s1 - e.s0) * snapE;
+                    float rise  = f < 0.06f ? f / 0.06f : 1f;
+                    float fall  = f > 0.5f ? (1f - (f - 0.5f) / 0.5f) : 1f;
+                    float br    = rise * fall * 4.6f;
+                    if (br <= 0.01f) break;
+                    Matrix4f m = faceMatrix(e.x, e.y, e.z, e.dx, e.dy, e.dz)
+                            .rotateZ(e.roll + e.sweep * snapE).scale(scale);
+                    orbDraw(shader, pv, depCrescent, m, e.r * br, e.g * br, e.b * br);
+                    break;
+                }
+                case FX_RING: {
+                    float ease = 1f - (1f - f) * (1f - f);
+                    float rad  = e.s0 + (e.s1 - e.s0) * ease;
+                    float br   = (1f - f) * 3.2f;
+                    orbDraw(shader, pv, orbTorus,
+                            new Matrix4f().translate(e.x, e.y, e.z)
+                                    .scale(rad, Math.max(0.25f, rad * 0.05f), rad),
+                            e.r * br, e.g * br, e.b * br);
+                    break;
+                }
+                case FX_BURST: {
+                    float ease = 1f - (1f - f) * (1f - f);
+                    float rad  = e.s0 + (e.s1 - e.s0) * ease;
+                    float br   = (1f - f) * (1f - f) * 3.0f;
+                    orbDraw(shader, pv, orbSphere,
+                            new Matrix4f().translate(e.x, e.y, e.z).scale(rad),
+                            e.r * br, e.g * br, e.b * br);
+                    break;
+                }
+                case FX_BOLT: {
+                    float br = (f < 0.3f ? 1f : 1f - (f - 0.3f) / 0.7f) * 4.0f;
+                    if (br <= 0.01f) break;
+                    float jitter = 1f + 0.12f * (float) Math.sin(glfwGetTime() * 60.0 + e.x);
+                    orbDraw(shader, pv, orbCyl,
+                            cylAlong(e.x, e.y, e.z, e.dx, e.dy, e.dz, e.s0, 0.10f * jitter),
+                            e.r * br, e.g * br, e.b * br);
+                    break;
+                }
+            }
+        }
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
+        shader.setUniform("mvp", renderMvp);
+        glDepthFunc(GL_LESS);
+        glDepthMask(true);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
+    }
+
+    /** Basis matrix that orients a flat mesh's local +Z toward {@code fwd} (no scale/roll). */
+    private static Matrix4f faceMatrix(float px, float py, float pz, float fx, float fy, float fz) {
+        org.joml.Vector3f z = new org.joml.Vector3f(fx, fy, fz);
+        if (z.lengthSquared() < 1e-6f) z.set(0, 0, 1);
+        z.normalize();
+        org.joml.Vector3f up = Math.abs(z.y) < 0.95f
+                ? new org.joml.Vector3f(0, 1, 0) : new org.joml.Vector3f(1, 0, 0);
+        org.joml.Vector3f x = new org.joml.Vector3f(up).cross(z).normalize();
+        org.joml.Vector3f y = new org.joml.Vector3f(z).cross(x).normalize();
+        return new Matrix4f(x.x, x.y, x.z, 0f, y.x, y.y, y.z, 0f, z.x, z.y, z.z, 0f, px, py, pz, 1f);
+    }
+
+    /** Matrix that runs the unit cylinder (radius 1, Y∈[0,1]) from a point along a direction. */
+    private static Matrix4f cylAlong(float px, float py, float pz,
+                                     float dx, float dy, float dz, float len, float thick) {
+        org.joml.Vector3f y = new org.joml.Vector3f(dx, dy, dz);
+        if (y.lengthSquared() < 1e-6f) y.set(0, 1, 0);
+        y.normalize();
+        org.joml.Vector3f ref = Math.abs(y.y) < 0.95f
+                ? new org.joml.Vector3f(0, 1, 0) : new org.joml.Vector3f(1, 0, 0);
+        org.joml.Vector3f x = new org.joml.Vector3f(ref).cross(y).normalize();
+        org.joml.Vector3f z = new org.joml.Vector3f(x).cross(y).normalize();
+        return new Matrix4f(
+                x.x * thick, x.y * thick, x.z * thick, 0f,
+                y.x * len,   y.y * len,   y.z * len,   0f,
+                z.x * thick, z.y * thick, z.z * thick, 0f,
+                px, py, pz, 1f);
     }
 
     /**
