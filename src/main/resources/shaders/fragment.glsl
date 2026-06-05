@@ -261,10 +261,11 @@ void main() {
         float d3d    = length(vWorldPos - depCenter);
         float inside = 1.0 - smoothstep(depRadius - 1.5, depRadius + 0.5, d3d);
 
-        // Inside: desaturate + warm gold tint
+        // Inside: only a GENTLE warm tint — the dome wireframe (drawn separately)
+        // carries the shape, so we must NOT wash the whole view gold here.
         float lum   = dot(gammaCorrected, vec3(0.299, 0.587, 0.114));
-        vec3 desat  = mix(gammaCorrected, vec3(lum * 0.90), inside * 0.52);
-        vec3 goldIn = mix(desat, desat * vec3(1.32, 1.08, 0.60), inside * 0.40);
+        vec3 desat  = mix(gammaCorrected, vec3(lum * 0.92), inside * 0.22);
+        vec3 goldIn = mix(desat, desat * vec3(1.18, 1.04, 0.78), inside * 0.20);
 
         // Outside: cool blue-grey tint — the world beyond feels muted and distant
         float outside = smoothstep(depRadius - 2.0, depRadius + 2.0, d3d);
@@ -286,7 +287,7 @@ void main() {
         float wEy = (1.0 - nAx.y) * (1.0 - smoothstep(0.0, elw, dE.y));
         float wEz = (1.0 - nAx.z) * (1.0 - smoothstep(0.0, elw, dE.z));
         float wire = clamp(wEx + wEy + wEz, 0.0, 1.0);
-        float rimI = inside * (0.40 + 1.10 * depStrike);
+        float rimI = inside * (0.16 + 0.95 * depStrike);   // subtle idle; flares on the cut
         gammaCorrected += vec3(1.50, 1.05, 0.30) * wire * rimI;
 
         // ── Repeating detection sweep ring expanding from the player ──

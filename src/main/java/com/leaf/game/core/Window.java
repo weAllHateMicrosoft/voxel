@@ -527,15 +527,43 @@ public class Window {
     private final java.util.ArrayList<float[]> depGibs = new java.util.ArrayList<>();
     /** Anime sword-sweep crescent mesh (unit, in local XY plane; built once). */
     private com.leaf.game.render.Mesh depCrescent = null;
-    /** Phantom sword silhouette mesh for the idle "ready-sword" aura ring (built once). */
+    /** Phantom sword silhouette mesh (built once). */
     private com.leaf.game.render.Mesh depBlade = null;
-    private float   depRingPhase = 0f;   // slow orbit angle of the aura sword ring
-    private float   depAuraGlow  = 0f;   // 0→1 aura intensity (pulses "occasionally" + on strikes)
-    private float   depAuraTimer = 0f;   // counts up to depAuraInterval, then pulses the aura
+    /** Glowing wireframe half-dome (meridians + parallels) so the field's shape reads. */
+    private com.leaf.game.render.Mesh depDomeWire = null;
+    private float   depAuraEmit  = 0f;   // emit timer for the vigorous slash aura
+    private float   depSlashSnd  = 0f;   // timer for ambient slash swishes
+    // ── Sliced corpses: the actual enemy model chopped into 8 octants that scatter ──
+    private final java.util.ArrayList<DepCorpse> depCorpses = new java.util.ArrayList<>();
+    private static final String[] SLASH_ALL = {
+        "sword_slash", "sword_slash2", "sword_slash3",
+        "sword_slash_short", "sword_slash_short2", "sword_slash_short3", "sword_slash_long" };
+    private static final String[] SLASH_SHORT = {
+        "sword_slash_short", "sword_slash_short2", "sword_slash_short3" };
     // ── Bezier head-turn: smoothly rotate the camera to face each slashed enemy ──
     private boolean depTurning = false;
     private float   depTurnT = 0f;
     private float   depTurnStartYaw, depTurnStartPitch, depTurnTargetYaw, depTurnTargetPitch;
+
+    /** A frozen enemy model captured at the instant it was sliced, flying apart in 8 octants. */
+    private static final class DepCorpse {
+        final com.leaf.game.anim.AnimModel model;
+        final java.util.Map<String, Matrix4f> pose;
+        final float px, py, pz, faceY, sx, sy, sz;
+        final org.joml.Vector3f center;   // body-frame centre the cuts pass through
+        final float size;                 // body-frame extent (for scatter distance)
+        final long  seed;
+        float age = 0f;
+        final float life;
+        DepCorpse(com.leaf.game.anim.AnimModel model, java.util.Map<String, Matrix4f> pose,
+                  float px, float py, float pz, float faceY, float sx, float sy, float sz,
+                  org.joml.Vector3f center, float size, float life, long seed) {
+            this.model = model; this.pose = pose;
+            this.px = px; this.py = py; this.pz = pz; this.faceY = faceY;
+            this.sx = sx; this.sy = sy; this.sz = sz;
+            this.center = center; this.size = size; this.life = life; this.seed = seed;
+        }
+    }
 
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
@@ -3526,6 +3554,12 @@ public class Window {
                     }
                 }
 
+                // ── DEPRIVATION DOMAIN: sliced corpses (real model → 8 flying octants) ──
+                if (depActive && !isPreloading) {
+                    renderDepCorpses(view, projection);
+                    shader.bind();   // restore the world shader for what follows
+                }
+
                 // ── Render enemy projectiles (boulders / thrown rocks) ────────────
                 if (!enemyManager.projectiles.isEmpty()) {
                     com.leaf.game.render.ModelMesh stoneModel =
@@ -5011,16 +5045,17 @@ public class Window {
         depZ = player.position.z;
         depStrike = 0f;
         depDetectTimer = 0f;
-        depAuraTimer = 0f; depAuraGlow = 0f; depRingPhase = 0f;
+        depAuraEmit = 0f; depSlashSnd = 0f;
         depTurning = false; depTurnT = 0f;
         depPrevPos.clear();
         depSlashFx.clear();
         depGibs.clear();
-        if (depCrescent == null) depCrescent = buildSlashCrescent(22);
-        if (depBlade    == null) depBlade    = buildPhantomBlade();
+        depCorpses.clear();
+        if (depCrescent  == null) depCrescent  = buildSlashCrescent(22);
+        if (depDomeWire  == null) depDomeWire  = buildDomeWire(7, 24);
         hintText  = "DEPRIVATION DOMAIN — perfect stillness, absolute death · ['] to exit";
         hintTimer = 5f;
-        // AUDIO HOOK: add your own domain-enter cue here (user-supplied).
+        AudioManager.play("field_enter", 0.9f);
         ScreenEffectManager.INSTANCE.flash(1f, 0.88f, 0.28f, 0.30f, 0.40f);
     }
 
@@ -5031,6 +5066,7 @@ public class Window {
         depPrevPos.clear();
         depSlashFx.clear();
         depGibs.clear();
+        depCorpses.clear();
         // AUDIO HOOK: add your own domain-exit cue here (user-supplied).
     }
 
@@ -5047,18 +5083,29 @@ public class Window {
             if (depTurnT >= 1f) depTurning = false;
         }
 
-        // ── Idle "ready-sword" aura: slow orbiting blade ring that pulses ────────
-        depRingPhase += dt * 0.6f;
-        depAuraGlow   = Math.max(0f, depAuraGlow - dt * 1.6f);   // decay between pulses
-        depAuraTimer += dt;
-        if (depAuraTimer >= GameConfig.depAuraInterval) {
-            depAuraTimer = 0f;
-            depAuraGlow  = Math.max(depAuraGlow, 0.85f);          // an "occasional" flare
+        // ── VIGOROUS SWORD AURA: a constant whirlwind of big slashes swooping around
+        //    you (instead of a calm orbiting ring) — the swords never rest. ─────────
+        depAuraEmit += dt;
+        float auraInterval = 0.045f;                 // ~22 slashes/sec whirling around
+        while (depAuraEmit >= auraInterval) {
+            depAuraEmit -= auraInterval;
+            spawnAuraSlash();
+        }
+        // Ambient slash swishes so the field constantly *sounds* like many blades.
+        depSlashSnd += dt;
+        if (depSlashSnd >= 0.16f) {
+            depSlashSnd = 0f;
+            AudioManager.play(SLASH_SHORT[(int)(Math.random() * SLASH_SHORT.length)],
+                              0.32f, 0.9f + (float) Math.random() * 0.3f);
         }
 
         // Age slash crescents (expand + sweep + fade)
         for (java.util.Iterator<float[]> it = depSlashFx.iterator(); it.hasNext(); ) {
             float[] s = it.next(); s[6] += dt; if (s[6] >= s[7]) it.remove();
+        }
+        // Age sliced corpses (the 8 octants scatter + dissolve fast)
+        for (java.util.Iterator<DepCorpse> it = depCorpses.iterator(); it.hasNext(); ) {
+            DepCorpse c = it.next(); c.age += dt; if (c.age >= c.life) it.remove();
         }
         // Age + integrate voxel gibs (gravity, drag, fade).
         // Gib layout: [0]x [1]y [2]z [3]vx [4]vy [5]vz [6]size [7]age [8]life
@@ -5098,12 +5145,20 @@ public class Window {
                 float moved = (float) Math.hypot(e.position.x - prev.x, e.position.z - prev.z);
                 if (moved >= minMov) {
                     float ex = e.position.x, ey = e.position.y + 1.0f, ez = e.position.z;
-                    spawnSlashBurst(ex, ey, ez, 3, 0.8f, 1.8f);  // the cut itself (bigger)
-                    spawnSliceGibs(ex, ey, ez);                  // body falls apart
+                    spawnSlashBurst(ex, ey, ez, 4, 0.8f, 1.8f);  // a flurry of cuts on the body
+                    spawnSliceGibs(ex, ey, ez);                  // blood-spark debris
+                    captureCorpse(e);                            // chop the ACTUAL model into 8
                     e.applyDamage(GameConfig.depDamage);
+                    e.hitFlashTimer = 0f;                        // suppress the normal corpse render
+                    enemyAnimPlayers.remove(e.id);
                     // Lock the head onto the victim — but let the current turn settle
                     // past halfway before snapping to a new one (avoids whiplash).
                     if (!depTurning || depTurnT > 0.5f) aimHeadAt(camera, ex, ey, ez);
+                    // Many slashes: 2 random sword cuts per kill (varied pitch) → a flurry.
+                    AudioManager.play(SLASH_ALL[(int)(Math.random() * SLASH_ALL.length)],
+                                      0.85f, 0.9f + (float) Math.random() * 0.35f);
+                    AudioManager.play(SLASH_SHORT[(int)(Math.random() * SLASH_SHORT.length)],
+                                      0.7f, 1.0f + (float) Math.random() * 0.4f);
                     struck = true;
                 }
             }
@@ -5125,16 +5180,63 @@ public class Window {
 
         // ── THE SLASH STORM — omnidirectional dome of slashes on top of the player ──
         if (struck) {
-            int n = 5 + (int) (Math.random() * 6);   // 5–10 crescents
+            int n = 6 + (int) (Math.random() * 6);   // 6–11 crescents around the player
             spawnSlashBurst(depX, depY + 1.1f, depZ, n, 1.0f, 2.0f);
-            depStrike   = Math.min(1f, depStrike + 0.6f);
-            depAuraGlow = Math.min(1f, depAuraGlow + 0.7f);   // the ready-swords flare too
-            activeShakeAmplitude = 0.08f;
+            depStrike = Math.min(1f, depStrike + 0.6f);
+            activeShakeAmplitude = 0.09f;
             activeShakeDuration  = 0.14f;
             smashShakeTimer      = Math.max(smashShakeTimer, 0.14f);
             ScreenEffectManager.INSTANCE.flash(1f, 0.90f, 0.35f, 0.25f, 0.10f);
-            // AUDIO HOOK: add your own slash / cut cue here (user-supplied).
         }
+    }
+
+    /** Spawn one big slash crescent whirling around the player (the vigorous aura). */
+    private void spawnAuraSlash() {
+        if (depSlashFx.size() > 200) return;
+        float yaw   = (float) (Math.random() * Math.PI * 2.0);
+        float pitch = (float) (Math.random() * Math.PI * 2.0);
+        float roll  = (float) (Math.random() * Math.PI * 2.0);
+        float r     = GameConfig.depRadius;
+        float s0    = 1.8f + (float) Math.random() * 1.4f;
+        float s1    = s0 + Math.max(2.0f, r * 0.5f);                 // big arcs spanning the dome
+        float life  = 0.22f + (float) Math.random() * 0.12f;        // fast
+        float sweep = (Math.random() < 0.5 ? -1f : 1f) * (2.5f + (float) Math.random() * 2.0f);
+        // Offset the centre a little off the player so the arcs swirl, not just nest.
+        float ox = (float) (Math.random() - 0.5) * r * 0.5f;
+        float oz = (float) (Math.random() - 0.5) * r * 0.5f;
+        float oy = (float) (Math.random() - 0.2) * 1.5f;
+        depSlashFx.add(new float[]{ depX + ox, depY + 1.1f + oy, depZ + oz,
+                                    yaw, pitch, roll, 0f, life, s0, s1, sweep });
+    }
+
+    /** Snapshot the enemy's posed model so it can be chopped into 8 flying octants. */
+    private void captureCorpse(com.leaf.game.entity.Enemy e) {
+        com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.get(e.id);
+        if (ap == null) return;                       // never rendered → no model to slice
+        boolean isGuardian = e.type == Enemy.Type.GUARDIAN || e.type == Enemy.Type.GOLEM;
+        com.leaf.game.anim.AnimModel model =
+                (e.type == Enemy.Type.SLIME && slimeAnimModel != null) ? slimeAnimModel
+              : (isGuardian && golemAnimModel != null) ? golemAnimModel
+              : enemyAnimModel;
+        if (model == null) return;
+        java.util.Map<String, Matrix4f> pose = ap.getPose();   // fresh owned snapshot
+
+        // Body-frame cut centre = average of the parts' positions; size = spread.
+        org.joml.Vector3f c = new org.joml.Vector3f();
+        int n = 0;
+        for (Matrix4f m : pose.values()) { c.add(m.getTranslation(new org.joml.Vector3f())); n++; }
+        if (n > 0) c.div(n);
+        float size = 0.5f;
+        for (Matrix4f m : pose.values())
+            size = Math.max(size, c.distance(m.getTranslation(new org.joml.Vector3f())));
+        size = Math.max(1.5f, size * 1.6f);
+
+        float faceY = isGuardian ? e.facingYaw
+                : (float) Math.atan2(player.position.x - e.position.x,
+                                     player.position.z - e.position.z) + (float) Math.PI;
+        float[] sv = e.renderScaleVec();
+        depCorpses.add(new DepCorpse(model, pose, e.position.x, e.position.y, e.position.z,
+                faceY, sv[0], sv[1], sv[2], c, size, 0.55f, System.nanoTime()));
     }
 
     /** Begin a smooth bezier camera turn to face a world point (the slashed victim). */
@@ -5211,9 +5313,9 @@ public class Window {
                                          Matrix4f projection, Matrix4f view,
                                          Matrix4f renderMvp) {
         if (!depActive) return;
-        if (depCrescent == null) depCrescent = buildSlashCrescent(22);
-        if (depBlade == null)    depBlade    = buildPhantomBlade();
-        if (orbCube == null)     orbCube     = orbBuildCube();
+        if (depCrescent  == null) depCrescent  = buildSlashCrescent(22);
+        if (depDomeWire  == null) depDomeWire  = buildDomeWire(7, 24);
+        if (orbCube == null)      orbCube      = orbBuildCube();
 
         Matrix4f pv = new Matrix4f(projection).mul(view);
         float tnow = (float) glfwGetTime();
@@ -5225,51 +5327,38 @@ public class Window {
         glDisable(GL_CULL_FACE);
         shader.setUniform("emissiveMode", 1);
 
-        // ── READY-SWORD AURA: a slow orbiting ring of phantom blades around you,
-        //    flaring "occasionally" (and on every strike) — you are armed in 360°. ──
-        if (depAuraGlow > 0.02f) {
-            int N = 8;
-            float ringR = GameConfig.depRadius * 0.82f;
-            for (int i = 0; i < N; i++) {
-                float th = depRingPhase + i * (float) (Math.PI * 2.0 / N);
-                float bx = depX + (float) Math.cos(th) * ringR;
-                float bz = depZ + (float) Math.sin(th) * ringR;
-                float glint = depAuraGlow * (0.55f + 0.45f * (float) Math.sin(tnow * 6.0 + i * 1.7));
-                float br = glint * 2.4f;
-                if (br <= 0.02f) continue;
-                Matrix4f m = new Matrix4f().translate(bx, depY + 0.2f, bz)
-                        .rotateY(-th + (float) (Math.PI * 0.5))   // flat face toward the player
-                        .rotateX(-0.22f)                          // lean outward, tip up-and-out
-                        .scale(1.35f);
-                orbDraw(shader, pv, depBlade, m, br * 1.3f, br * 0.95f, br * 0.30f);
-            }
-        }
+        // ── THE HALF-DOME: a glowing gold wireframe hemisphere so the field's shape
+        //    reads clearly (meridians + parallels), with a gentle shimmer. ──────────
+        float domePulse = 0.55f + 0.18f * (float) Math.sin(tnow * 2.0);
+        orbDraw(shader, pv, depDomeWire,
+                new Matrix4f().translate(depX, depY, depZ).scale(GameConfig.depRadius),
+                1.30f * domePulse, 0.95f * domePulse, 0.28f * domePulse);
 
-        // ── THE SLASH STORM: expanding + SWEEPING crescents, white-hot gold ──
+        // ── THE SLASH STORM: crescents that SNAP through their arc fast, then linger
+        //    + fade. (Fast expansion/sweep front-loaded so the cut reads as instant.) ─
         for (float[] s : depSlashFx) {
-            float f    = s[6] / s[7];                       // 0→1 over its life
-            float ease = 1f - (1f - f) * (1f - f);          // easeOut for expansion + sweep
-            float scale = s[8] + (s[9] - s[8]) * ease;
-            float rise = (f < 0.12f) ? f / 0.12f : 1f;      // snap to full brightness
-            float fall = (f > 0.55f) ? (1f - (f - 0.55f) / 0.45f) : 1f;  // then fade out
-            float br   = rise * fall * 4.5f;                // HDR — feeds the bloom
+            float f      = s[6] / s[7];                         // 0→1 over its life
+            float snap   = Math.min(1f, f / 0.18f);             // the actual slash: done in ~18%
+            float snapE  = 1f - (1f - snap) * (1f - snap);      // easeOut → very fast then settle
+            float scale  = s[8] + (s[9] - s[8]) * snapE;
+            float rise   = (f < 0.06f) ? f / 0.06f : 1f;        // appear almost instantly
+            float fall   = (f > 0.45f) ? (1f - (f - 0.45f) / 0.55f) : 1f;
+            float br     = rise * fall * 4.6f;                  // HDR — feeds the bloom
             if (br <= 0.01f) continue;
             Matrix4f m = new Matrix4f().translate(s[0], s[1], s[2])
-                    .rotateY(s[3]).rotateX(s[4]).rotateZ(s[5] + s[10] * ease)  // sweep through the arc
+                    .rotateY(s[3]).rotateX(s[4]).rotateZ(s[5] + s[10] * snapE)  // snap through the arc
                     .scale(scale);
-            orbDraw(shader, pv, depCrescent, m, br * 1.35f, br * 1.0f, br * 0.32f);
+            // Crimson-white blade so it pops off the gold dome.
+            orbDraw(shader, pv, depCrescent, m, br * 1.3f, br * 0.55f, br * 0.30f);
         }
 
-        // ── VOXEL GIBS: sliced bodies, white-hot gold → charred ──────────────
+        // ── BLOOD-SPARK GIBS (small, fast) ───────────────────────────────────
         for (float[] g : depGibs) {
-            float f   = g[7] / g[8];                         // age / life
-            float hot = 1f - f;                              // 1 fresh → 0 cold
-            float r  = 2.6f * hot + 0.14f;                   // searing gold → dark char
-            float gg = 2.0f * hot + 0.11f;
-            float b  = 0.7f * hot + 0.09f;
+            float f   = g[7] / g[8];
+            float hot = 1f - f;
             orbDraw(shader, pv, orbCube,
                     new Matrix4f().translate(g[0], g[1], g[2]).scale(g[6]),
-                    r, gg, b);
+                    2.6f * hot + 0.12f, 0.7f * hot + 0.05f, 0.25f * hot + 0.04f);  // blood red→dark
         }
 
         // Restore GL state — IMPORTANT: leave GL_CULL_FACE DISABLED (terrain needs it off;
@@ -5281,6 +5370,137 @@ public class Window {
         glDepthMask(true);
         glDisable(GL_CULL_FACE);
         glDisable(GL_BLEND);
+    }
+
+    /**
+     * Render every sliced corpse as 8 octants of the REAL enemy model, scattering
+     * outward (大卸八块 → 四散) and dissolving fast. Uses the model shader, so this is
+     * called from the enemy render section (NOT inside renderDeprivationDomain).
+     */
+    private void renderDepCorpses(Matrix4f view, Matrix4f projection) {
+        if (depCorpses.isEmpty()) return;
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);   // dissolve fade
+        for (DepCorpse c : depCorpses) {
+            float f = c.age / c.life;
+            float sliceAlpha = 1f - f * f;                   // hang briefly, then dissolve fast
+            if (sliceAlpha <= 0.02f) continue;
+            float ease = 1f - (1f - f) * (1f - f);
+            float sep  = c.size * 1.4f * ease;               // scatter distance (body units)
+            float drop = c.size * 0.9f * f * f;              // gravity pull (body units)
+            Matrix4f worldMat = new Matrix4f()
+                    .translate(c.px, c.py, c.pz).rotateY(c.faceY).scale(c.sx, c.sy, c.sz);
+            java.util.Random rng = new java.util.Random(c.seed);
+            for (int sgx = -1; sgx <= 1; sgx += 2)
+            for (int sgy = -1; sgy <= 1; sgy += 2)
+            for (int sgz = -1; sgz <= 1; sgz += 2) {
+                org.joml.Vector3f sign = new org.joml.Vector3f(sgx, sgy, sgz);
+                org.joml.Vector3f dir  = new org.joml.Vector3f(sgx, sgy, sgz).normalize();
+                float spin = (rng.nextFloat() * 2f - 1f) * 7f;
+                float tumble = spin * c.age;
+                Matrix4f bodyFly = new Matrix4f()
+                        .translate(dir.x * sep, dir.y * sep - drop, dir.z * sep)
+                        .translate(c.center.x, c.center.y, c.center.z)
+                        .rotateY(tumble).rotateX(tumble * 0.6f)
+                        .translate(-c.center.x, -c.center.y, -c.center.z);
+                com.leaf.game.anim.ModelRenderer.renderSliced(
+                        c.model, c.pose, worldMat, bodyFly, view, projection,
+                        c.center, sign, sliceAlpha);
+            }
+        }
+        glDisable(GL_BLEND);
+    }
+
+    /**
+     * Build a glowing wireframe half-dome (unit radius, base at y=0, pole at y=1):
+     * {@code meridians} vertical arcs + {@code rings} horizontal parallels, each a
+     * thin gold ribbon lying ON the dome surface so the hemisphere shape reads from
+     * inside. Brighter near the base. (10 floats/vertex; drawn additive + emissive.)
+     */
+    private com.leaf.game.render.Mesh buildDomeWire(int rings, int meridians) {
+        java.util.ArrayList<Float>   vl = new java.util.ArrayList<>(4096);
+        java.util.ArrayList<Integer> il = new java.util.ArrayList<>(4096);
+        final float hw = 0.014f;          // ribbon half-width on the unit sphere
+        final float HALF = (float) (Math.PI * 0.5);
+
+        // Meridians: arcs from base (phi=0) to pole (phi=HALF) at fixed azimuth.
+        int segM = 18;
+        for (int m = 0; m < meridians; m++) {
+            float theta = (float) (2 * Math.PI * m / meridians);
+            float ct = (float) Math.cos(theta), st = (float) Math.sin(theta);
+            float wx = -st, wz = ct;       // azimuthal tangent (ribbon width dir, constant)
+            for (int s = 0; s < segM; s++) {
+                addDomeQuad(vl, il, theta, ct, st, wx, 0f, wz, hw,
+                        HALF * s / segM, HALF * (s + 1) / segM, true);
+            }
+        }
+        // Parallels: rings at several latitudes (skip the very pole).
+        int segR = meridians * 2;
+        for (int k = 0; k < rings; k++) {
+            float phi = HALF * k / rings;   // base … near pole
+            float cp = (float) Math.cos(phi), sp = (float) Math.sin(phi);
+            for (int s = 0; s < segR; s++) {
+                float t0 = (float) (2 * Math.PI * s / segR);
+                float t1 = (float) (2 * Math.PI * (s + 1) / segR);
+                addDomeRingQuad(vl, il, cp, sp, t0, t1, hw, phi);
+            }
+        }
+        float[] va = new float[vl.size()];
+        for (int i = 0; i < va.length; i++) va[i] = vl.get(i);
+        int[] ia = new int[il.size()];
+        for (int i = 0; i < ia.length; i++) ia[i] = il.get(i);
+        return new com.leaf.game.render.Mesh(va, ia);
+    }
+
+    /** One quad segment of a meridian ribbon between two latitudes (phi0..phi1). */
+    private static void addDomeQuad(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                    float theta, float ct, float st, float wx, float wy, float wz,
+                                    float hw, float phi0, float phi1, boolean meridian) {
+        float c0 = (float) Math.cos(phi0), s0 = (float) Math.sin(phi0);
+        float c1 = (float) Math.cos(phi1), s1 = (float) Math.sin(phi1);
+        float[] p0 = { c0 * ct, s0, c0 * st };
+        float[] p1 = { c1 * ct, s1, c1 * st };
+        float b0 = 0.45f + 0.55f * (1f - phi0 / (float)(Math.PI * 0.5));   // brighter at base
+        float b1 = 0.45f + 0.55f * (1f - phi1 / (float)(Math.PI * 0.5));
+        domePush(vl, il,
+            p0[0]+wx*hw, p0[1]+wy*hw, p0[2]+wz*hw,
+            p1[0]+wx*hw, p1[1]+wy*hw, p1[2]+wz*hw,
+            p1[0]-wx*hw, p1[1]-wy*hw, p1[2]-wz*hw,
+            p0[0]-wx*hw, p0[1]-wy*hw, p0[2]-wz*hw, b0, b1);
+    }
+
+    /** One quad segment of a parallel ring between two azimuths (t0..t1) at latitude phi. */
+    private static void addDomeRingQuad(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                        float cp, float sp, float t0, float t1, float hw, float phi) {
+        float ct0 = (float) Math.cos(t0), st0 = (float) Math.sin(t0);
+        float ct1 = (float) Math.cos(t1), st1 = (float) Math.sin(t1);
+        // width dir = toward the pole (d/dphi), per endpoint
+        float w0x = -sp*ct0, w0y = cp, w0z = -sp*st0;
+        float w1x = -sp*ct1, w1y = cp, w1z = -sp*st1;
+        float[] p0 = { cp*ct0, sp, cp*st0 };
+        float[] p1 = { cp*ct1, sp, cp*st1 };
+        float b = 0.45f + 0.55f * (1f - phi / (float)(Math.PI * 0.5));
+        domePush(vl, il,
+            p0[0]+w0x*hw, p0[1]+w0y*hw, p0[2]+w0z*hw,
+            p1[0]+w1x*hw, p1[1]+w1y*hw, p1[2]+w1z*hw,
+            p1[0]-w1x*hw, p1[1]-w1y*hw, p1[2]-w1z*hw,
+            p0[0]-w0x*hw, p0[1]-w0y*hw, p0[2]-w0z*hw, b, b);
+    }
+
+    /** Push one dome ribbon quad (4 verts, white×brightness; normal = radial-ish). */
+    private static void domePush(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                 float ax,float ay,float az, float bx,float by,float bz,
+                                 float cx,float cy,float cz, float dx,float dy,float dz,
+                                 float br0, float br1) {
+        int base = vl.size() / 10;
+        float[][] P = {{ax,ay,az,br0},{bx,by,bz,br1},{cx,cy,cz,br1},{dx,dy,dz,br0}};
+        for (float[] p : P) {
+            vl.add(p[0]); vl.add(p[1]); vl.add(p[2]);
+            vl.add(p[3]); vl.add(p[3]); vl.add(p[3]); vl.add(1f);  // white × brightness
+            vl.add(p[0]); vl.add(p[1]); vl.add(p[2]);               // radial normal
+        }
+        il.add(base); il.add(base+1); il.add(base+2);
+        il.add(base); il.add(base+2); il.add(base+3);
     }
 
     /**

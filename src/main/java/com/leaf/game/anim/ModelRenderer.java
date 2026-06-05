@@ -122,7 +122,7 @@ public class ModelRenderer {
     public static void renderSliced(AnimModel model, Map<String, Matrix4f> pose,
                                     Matrix4f worldMat, Matrix4f bodyFly,
                                     Matrix4f view, Matrix4f projection,
-                                    Vector3f cutNormal, float cutOffset, float cutSide,
+                                    Vector3f cutCenter, Vector3f cutSign,
                                     float sliceAlpha) {
         if (shader == null) return;
         shader.bind();
@@ -132,9 +132,8 @@ public class ModelRenderer {
         shader.setUniform("tintAmt", 0f);
         shader.setUniform("glow", 1f);
         shader.setUniform("cutActive", 1);
-        shader.setUniform("cutNormal", cutNormal);
-        shader.setUniform("cutOffset", cutOffset);
-        shader.setUniform("cutSide", cutSide);
+        shader.setUniform("cutCenter", cutCenter);
+        shader.setUniform("cutSign", cutSign);
         shader.setUniform("sliceAlpha", sliceAlpha);
 
         glEnable(GL_DEPTH_TEST);

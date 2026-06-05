@@ -9,14 +9,13 @@ out vec4 FragColor;
 uniform vec3  lightDir;   // normalized world-space light direction
 uniform float ambient;    // 0..1
 
-// ── SLICE: cut the model along a body-local plane (Deprivation Domain) ─────────
-// cutActive=1 discards fragments on the wrong side of the plane; the freshly
-// exposed cut surface glows molten white-gold. cutNormal/cutOffset define the
-// plane (body frame); cutSide (+1/-1) selects the half; sliceAlpha fades it out.
+// ── SLICE: chop the model into one OCTANT (Deprivation Domain "大卸八块") ───────
+// cutActive=1 keeps only the body-local octant selected by cutSign (each comp ±1)
+// relative to cutCenter — 3 axis planes → 8 pieces. Freshly-exposed inner faces
+// sear molten white-gold; sliceAlpha fades the piece as it dissolves.
 uniform int   cutActive;
-uniform vec3  cutNormal;
-uniform float cutOffset;
-uniform float cutSide;
+uniform vec3  cutCenter;   // body-frame centre the 3 cut planes pass through
+uniform vec3  cutSign;     // (±1,±1,±1) → which of the 8 octants this draw keeps
 uniform float sliceAlpha;
 
 // Texture sampling: set useTexture = 1 and bind a texture to unit 0 to draw the
@@ -45,11 +44,14 @@ void main() {
 
     float outA = base.a;
     if (cutActive == 1) {
-        float sd = dot(vClipPos, cutNormal) - cutOffset;   // signed distance to cut plane
-        if (sd * cutSide < 0.0) discard;                    // drop the wrong half
-        // Molten cut surface: the exposed inner face sears white-hot gold, then chars.
-        float face = 1.0 - smoothstep(0.0, 1.4, abs(sd));
-        rgb = mix(rgb, vec3(3.4, 2.4, 0.8), face * sliceAlpha);
+        vec3 rel = (vClipPos - cutCenter) * cutSign;        // >0 on the kept side of each plane
+        if (rel.x < 0.0 || rel.y < 0.0 || rel.z < 0.0) discard;  // outside this octant
+        // Molten cut surfaces: glow where this fragment hugs any of the 3 cut planes.
+        vec3 dd  = abs(vClipPos - cutCenter);
+        float face = max(max(1.0 - smoothstep(0.0, 1.2, dd.x),
+                             1.0 - smoothstep(0.0, 1.2, dd.y)),
+                             1.0 - smoothstep(0.0, 1.2, dd.z));
+        rgb = mix(rgb, vec3(3.6, 2.5, 0.85), face * sliceAlpha);
         outA *= sliceAlpha;
     }
     FragColor = vec4(rgb, outA);
