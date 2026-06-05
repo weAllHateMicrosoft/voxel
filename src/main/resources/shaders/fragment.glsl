@@ -44,6 +44,13 @@ uniform float depRadius;      // domain detection + visual radius (blocks)
 uniform float depStrike;      // 0→1 strike flash intensity (decays ~6×/sec)
 uniform float depSweep;       // current radius of the repeating detection sweep ring
 
+// ── DEPRIVATION DOME force-field: a hex energy shield rendered on a solid
+//    hemisphere. domeMode==1 ⇒ ignore lighting and output the field pattern. ──
+uniform int   domeMode;       // 1 = drawing the force-field hemisphere
+uniform vec3  domeCenter;     // hemisphere centre (player feet)
+uniform float domeTime;       // animation clock (seconds)
+uniform vec3  camPos;         // camera world position (for the fresnel rim)
+
 // ── TEXTURE SAMPLING ──────────────────────────────────────────────────────────
 // Set useTexture = 1 and bind a texture to unit 0 to enable texture sampling.
 // Set useTexture = 0 (default) to use pure vertex colour — all existing Mesh
@@ -91,6 +98,32 @@ uniform vec3 emissiveTint;   // per-object colour × intensity (additive-bloomed
 out vec4 FragColor;
 
 void main() {
+    // ── DEPRIVATION DOME force-field (hex energy shield) ──────────────────────
+    if (domeMode == 1) {
+        vec3 nrm     = normalize(vWorldPos - domeCenter);
+        vec3 viewDir = normalize(camPos - vWorldPos);
+        float fres   = pow(1.0 - abs(dot(nrm, viewDir)), 3.0);   // bright at the silhouette rim
+
+        // Hex grid in (azimuth, latitude) space, scrolling upward (flowing energy).
+        float u = atan(nrm.z, nrm.x);
+        float v = acos(clamp(nrm.y, -1.0, 1.0));                 // 0 pole → ~π/2 base
+        vec2  huv = vec2(u * 3.0, (v - domeTime * 0.15) * 6.0);
+        vec2  rr = vec2(1.0, 1.7320508);
+        vec2  hh = rr * 0.5;
+        vec2  pa = mod(huv, rr) - hh;
+        vec2  pb = mod(huv - hh, rr) - hh;
+        vec2  gv = dot(pa, pa) < dot(pb, pb) ? pa : pb;
+        vec2  ag = abs(gv);
+        float hd = max(dot(ag, normalize(vec2(1.0, 1.7320508))), ag.x);  // 0 centre → ~0.5 edge
+        float edge = smoothstep(0.40, 0.50, hd);                 // glowing hex-cell borders
+
+        float pulse = 0.5 + 0.5 * sin(v * 8.0 - domeTime * 2.5); // energy wave rising up the dome
+        vec3  gold  = vec3(1.5, 1.05, 0.35);
+        float bright = fres * 1.7 + edge * (0.45 + 0.75 * pulse) + 0.04 + depStrike * 1.2;
+        FragColor = vec4(gold * bright, 1.0);
+        return;
+    }
+
     // ── FBO PORTAL PASSTHROUGH ────────────────────────────────────────────────
     if (portalMode == 1) {
         vec2 screenUV = gl_FragCoord.xy / viewportSize;

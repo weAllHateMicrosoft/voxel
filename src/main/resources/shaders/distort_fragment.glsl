@@ -8,8 +8,26 @@ uniform float     kamuiCharge;       // 0 = idle Kamui, 1 = full absorption char
 uniform vec2      absorptionPos;     // normalised screen [0,1] of absorption target
 uniform float     aspectRatio;       // screenW / screenH
 
+// Quantum Bullet: a localised ripple that WARPS the wall texture where a phasing
+// bullet passes through (0 = off). qbCenter = bullet's screen UV.
+uniform float     qbStrength;
+uniform vec2      qbCenter;
+
 void main() {
     vec2 uv = TexCoord;
+
+    // ── QUANTUM SURFACE WARP — ripple the screen (the wall texture) around the
+    //    phasing bullet, then return (no Kamui colour grade). ──────────────────
+    if (qbStrength > 0.001) {
+        vec2  d    = uv - qbCenter;  d.x *= aspectRatio;
+        float dist = length(d);
+        float rip  = sin(dist * 55.0 - time * 20.0) * exp(-dist * 9.0);
+        float fade = smoothstep(0.45, 0.0, dist);
+        vec2  dir  = d / max(dist, 1e-4);  dir.x /= aspectRatio;
+        vec2  wuv  = clamp(uv + dir * rip * qbStrength * 0.06 * fade, 0.001, 0.999);
+        FragColor = texture(screenTexture, wuv);
+        return;
+    }
 
     // ── Absorption vortex (ONLY while actively charging absorption) ──────────
     // When the player holds LMB to absorb an enemy, the scene spirals and is

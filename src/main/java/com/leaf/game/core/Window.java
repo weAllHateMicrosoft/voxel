@@ -531,6 +531,8 @@ public class Window {
     private com.leaf.game.render.Mesh depBlade = null;
     /** Glowing wireframe half-dome (meridians + parallels) so the field's shape reads. */
     private com.leaf.game.render.Mesh depDomeWire = null;
+    /** Solid hemisphere for the hex force-field shader (domeMode). */
+    private com.leaf.game.render.Mesh depDomeSolid = null;
     private float   depAuraEmit  = 0f;   // emit timer for the vigorous slash aura
     private float   depSlashSnd  = 0f;   // timer for ambient slash swishes
     // ── Sliced corpses: the actual enemy model chopped into 8 octants that scatter ──
@@ -599,6 +601,9 @@ public class Window {
     private final java.util.ArrayList<QBullet> qbBullets = new java.util.ArrayList<>();
     private boolean lastQuantum = false;
     private float   qbCooldown  = 0f;
+    // Screen-space surface warp (distort pass) while a bullet is inside a wall.
+    private float qbWarpStrength = 0f;
+    private float qbWarpX, qbWarpY, qbWarpZ;          // warp-centre world pos (projected at blit)
 
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
@@ -2764,7 +2769,8 @@ public class Window {
                     updateFx(rawDeltaTime);   // age shared ability VFX
 
                     // ── QUANTUM BULLET (',' key) — fire a phasing bullet ─────────
-                    qbCooldown = Math.max(0f, qbCooldown - rawDeltaTime);
+                    qbCooldown     = Math.max(0f, qbCooldown - rawDeltaTime);
+                    qbWarpStrength = Math.max(0f, qbWarpStrength - rawDeltaTime * 3f);  // warp fades after exiting a wall
                     boolean quantumNow = glfwGetKey(window, KeyBindings.QUANTUM_BULLET) == GLFW_PRESS;
                     if (quantumNow && !lastQuantum && qbCooldown <= 0f && !player.debugMode) {
                         Vector3f d = camera.getLookDirection();
@@ -2882,7 +2888,9 @@ public class Window {
             boolean doStoneBloom = isChargingStoneCanon && !isPreloading && bloomShader != null;
             boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom
                     || doFxBloom || doStoneBloom;
-            boolean useSceneFbo = doKamuiDistort || doBloom;
+            // Quantum Bullet's surface warp routes the scene through the distort pass.
+            boolean doQuantumWarp = qbWarpStrength > 0.01f && distortShader != null && !isPreloading;
+            boolean useSceneFbo = doKamuiDistort || doBloom || doQuantumWarp;
             if (useSceneFbo) {
                 // Recreate the FBO whenever the window is resized or on first use
                 // CRITICAL FIX: Use physical framebuffer size (fw, fh) for FBO on Retina/High-DPI displays!
@@ -2996,6 +3004,8 @@ public class Window {
                         (int) Math.floor(camera.position.z)).isLiquid();
                 shader.setUniform("isUnderwater", isCameraUnderwater ? 1 : 0);
                 shader.setUniform("cameraY", camera.position.y);
+                shader.setUniform("camPos", new Vector3f(camera.position.x, camera.position.y, camera.position.z));
+                shader.setUniform("domeMode", 0);   // default off; the dome draw flips it on
 
                 // ── SNOW BIOME ATMOSPHERE ─────────────────────────────────────
                 // Fades in as the player climbs into snow-mountain altitude.
@@ -3837,6 +3847,7 @@ public class Window {
                             player.abilities.absorptionScrY / Math.max(1, wh[0]));
                     distortShader.setUniform("aspectRatio",
                             (float) ww[0] / Math.max(1, wh[0]));
+                    distortShader.setUniform("qbStrength", 0f);   // kamui, not a quantum warp
 
                     org.lwjgl.opengl.GL13.glActiveTexture(
                             org.lwjgl.opengl.GL13.GL_TEXTURE0);
@@ -3849,6 +3860,37 @@ public class Window {
                     org.lwjgl.opengl.GL30.glBindVertexArray(0);
                     glEnable(GL_DEPTH_TEST);
 
+                    distortShader.unbind();
+                } else if (doQuantumWarp) {
+                    // ── QUANTUM SURFACE WARP — ripple the wall texture (the scene)
+                    //    around the phasing bullet's screen position. ──────────────
+                    org.lwjgl.opengl.GL30.glBindFramebuffer(
+                            org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
+                    glClear(GL_COLOR_BUFFER_BIT);
+
+                    org.joml.Vector4f clip = new Matrix4f(projection).mul(view)
+                            .transform(new org.joml.Vector4f(qbWarpX, qbWarpY, qbWarpZ, 1f));
+                    float sx = 0.5f, sy = 0.5f;
+                    if (clip.w > 1e-4f) {
+                        sx = (clip.x / clip.w) * 0.5f + 0.5f;
+                        sy = (clip.y / clip.w) * 0.5f + 0.5f;
+                    }
+                    distortShader.bind();
+                    distortShader.setUniform("screenTexture", 0);
+                    distortShader.setUniform("time", (float) glfwGetTime());
+                    distortShader.setUniform("kamuiCharge", 0f);
+                    distortShader.setUniform("aspectRatio", (float) ww[0] / Math.max(1, wh[0]));
+                    distortShader.setUniform("qbStrength", Math.min(1f, qbWarpStrength));
+                    distortShader.setUniform("qbCenter", sx, sy);
+
+                    org.lwjgl.opengl.GL13.glActiveTexture(org.lwjgl.opengl.GL13.GL_TEXTURE0);
+                    org.lwjgl.opengl.GL11.glBindTexture(
+                            org.lwjgl.opengl.GL11.GL_TEXTURE_2D, kamuiFboTex);
+                    glDisable(GL_DEPTH_TEST);
+                    org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
+                    glDrawArrays(GL_TRIANGLES, 0, 6);
+                    org.lwjgl.opengl.GL30.glBindVertexArray(0);
+                    glEnable(GL_DEPTH_TEST);
                     distortShader.unbind();
                 } else if (doBloom) {
                     // ── SEARING-BLOOM POST-PROCESS (orbital strike OR radar) ──
@@ -5454,27 +5496,17 @@ public class Window {
         glDisable(GL_CULL_FACE);
         shader.setUniform("emissiveMode", 1);
 
-        // ── THE HALF-DOME: a glowing, WOVEN gold cage (undulating, not straight)
-        //    with energy washing up it — so the shape reads and feels alive. ────────
-        float domePulse = 0.55f + 0.18f * (float) Math.sin(tnow * 2.0);
+        // ── THE HALF-DOME: a hex ENERGY-FIELD shield (shader pattern, not lines) —
+        //    glowing hex cells + a fresnel silhouette rim + energy flowing upward. ──
+        if (depDomeSolid == null) depDomeSolid = buildSolidHemisphere(40, 64);
         float domR = GameConfig.depRadius;
-        orbDraw(shader, pv, depDomeWire,
-                new Matrix4f().translate(depX, depY, depZ).scale(domR),
-                1.10f * domePulse, 0.80f * domePulse, 0.24f * domePulse);
-        // Flowing energy: 3 bright bands of light rise up the dome on repeat.
-        if (orbTorus == null) orbTorus = orbBuildTorus(0.05f, 72, 8);
-        final float HALF = (float) (Math.PI * 0.5);
-        for (int k = 0; k < 3; k++) {
-            float t  = ((tnow * 0.45f + k / 3f) % 1f);     // 0→1, staggered, repeating
-            float phi = t * HALF;                          // base → pole
-            float r   = (float) Math.cos(phi) * domR;      // ring radius at that latitude
-            float yy  = (float) Math.sin(phi) * domR;
-            float br  = (1f - t) * (t < 0.12f ? t / 0.12f : 1f) * 2.6f;  // fade in then out as it climbs
-            if (br <= 0.02f) continue;
-            orbDraw(shader, pv, orbTorus,
-                    new Matrix4f().translate(depX, depY + yy, depZ).scale(r, Math.max(0.15f, r * 0.04f), r),
-                    1.5f * br, 1.1f * br, 0.3f * br);
-        }
+        shader.setUniform("domeMode", 1);
+        shader.setUniform("domeCenter", new Vector3f(depX, depY, depZ));
+        shader.setUniform("domeTime", tnow);
+        shader.setUniform("mvp", new Matrix4f(pv)
+                .mul(new Matrix4f().translate(depX, depY, depZ).scale(domR)));
+        depDomeSolid.render();
+        shader.setUniform("domeMode", 0);     // back to normal emissive for the rest
 
         // ── THE SLASH STORM: crescents that SNAP through their arc fast, then linger
         //    + fade. (Fast expansion/sweep front-loaded so the cut reads as instant.) ─
@@ -5570,19 +5602,18 @@ public class Window {
                 boolean solid = world.getBlock((int) Math.floor(b.pos.x),
                         (int) Math.floor(b.pos.y), (int) Math.floor(b.pos.z)).isSolid();
                 if (solid != b.wasSolid) {
-                    // Crossed a surface → a 3D space-warp: a TRAIN of concentric rings
-                    // rippling outward on the wall + a warp bubble bulging through it.
-                    org.joml.Vector3f n = new org.joml.Vector3f(b.vel).normalize();
-                    for (int k = 0; k < 4; k++) {
-                        float r0 = 0.15f + k * 0.6f;       // staggered start radii → concentric ripple
-                        float br = 1.6f - k * 0.3f;
-                        fxRingN(b.pos.x, b.pos.y, b.pos.z, n.x, n.y, n.z,
-                                r0, r0 + 3.0f, 0.40f + k * 0.05f, 0.4f * br, 1.4f * br, 2.4f * br);
-                    }
-                    // Warp bubble — a sphere bulging out of the wall (the "space distortion").
-                    fxBurst(b.pos.x, b.pos.y, b.pos.z, 0.3f, 2.4f, 0.35f, 0.35f, 1.1f, 2.0f);
+                    // Crossed a surface — kick the screen-space WARP (handled in the
+                    // distort pass) so the wall's texture itself ripples as we phase
+                    // through it. No spell-like rings.
+                    qbWarpStrength = 1f;
                     b.wasSolid = solid;
                 }
+            }
+            // Keep the warp strong the whole time the bullet is buried in a wall.
+            if (world.getBlock((int) Math.floor(b.pos.x), (int) Math.floor(b.pos.y),
+                    (int) Math.floor(b.pos.z)).isSolid()) {
+                qbWarpStrength = 1f;
+                qbWarpX = b.pos.x; qbWarpY = b.pos.y; qbWarpZ = b.pos.z;      // world pos; projected at blit
             }
             if (enemyManager != null) {
                 for (com.leaf.game.entity.Enemy e : enemyManager.getEnemies()) {
@@ -5917,6 +5948,31 @@ public class Window {
         int[] ia = new int[il.size()];
         for (int i = 0; i < ia.length; i++) ia[i] = il.get(i);
         return new com.leaf.game.render.Mesh(va, ia);
+    }
+
+    /** Solid upper hemisphere (radius 1, base y=0 → pole y=1), outward normals. */
+    private com.leaf.game.render.Mesh buildSolidHemisphere(int rings, int sectors) {
+        int vc = (rings + 1) * (sectors + 1);
+        float[] v = new float[vc * 10];
+        int vi = 0;
+        for (int i = 0; i <= rings; i++) {
+            double lat = (Math.PI * 0.5) * i / rings;     // 0 base → π/2 pole
+            float y = (float) Math.sin(lat), rr = (float) Math.cos(lat);
+            for (int j = 0; j <= sectors; j++) {
+                double lon = 2 * Math.PI * j / sectors;
+                float x = rr * (float) Math.cos(lon), z = rr * (float) Math.sin(lon);
+                int o = (vi++) * 10;
+                v[o]=x; v[o+1]=y; v[o+2]=z;  v[o+3]=1; v[o+4]=1; v[o+5]=1; v[o+6]=1;  v[o+7]=x; v[o+8]=y; v[o+9]=z;
+            }
+        }
+        int[] idx = new int[rings * sectors * 6];
+        int ii = 0, stride = sectors + 1;
+        for (int i = 0; i < rings; i++)
+            for (int j = 0; j < sectors; j++) {
+                int a = i*stride+j, b = a+stride;
+                idx[ii++]=a; idx[ii++]=b; idx[ii++]=a+1; idx[ii++]=a+1; idx[ii++]=b; idx[ii++]=b+1;
+            }
+        return new com.leaf.game.render.Mesh(v, idx);
     }
 
     /** A crossed-ribbon tube between two unit-sphere points A,B (visible from any angle). */
