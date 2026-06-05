@@ -2761,6 +2761,15 @@ public class Window {
                     }
                     lastSealFlash = sfNow;
 
+                    // ── LIGHTNING STRIKE VFX: 3D drama once per fresh bolt ────────
+                    for (com.leaf.game.entity.LightningController.LightningBolt lb
+                            : player.lightning.activeBolts) {
+                        if (!lb.fxSpawned) {
+                            lb.fxSpawned = true;
+                            fxLightningStrike(lb.worldTarget.x, lb.worldTarget.y, lb.worldTarget.z);
+                        }
+                    }
+
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -5494,9 +5503,10 @@ public class Window {
         fxList.add(e);
     }
     private void fxBolt(float x, float y, float z, float dx, float dy, float dz,
-                        float len, float life, float r, float g, float b) {
+                        float len, float thick, float life, float r, float g, float b) {
         Fx e = new Fx(FX_BOLT, x, y, z);
-        e.dx = dx; e.dy = dy; e.dz = dz; e.s0 = len; e.life = life; e.r = r; e.g = g; e.b = b;
+        e.dx = dx; e.dy = dy; e.dz = dz; e.s0 = len; e.s1 = thick;
+        e.life = life; e.r = r; e.g = g; e.b = b;
         fxList.add(e);
     }
 
@@ -5506,11 +5516,41 @@ public class Window {
         }
     }
 
+    /**
+     * Vivid 3D lightning strike at (x,y,z): a thick neon shaft descending from a
+     * dark sky-ring "portal", a blinding white-violet impact eruption, ground
+     * shockwaves, and chaotic branching tendrils. Layered over the 2D bolt.
+     */
+    private void fxLightningStrike(float x, float y, float z) {
+        // Main shaft — thick electric-blue body with a white-hot core.
+        fxBolt(x, y, z, 0f, 1f, 0f, 44f, 0.55f, 0.42f, 1.5f, 2.2f, 3.9f);  // blue body
+        fxBolt(x, y, z, 0f, 1f, 0f, 44f, 0.22f, 0.42f, 3.4f, 3.4f, 3.6f);  // white core
+        // Sky-ring portal/lens high above, from which the bolt descends.
+        fxRing(x, y + 40f, z, 5.0f, 7.5f, 0.55f, 1.4f, 0.5f, 2.8f);        // violet ring
+        // Blinding impact eruption + ground shockwaves.
+        fxBurst(x, y + 0.6f, z, 0.6f, 5.5f, 0.34f, 2.2f, 1.6f, 3.6f);      // white-violet flash
+        fxRing(x, y + 0.1f, z, 1f, 10f, 0.42f, 1.3f, 1.7f, 3.5f);
+        fxRing(x, y + 0.1f, z, 1f, 6f,  0.30f, 2.4f, 1.4f, 3.2f);
+        // Chaotic branching tendrils lashing out from the impact.
+        for (int i = 0; i < 6; i++) {
+            float a = (float) (Math.random() * Math.PI * 2.0);
+            float spread = 0.5f + (float) Math.random() * 0.5f;
+            float dx = (float) Math.cos(a) * spread, dz = (float) Math.sin(a) * spread;
+            float dy = 0.6f + (float) Math.random() * 0.7f;
+            float len = 4f + (float) Math.random() * 5f;
+            fxBolt(x, y + 0.5f + (float) Math.random() * 2f, z, dx, dy, dz, len, 0.12f, 0.28f,
+                    2.2f, 1.2f, 3.4f);   // violet-white tendrils
+        }
+        smashShakeTimer = Math.max(smashShakeTimer, 0.2f);
+        activeShakeAmplitude = 0.16f; activeShakeDuration = 0.22f;
+        ScreenEffectManager.INSTANCE.flash(0.7f, 0.6f, 1.0f, 0.4f, 0.18f);
+    }
+
     /** A vivid blue-white teleport burst: implosion-ish ring + flash + light column. */
     private void fxTeleport(float x, float y, float z) {
         fxBurst(x, y + 1.0f, z, 0.4f, 3.0f, 0.30f, 1.2f, 1.9f, 3.4f);   // blue-white flash
         fxRing(x, y + 0.1f, z, 0.5f, 5.0f, 0.34f, 1.0f, 1.7f, 3.2f);    // expanding ground ring
-        fxBolt(x, y, z, 0f, 1f, 0f, 6.5f, 0.26f, 1.5f, 2.1f, 3.4f);     // vertical light pillar
+        fxBolt(x, y, z, 0f, 1f, 0f, 6.5f, 0.18f, 0.26f, 1.5f, 2.1f, 3.4f);  // vertical light pillar
         AudioManager.play("teleport", 0.7f, 0.95f + (float) Math.random() * 0.2f);
     }
 
@@ -5568,9 +5608,10 @@ public class Window {
                 case FX_BOLT: {
                     float br = (f < 0.3f ? 1f : 1f - (f - 0.3f) / 0.7f) * 4.0f;
                     if (br <= 0.01f) break;
-                    float jitter = 1f + 0.12f * (float) Math.sin(glfwGetTime() * 60.0 + e.x);
+                    float thick = e.s1 > 0f ? e.s1 : 0.10f;
+                    float jitter = 1f + 0.30f * (float) Math.sin(glfwGetTime() * 55.0 + e.x * 3.1);
                     orbDraw(shader, pv, orbCyl,
-                            cylAlong(e.x, e.y, e.z, e.dx, e.dy, e.dz, e.s0, 0.10f * jitter),
+                            cylAlong(e.x, e.y, e.z, e.dx, e.dy, e.dz, e.s0, thick * jitter),
                             e.r * br, e.g * br, e.b * br);
                     break;
                 }
