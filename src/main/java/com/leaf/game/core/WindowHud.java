@@ -1808,8 +1808,13 @@ class WindowHud {
         helpRow("[ESC]", "Open the pause menu.");
         helpRow("[F1]", "This screen.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
-        helpRow("[F5]", "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel  -  impossible geometry via FBO portal rendering.");
-        helpRow("[F6]", "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways  -  two are hidden portals that loop you back to the start.");
+        helpRow("[']",  "'Deprivation Domain' — Water God Stance (testing). Tap ['] to lock yourself in place in a silent standoff. The world inside the " + (int)GameConfig.depRadius + "-block domain tints gold and hyper-real; outside turns cool and distant. The instant ANY enemy or projectile moves inside, a chaotic 'slash storm' of anime sword-crescents erupts around you in every direction (a 360° dome of light-speed swings) and the victim bursts apart into white-hot voxel chunks that char as they fall. Stand perfectly still and let the horde shred itself. Lasts " + (int)GameConfig.depDuration + " s; press ['] again to exit. Tune via GameConfig (dep*). Inspired by Mushoku Tensei's Deprivation Field + Soul Knight's AoE sweeps.");
+        helpRow("[K]",  "'Chocolate Disco' grid (testing). Aim at the ground and press K to spawn a 9×9 glowing geometry grid. LMB marks/unmarks a cell (the cell becomes a gold wireframe box). Press K again to DETONATE all marked cells — white-hot light sears from the wireframe edges, a column of light shoots skyward, and all blocks/enemies inside are destroyed. Press K with nothing marked to dismiss the grid. Grid is horizontal and always visible through terrain.");
+        helpRow("[F5]", "Warp to the 'Canyon' (testing). Teleports you to a warm mesa region (banded terracotta cliffs, arches, turquoise pools). Fly ~450 blocks north for the BLUE version (snow biome — blue-grey rock, white tops). Press [F5] again to return. Press [V] mid-flight to cycle SKIM → SOAR → GRAPPLE.");
+        helpRow("[F6]", "Non-Euclidean 'Layered Rooms' (testing). Teleports you into a 2x2 building with a central pillar. Walk CLOCKWISE around the pillar and you pass through endless distinct rooms (1,2,3,4,5,6...) instead of looping after four. Press [F6] again to leave.");
+        helpRow("[F10]", "'Radar Sweep' (testing). Your world becomes a 3D radar scope from where you stand — range rings + bearing spokes on the terrain, a rotating sweep arm with an opaque→transparent afterglow that pings the landscape, and a wireframe box around every enemy that flares as the arm passes it. One ~8s scan, then back to normal.");
+        helpRow("[F8]", "'The World' (testing). A sphere of photographic-negative reality bursts from your feet — everything inside inverts and shifts to electric blue, enemies and projectiles freeze in place while you keep moving, then the domain collapses back. DIO's time stop.");
+        helpRow("[F7]", "'Orbital Annihilation' (testing). Aim at a block and press F7 for a ~12s fully-3D cinematic: a spinning gyroscope of energy rings + pulsing core, accelerating implosion rings that detonate, a blackout with the terrain glowing as a wireframe scan + floating embers, a CARVED crater, then a volumetric orbital laser with helix beams, shockwave, and debris. Stand back.");
         ImGui.spacing();
 
         // ── MANA & COOLDOWNS ──────────────────────────────────────────────────
@@ -2184,5 +2189,134 @@ class WindowHud {
         float ey = Math.min(cy, h - cy) / margin;
         float t  = Math.min(1f, Math.min(ex, ey));
         return t * t * (3f - 2f * t); // smoothstep
+    }
+
+    void renderChocolateDiscoConsole() {
+        if (!win.showDiscoUI) return;
+
+        // Position on the left side of the screen
+        ImGui.setNextWindowPos(30, 100, imgui.flag.ImGuiCond.FirstUseEver);
+        ImGui.begin("Chocolate Disco Datapad", imgui.flag.ImGuiWindowFlags.AlwaysAutoResize | imgui.flag.ImGuiWindowFlags.NoCollapse);
+
+        ImGui.textColored(1.0f, 0.8f, 0.1f, 1.0f, "MODE: ANNIHILATE");
+        ImGui.separator();
+        ImGui.spacing();
+
+        // X-Axis Headers
+        ImGui.text("   "); ImGui.sameLine();
+        for (int c = 0; c < 9; c++) {
+            ImGui.text(" " + (c + 1) + " "); ImGui.sameLine();
+        }
+        ImGui.newLine();
+
+        // Reset hover state (updated only if hovered this frame)
+        win.cdHoverR = -1;
+        win.cdHoverC = -1;
+
+        // 9x9 Grid of ImGui Buttons
+        for (int r = 0; r < 9; r++) {
+            // Y-Axis Headers
+            ImGui.text("" + (char)('A' + r) + " "); ImGui.sameLine();
+
+            for (int c = 0; c < 9; c++) {
+                if (c > 0) ImGui.sameLine();
+                ImGui.pushID(r * 9 + c);
+
+                boolean marked = win.cdMarked[r][c];
+                boolean det    = win.cdDetT[r][c] > 0;
+
+                // Color the buttons based on their state
+                if (det) {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.2f, 0.2f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.4f, 0.4f, 1.0f);
+                } else if (marked) {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.7f, 0.1f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.85f, 0.3f, 1.0f);
+                } else {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 0.15f, 0.15f, 0.2f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 0.2f, 0.8f, 0.9f, 1.0f);
+                }
+
+                if (ImGui.button("##cell", 28f, 28f)) {
+                    if (!det) {
+                        win.cdMarked[r][c] = !marked;
+                        win.cdMeshDirty = true;
+                    }
+                }
+
+                if (ImGui.isItemHovered()) {
+                    win.cdHoverR = r;
+                    win.cdHoverC = c;
+                    win.cdMeshDirty = true;
+                }
+
+                ImGui.popStyleColor(2);
+                ImGui.popID();
+            }
+            ImGui.newLine();
+        }
+
+        ImGui.spacing(); ImGui.separator(); ImGui.spacing();
+
+        if (ImGui.button("EXECUTE", 280f, 40f)) {
+            win.detonateDiscoGrid(win.world);
+        }
+        ImGui.spacing();
+        if (ImGui.button("DISMISS", 280f, 30f)) {
+            win.dismissDiscoGrid();
+        }
+
+        ImGui.end();
+    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  CHOCOLATE DISCO: IMGUI WRIST-CONSOLE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    enum DiscoMode { ANNIHILATE, DROP, REDIRECT }
+    DiscoMode currentDiscoMode = DiscoMode.ANNIHILATE;
+
+    private void handleDiscoClick(int r, int c) {
+        if (currentDiscoMode == DiscoMode.ANNIHILATE) {
+            // Mode 1: Toggle the Mark for Detonation
+            if (win.cdDetT[r][c] <= 0f) {
+                win.cdMarked[r][c] = !win.cdMarked[r][c];
+                win.cdMeshDirty = true;
+            }
+        }
+        else if (currentDiscoMode == DiscoMode.DROP) {
+            // Mode 2: Call down an orbital strike of your currently selected block!
+            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wy = win.cdGridY + 40f; // Drop from the sky
+
+            com.leaf.game.entity.DroppedItem item = new com.leaf.game.entity.DroppedItem(
+                    (int)wx, (int)wy, (int)wz, win.selectedBlock, new org.joml.Vector3f(0f, -40f, 0f) // Heavy downward slam velocity
+            );
+            win.droppedItems.add(item);
+            com.leaf.game.core.AudioManager.play("fall_hit", 0.8f);
+        }
+        else if (currentDiscoMode == DiscoMode.REDIRECT) {
+            // Mode 3: Instantly warp all active projectiles to this cell
+            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
+
+            boolean redirected = false;
+
+            // Redirect player Void Shards
+            for (com.leaf.game.entity.AttackController.ActiveBolt bolt : win.player.attacks.activeBolts) {
+                bolt.pos.set(wx, win.cdGridY + 1.5f, wz);
+                redirected = true;
+            }
+            // Redirect enemy boulders/projectiles
+            for (com.leaf.game.entity.EnemyManager.EnemyProjectile proj : win.enemyManager.projectiles) {
+                proj.pos.set(wx, win.cdGridY + 1.5f, wz);
+                redirected = true;
+            }
+
+            if (redirected) {
+                com.leaf.game.core.AudioManager.play("snipe_redirect", 1.0f);
+                com.leaf.game.core.ScreenEffectManager.INSTANCE.flash(0f, 0.8f, 1.0f, 0.4f, 0.1f);
+            }
+        }
     }
 }

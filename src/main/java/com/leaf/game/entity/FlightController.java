@@ -16,7 +16,7 @@ public class FlightController {
      * Ship with flight locked to SKIM only. SOAR/GRAPPLE remain fully implemented
      * below — flip this to false to re-enable cycling them with [V].
      */
-    private static final boolean SKIM_ONLY = true;
+    private static final boolean SKIM_ONLY = false;
 
     private final Player player;
     private FlightMode mode = FlightMode.SKIM;

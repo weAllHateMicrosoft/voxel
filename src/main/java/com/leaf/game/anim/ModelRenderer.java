@@ -41,6 +41,18 @@ public class ModelRenderer {
                 "src/main/resources/shaders/model_fragment.glsl");
     }
 
+    // ── Radar override (set by Window during the radar sweep) ──────────────────
+    private static final Vector3f tintColor = new Vector3f(0.1f, 1f, 0.35f);
+    private static float   tintAmt  = 0f;     // 0 = normal model, 1 = full radar tint
+    private static float   glow     = 1f;     // output brightness (>1 = searing ping)
+    private static boolean depthOn  = true;   // false = draw through terrain (detection)
+
+    /** Configure the radar look for subsequent render() calls. amt=0,glow=1,depth=true = normal. */
+    public static void setOverride(float r, float g, float b, float amt, float gl, boolean depth) {
+        tintColor.set(r, g, b); tintAmt = amt; glow = gl; depthOn = depth;
+    }
+    public static void clearOverride() { tintAmt = 0f; glow = 1f; depthOn = true; }
+
     /**
      * Render a posed model.
      *
@@ -57,8 +69,16 @@ public class ModelRenderer {
         shader.bind();
         shader.setUniform("lightDir", new Vector3f(0.6f, 1f, 0.4f).normalize());
         shader.setUniform("ambient", 0.35f);
+        // Radar override (defaults are a no-op: tintAmt 0, glow 1, depth on).
+        shader.setUniform("tintColor", tintColor);
+        shader.setUniform("tintAmt", tintAmt);
+        shader.setUniform("glow", glow);
+        // Slice override OFF for normal rendering (renderSliced turns it on).
+        shader.setUniform("cutActive", 0);
+        shader.setUniform("sliceAlpha", 1f);
+        shader.setUniform("clipPose", new Matrix4f());
 
-        glEnable(GL_DEPTH_TEST);
+        if (depthOn) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
         glDisable(GL_CULL_FACE); // <── FORCE DISABLE CULLING FOR ANIMATED MODELS HERE!
 
         shader.setUniform("tex", 0);        // sampler reads texture unit 0
@@ -88,6 +108,64 @@ public class ModelRenderer {
             mesh.render();
         }
 
+        shader.setUniform("useTexture", 0);
+        shader.unbind();
+    }
+
+    /**
+     * Render ONE HALF of a sliced corpse: the model is clipped along a body-local
+     * plane (cutNormal·p = cutOffset), keeping the {@code cutSide} half, and the cut
+     * surface glows molten gold. {@code bodyFly} is applied in body space (before the
+     * world matrix) so the half can separate + tumble while the clip stays put.
+     * Call twice (cutSide = +1 and −1) for the two halves. Caller manages blending.
+     */
+    public static void renderSliced(AnimModel model, Map<String, Matrix4f> pose,
+                                    Matrix4f worldMat, Matrix4f bodyFly,
+                                    Matrix4f view, Matrix4f projection,
+                                    Vector3f cutNormal, float cutOffset, float cutSide,
+                                    float sliceAlpha) {
+        if (shader == null) return;
+        shader.bind();
+        shader.setUniform("lightDir", new Vector3f(0.6f, 1f, 0.4f).normalize());
+        shader.setUniform("ambient", 0.35f);
+        shader.setUniform("tintColor", tintColor);
+        shader.setUniform("tintAmt", 0f);
+        shader.setUniform("glow", 1f);
+        shader.setUniform("cutActive", 1);
+        shader.setUniform("cutNormal", cutNormal);
+        shader.setUniform("cutOffset", cutOffset);
+        shader.setUniform("cutSide", cutSide);
+        shader.setUniform("sliceAlpha", sliceAlpha);
+
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        shader.setUniform("tex", 0);
+        shader.setUniform("useTexture", 0);
+
+        for (PartDef part : model.parts) {
+            Mesh mesh = getMesh(model, part);
+            if (mesh == null) continue;
+            Matrix4f partPose = pose.getOrDefault(part.id, new Matrix4f());
+            // gl_Position uses bodyFly (the half flies apart); clip uses partPose only.
+            Matrix4f mvp = new Matrix4f(projection).mul(view).mul(worldMat).mul(bodyFly).mul(partPose);
+            Matrix4f normalMat = new Matrix4f(worldMat).mul(bodyFly).mul(partPose).invert().transpose();
+
+            Texture tx = (part.geo != null && part.tex != null) ? getTexture(part.tex) : NONE;
+            if (tx != null) {
+                glActiveTexture(GL_TEXTURE0);
+                tx.bind();
+                shader.setUniform("useTexture", 1);
+            } else {
+                shader.setUniform("useTexture", 0);
+            }
+
+            shader.setUniform("mvp", mvp);
+            shader.setUniform("normalMat", normalMat);
+            shader.setUniform("clipPose", partPose);   // body-frame clip
+            mesh.render();
+        }
+
+        shader.setUniform("cutActive", 0);
         shader.setUniform("useTexture", 0);
         shader.unbind();
     }
