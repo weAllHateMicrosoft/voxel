@@ -128,6 +128,9 @@ public class GameConfig {
     public static float mouseSensitivity = 0.001f;
     public static float fov              = 70.0f;
 
+    /** Player starting/maximum health (buffed from the old 50 for more survivability). */
+    public static float playerMaxHealth = 75.0f;
+
     public static float GRAVITY      = 35.0f;
     public static float JUMP_FORCE   = 10.0f;
     public static float WALK_SPEED   = 5.0f;
@@ -218,10 +221,13 @@ public class GameConfig {
     public static float rewindSpeed      = 3.0f;  // playback is 3× real-time
     public static float rewindCooldown   = 5.0f;
 
-    // Blink (tap E) — teleport to crosshair target up to blinkRange blocks away
+    // Blink (tap E) — super-fast travel to the crosshair target (not instant)
     public static float blinkRange       = 22f;   // blocks
     public static float blinkCooldown    = 2.0f;
     public static float blinkFlashDecay  = 0.30f; // seconds for white flash to fade
+    public static float blinkTravelSpeed = 70f;   // blocks/sec the zip travels at
+    public static float blinkTravelMin   = 0.09f; // min travel time (short hops still read)
+    public static float blinkTravelMax   = 0.32f; // max travel time (long zips stay snappy)
 
     // ── MELEE ATTACK (Runic Cleave — F key) ──────────────────────────────────
     // Windup: camera lifts, FOV tightens, gold vignette builds (0.14 s)
@@ -552,7 +558,7 @@ public class GameConfig {
     /** Mana cost per dash use. */
     public static float manaDash             = 6f;
     /** Mana cost per blink use. */
-    public static float manaBlink            = 50f;
+    public static float manaBlink            = 30f;
     /** Mana cost to fire the cannonball. */
     public static float manaCannonball       = 18f;
     /** Mana cost per ground-smash activation. */

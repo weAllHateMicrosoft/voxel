@@ -38,8 +38,8 @@ class WindowHud {
     private static final boolean DEV_MENU = false;
 
     void renderConnectionMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 120.0f);
-        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 360.0f : 200.0f);
+        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 150.0f);
+        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 430.0f : 320.0f);
         ImGui.begin("Start Screen",
                 imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
 
@@ -58,6 +58,16 @@ class WindowHud {
             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
             win.startPreload();
         }
+        ImGui.spacing();
+
+        // ── MULTIPLAYER (host / join over LAN) — both players get the full kit ─
+        ImGui.separator(); ImGui.spacing();
+        ImGui.textDisabled("        Multiplayer  (all abilities)");
+        ImGui.spacing();
+        if (ImGui.button("Host Game", 320, 28)) startMultiplayer(true);
+        ImGui.spacing();
+        ImGui.inputText("Host IP", win.ipInput);
+        if (ImGui.button("Join Game", 320, 28)) startMultiplayer(false);
         ImGui.spacing();
 
         // ── Developer options (hidden unless DEV_MENU)  -  kept in code ─────────
@@ -101,6 +111,19 @@ class WindowHud {
             }
         }
         ImGui.end();
+    }
+
+    /** Shared host/join setup: connect, unlock everything, and start the world. */
+    private void startMultiplayer(boolean host) {
+        win.network = host ? new NetworkSession(true, null)
+                           : new NetworkSession(false, win.ipInput.get().trim());
+        win.network.start();
+        win.remotePlayer     = new RemotePlayer();
+        win.playIntroOnSpawn = false;            // skip the intro cutscene in MP
+        win.gameEnded        = false;
+        win.player.progression.unlockAll();      // PvP: both players fully armed
+        RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
+        win.startPreload();
     }
 
     void renderPreloadProgress(float w, float h) {

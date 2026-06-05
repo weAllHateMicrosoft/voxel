@@ -161,7 +161,9 @@ public class EnemyManager {
     /** Number of enemies that are still alive (excludes those playing the death flash). */
     public int aliveCount() {
         int n = 0;
-        for (Enemy e : enemies) if (e.alive) n++;
+        // DUMMY is a passive target (practice dummy / MP remote-player proxy) — it must
+        // not count toward "wave cleared", or it would block wave progression forever.
+        for (Enemy e : enemies) if (e.alive && e.type != Enemy.Type.DUMMY) n++;
         return n;
     }
 

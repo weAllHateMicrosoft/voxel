@@ -113,10 +113,22 @@ public class Progression {
         maxTier = 0;
         for (int t = 0; t <= maxTier && t < TIERS.length; t++)
             for (Ability a : TIERS[t]) unlocked.add(a);
+        // KAMUI is death-earned (3 deaths) and PERSISTS across runs. The awakening
+        // only fires once ever, so without this every new run would wipe it — re-grant
+        // it here whenever it's already been earned (flag persisted in RunRecords).
+        // NOTE: add it directly (NOT grantKamui), which would bump maxTier to 8 and skip
+        // all the wave-1..8 unlock cards.
+        if (RunRecords.INSTANCE.isKamuiUnlocked()) unlocked.add(Ability.KAMUI);
     }
 
     /** True if the player may use this ability right now. */
     public boolean isUnlocked(Ability a) { return unlocked.contains(a); }
+
+    /** Unlock EVERY ability — used for multiplayer so both players are fully armed for PvP. */
+    public void unlockAll() {
+        for (Ability a : Ability.values()) unlocked.add(a);
+        maxTier = TIERS.length;
+    }
 
     /** The abilities a given wave's tier grants (always  -  independent of unlock history). */
     public List<Ability> abilitiesForWave(int wave) {
@@ -143,8 +155,9 @@ public class Progression {
      * Called when the 3rd death triggers the awakening cutscene.
      */
     public void grantKamui() {
+        // Kamui is death-earned and independent of wave progress — do NOT touch maxTier,
+        // or the wave-by-wave unlock cards up to that tier would be skipped this run.
         unlocked.add(Ability.KAMUI);
-        if (maxTier < 8) maxTier = 8;   // treat as if wave-8 was cleared
     }
 
     /** Story headline for a wave's unlock card. */

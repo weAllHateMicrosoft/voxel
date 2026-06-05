@@ -64,6 +64,15 @@ public class Window {
     NetworkSession network;
     RemotePlayer remotePlayer;
 
+    // ── MULTIPLAYER COMBAT (PvP + summonable troops) ───────────────────────────
+    /** Troops WE spawned (simulated locally, charge the opponent, streamed to peer). */
+    final java.util.List<com.leaf.game.entity.Summon> mySummons = new java.util.ArrayList<>();
+    /** Invisible DUMMY mirroring the remote player so our abilities can hit them (PvP). */
+    com.leaf.game.entity.Enemy mpProxy = null;
+    boolean mpLastSummonKey = false;
+    float   mpSummonSendTimer = 0f;
+    com.leaf.game.render.Mesh summonCubeMine, summonCubeFoe;   // cyan = ours, red = theirs
+
     private boolean networkInitialized = false;
     final ImString ipInput = new ImString("127.0.0.1", 64);
 
@@ -853,6 +862,9 @@ public class Window {
         world.meshingQueue.clear();
         networkInitialized = true;
         isPreloading       = true;
+        // Fresh multiplayer-combat state each run (stale proxy/troops never leak in).
+        mpProxy = null;
+        mySummons.clear();
     }
 
     /** Begin the next queued practice session, or start the next wave if the queue is empty. */
@@ -1136,6 +1148,7 @@ public class Window {
                     deathCutscenePending = false;
                     player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
                     player.setVelocityY(0f);
+                    player.pendingGravityReset = true;  // respawn upright if gravity was flipped
                     atCanyon = false; canyonSettlePending = false;  // died at the canyon → reset F5 toggle
                     player.health = player.maxHealth;   // full HP — crystal fully healed you
                     player.mana   = player.maxMana;
@@ -1261,6 +1274,7 @@ public class Window {
                             showDeathScreen = false;
                             player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
                             player.setVelocityY(0f);
+                            player.pendingGravityReset = true;  // respawn upright if gravity was flipped
                             player.health = player.maxHealth;
                             player.mana   = player.maxMana;
                             player.abilities.isKamui          = false;
@@ -2587,6 +2601,7 @@ public class Window {
                     if (now - lastNetSendTime >= (1.0 / 30.0)) {
                         network.sendPosition(player.position.x, player.position.y, player.position.z,
                                 camera.yaw, camera.pitch, player.getCameraRoll());
+                        network.sendHealth(player.health, player.maxHealth);   // so the teammate sees our HP
                         lastNetSendTime = now;
                     }
 
@@ -2602,6 +2617,8 @@ public class Window {
                     remotePlayer.targetHookX = network.remoteHookX;
                     remotePlayer.targetHookY = network.remoteHookY;
                     remotePlayer.targetHookZ = network.remoteHookZ;
+                    remotePlayer.health      = network.remoteHealth;
+                    remotePlayer.maxHealth   = network.remoteMaxHealth;
 
                     // CRITICAL: Update remote player using rawDeltaTime
                     // This prevents the remote player from stuttering if local time dilation is active
@@ -2650,6 +2667,63 @@ public class Window {
                             if (network != null && network.connected)
                                 network.sendPickup(item.originX, item.originY, item.originZ);
                             droppedItems.remove(i);
+                        }
+                    }
+
+                    // ── PvP PROXY ──────────────────────────────────────────────
+                    // An invisible DUMMY mirroring the remote player so EVERY enemy-
+                    // targeting ability/attack hits them. Damage dealt to it is read
+                    // off each frame and relayed; then the proxy is topped back up so
+                    // it persists as a pure hitbox.
+                    if (mpProxy == null && enemyManager != null) {
+                        mpProxy = enemyManager.spawnAt(network.remoteX, network.remoteY,
+                                network.remoteZ, com.leaf.game.entity.Enemy.Type.DUMMY);
+                    }
+                    if (mpProxy != null) {
+                        float dealt = mpProxy.maxHealth - mpProxy.health;
+                        if (dealt > 0.01f) network.sendDamage(dealt);   // relay our hits
+                        mpProxy.health = mpProxy.maxHealth;
+                        mpProxy.alive  = true;
+                        mpProxy.position.set(remotePlayer.x, remotePlayer.y, remotePlayer.z);
+                    }
+
+                    // ── SPAWN A TROOP (press ']') that charges the opponent ─────
+                    boolean sk = glfwGetKey(window, KeyBindings.MP_SUMMON) == GLFW_PRESS;
+                    if (sk && !mpLastSummonKey && mySummons.size() < 64) {
+                        mySummons.add(new com.leaf.game.entity.Summon(
+                                player.position.x, player.position.y + 1.2f, player.position.z, 18f));
+                        AudioManager.play("teleport");
+                    }
+                    mpLastSummonKey = sk;
+
+                    // ── SIMULATE our troops — home on the opponent, bite, relay ─
+                    Vector3f foePos = new Vector3f(remotePlayer.x, remotePlayer.y, remotePlayer.z);
+                    float troopDmg = 0f;
+                    for (com.leaf.game.entity.Summon s : mySummons) troopDmg += s.update(rawDeltaTime, foePos);
+                    if (troopDmg > 0f) network.sendDamage(troopDmg);
+                    mySummons.removeIf(s -> !s.alive);
+
+                    // ── STREAM our troop positions to the peer (~20 Hz) ─────────
+                    mpSummonSendTimer += rawDeltaTime;
+                    if (mpSummonSendTimer >= 0.05f) {
+                        mpSummonSendTimer = 0f;
+                        int n = Math.min(255, mySummons.size());
+                        float[] packed = new float[n * 3];
+                        for (int i = 0; i < n; i++) {
+                            com.leaf.game.entity.Summon s = mySummons.get(i);
+                            packed[i*3] = s.pos.x; packed[i*3+1] = s.pos.y; packed[i*3+2] = s.pos.z;
+                        }
+                        network.sendSummons(packed, n);
+                    }
+
+                    // ── RECEIVE PvP / troop damage dealt to US ──────────────────
+                    Float incoming;
+                    while ((incoming = network.pollDamage()) != null) {
+                        if (!(player.abilities.isKamui || immunityTimer > 0f)) {
+                            player.health -= incoming;
+                            damageFlashTimer = 0.5f;
+                            ScreenEffectManager.INSTANCE.flash(0.75f, 0.02f, 0.02f, 0.22f, 0.3f);
+                            if (player.health < 0f) player.health = 0f;
                         }
                     }
                 }
@@ -3536,6 +3610,7 @@ public class Window {
                         // ── Animated path: enemy_basic.json with walk/attack/death ──
                         // ── Animated path ──
                         for (Enemy enemy : enemyManager.getEnemies()) {
+                            if (enemy == mpProxy) continue;   // invisible PvP hitbox — never drawn
                             float flashF = enemy.hitFlashTimer > 0f ? (enemy.hitFlashTimer / 0.18f) : 0f;
                             float alpha  = enemy.alive ? 1.0f : flashF;
                             if (alpha < 0.02f) {
@@ -3639,6 +3714,7 @@ public class Window {
                         com.leaf.game.render.ModelMesh capsule =
                                 com.leaf.game.render.AssetManager.get().getModel("player");
                         for (Enemy enemy : enemyManager.getEnemies()) {
+                            if (enemy == mpProxy) continue;   // invisible PvP hitbox — never drawn
                             float flashF = enemy.hitFlashTimer > 0f
                                     ? (enemy.hitFlashTimer / 0.18f) : 0f;
                             float alpha  = enemy.alive ? 1.0f : flashF;
@@ -3820,6 +3896,7 @@ public class Window {
                 // 8. Render Remote Player
                 if (network != null && network.connected) {
                     remotePlayer.render(shader, projection, view);
+                    renderSummons(shader, projection, view);   // cyan = yours, red = theirs
                 }
 
                 // 9. Render Ability Ghost Trails
@@ -4162,6 +4239,53 @@ public class Window {
         shader.setUniform("overlayVignetteStrength", 0f);
         shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
         shader.setUniform("alphaMultiplier", 1.0f);
+    }
+
+    /** Render MP troops as solid cubes — cyan for ours, red for the opponent's. */
+    private void renderSummons(Shader shader, Matrix4f projection, Matrix4f view) {
+        if (network == null || !network.connected) return;
+        if (summonCubeMine == null) summonCubeMine = buildColorCube(0.20f, 0.95f, 1.00f); // cyan = ours
+        if (summonCubeFoe  == null) summonCubeFoe  = buildColorCube(1.00f, 0.25f, 0.18f); // red  = theirs
+        Matrix4f pv = new Matrix4f(projection).mul(view);
+        for (com.leaf.game.entity.Summon s : mySummons) {
+            shader.setUniform("mvp", new Matrix4f(pv).mul(
+                    new Matrix4f().translate(s.pos.x, s.pos.y, s.pos.z).scale(0.45f)));
+            summonCubeMine.render();
+        }
+        float[] rs = network.remoteSummons;
+        for (int i = 0; i + 2 < rs.length; i += 3) {
+            shader.setUniform("mvp", new Matrix4f(pv).mul(
+                    new Matrix4f().translate(rs[i], rs[i + 1], rs[i + 2]).scale(0.45f)));
+            summonCubeFoe.render();
+        }
+    }
+
+    /** A unit cube centred at the origin, single colour, in the 10-float vertex layout. */
+    private com.leaf.game.render.Mesh buildColorCube(float r, float g, float b) {
+        float[][] c = {
+            {-.5f,-.5f, .5f},{ .5f,-.5f, .5f},{ .5f, .5f, .5f},{-.5f, .5f, .5f}, // front
+            { .5f,-.5f,-.5f},{-.5f,-.5f,-.5f},{-.5f, .5f,-.5f},{ .5f, .5f,-.5f}, // back
+            {-.5f, .5f,-.5f},{ .5f, .5f,-.5f},{ .5f, .5f, .5f},{-.5f, .5f, .5f}, // top
+            {-.5f,-.5f, .5f},{ .5f,-.5f, .5f},{ .5f,-.5f,-.5f},{-.5f,-.5f,-.5f}, // bottom
+            { .5f,-.5f, .5f},{ .5f,-.5f,-.5f},{ .5f, .5f,-.5f},{ .5f, .5f, .5f}, // right
+            {-.5f,-.5f,-.5f},{-.5f,-.5f, .5f},{-.5f, .5f, .5f},{-.5f, .5f,-.5f}, // left
+        };
+        float[] v = new float[24 * 10];
+        int[]   idx = new int[36];
+        int vo = 0, io = 0;
+        for (int face = 0; face < 6; face++) {
+            float shade = (face == 2) ? 1.0f : (face == 3 ? 0.6f : 0.82f);
+            for (int i = 0; i < 4; i++) {
+                float[] p = c[face * 4 + i];
+                v[vo++] = p[0]; v[vo++] = p[1]; v[vo++] = p[2];
+                v[vo++] = r * shade; v[vo++] = g * shade; v[vo++] = b * shade; v[vo++] = 1f;
+                v[vo++] = 0f; v[vo++] = 1f; v[vo++] = 0f;
+            }
+            int base = face * 4;
+            idx[io++] = base; idx[io++] = base + 1; idx[io++] = base + 2;
+            idx[io++] = base + 2; idx[io++] = base + 3; idx[io++] = base;
+        }
+        return new com.leaf.game.render.Mesh(v, idx);
     }
 
     private void renderAbilityGhosts(Shader shader, Matrix4f projection, Matrix4f view) {

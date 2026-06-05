@@ -17,6 +17,10 @@ public class NetworkSession {
     public volatile int     remoteState = 0;
     public volatile boolean remoteHooked = false;
     public volatile float   remoteHookX, remoteHookY, remoteHookZ;
+    public volatile float   remoteHealth = 1f, remoteMaxHealth = 1f;
+
+    /** Latest snapshot of the PEER's troops, packed [x,y,z, x,y,z, ...] (opponent team). */
+    public volatile float[] remoteSummons = new float[0];
 
     public volatile boolean connected = false;
     public volatile boolean seedReceived = false;
@@ -27,6 +31,7 @@ public class NetworkSession {
     private final Queue<String> incomingChats   = new ConcurrentLinkedQueue<>();
     private final Queue<int[]>  incomingPickups = new ConcurrentLinkedQueue<>();
     private final Queue<int[]>  incomingCraters = new ConcurrentLinkedQueue<>();
+    private final Queue<Float>  incomingDamage  = new ConcurrentLinkedQueue<>();
 
     private final boolean isHost;
     private final String  hostIp;
@@ -120,6 +125,20 @@ public class NetworkSession {
                 newSeed = in.readLong();
                 seedReceived = true;
                 break;
+            case 10: // HEALTH
+                remoteHealth    = in.readFloat();
+                remoteMaxHealth = in.readFloat();
+                break;
+            case 11: // DAMAGE (PvP / troop hit relayed to us)
+                incomingDamage.add(in.readFloat());
+                break;
+            case 12: { // SUMMONS snapshot (peer's troops)
+                int n = in.readUnsignedByte();
+                float[] arr = new float[n * 3];
+                for (int i = 0; i < arr.length; i++) arr[i] = in.readFloat();
+                remoteSummons = arr;
+                break;
+            }
         }
     }
 
@@ -165,6 +184,24 @@ public class NetworkSession {
     private void sendSeed(long seed) {
         synchronized (writeLock) { try { if (out == null) return; out.writeByte(9); out.writeLong(seed); out.flush(); } catch (IOException ignored) {} }
     }
+    public void sendHealth(float hp, float maxHp) {
+        synchronized (writeLock) { try { if (out == null) return; out.writeByte(10); out.writeFloat(hp); out.writeFloat(maxHp); out.flush(); } catch (IOException ignored) {} }
+    }
+    /** Tell the peer to take {@code amount} damage (our ability/troop hit them). */
+    public void sendDamage(float amount) {
+        synchronized (writeLock) { try { if (out == null) return; out.writeByte(11); out.writeFloat(amount); out.flush(); } catch (IOException ignored) {} }
+    }
+    /** Stream our troops' positions (count ≤ 255), packed [x,y,z,...]. */
+    public void sendSummons(float[] packed, int count) {
+        synchronized (writeLock) {
+            try {
+                if (out == null) return;
+                out.writeByte(12); out.writeByte(count);
+                for (int i = 0; i < count * 3; i++) out.writeFloat(packed[i]);
+                out.flush();
+            } catch (IOException ignored) {}
+        }
+    }
 
     // Queue Pollers (unchanged)
     public int[] pollBreak() { return incomingBreaks.poll(); }
@@ -172,5 +209,6 @@ public class NetworkSession {
     public String pollChat() { return incomingChats.poll(); }
     public int[] pollPickup() { return incomingPickups.poll(); }
     public int[] pollCrater() { return incomingCraters.poll(); }
+    public Float  pollDamage() { return incomingDamage.poll(); }
     public boolean isHost() {return isHost; }
 }

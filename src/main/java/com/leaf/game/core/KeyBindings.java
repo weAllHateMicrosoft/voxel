@@ -26,6 +26,8 @@ public final class KeyBindings {
     public static final int DISCO             = GLFW_KEY_PERIOD;      // '.'  Chocolate Disco grid
     public static final int QUANTUM_BULLET    = GLFW_KEY_COMMA;       // ','  Quantum Bullet (reserved)
     public static final int DEPRIVATION_DOMAIN = GLFW_KEY_APOSTROPHE; // '''  Water God Stance
+    public static final int GRAVITY_FLIP      = GLFW_KEY_SLASH;       // '/'  Change gravity direction (look + press)
+    public static final int MP_SUMMON         = GLFW_KEY_RIGHT_BRACKET; // ']' Spawn a troop at the enemy (multiplayer)
 
     /** key code → human description (insertion-ordered for a tidy printout). */
     private static final Map<Integer, String> REG = new LinkedHashMap<>();
@@ -82,6 +84,8 @@ public final class KeyBindings {
         register(DISCO, "Chocolate Disco grid");
         register(QUANTUM_BULLET, "Quantum Bullet (phases through walls)");
         register(DEPRIVATION_DOMAIN, "Deprivation Domain – Water God Stance");
+        register(GRAVITY_FLIP, "Gravity Flip – change gravity direction");
+        register(MP_SUMMON, "Spawn troop at enemy (multiplayer)");
         // ── System / debug ──
         register(GLFW_KEY_T, "Chat");
         register(GLFW_KEY_P, "Debug: spawn enemy");
