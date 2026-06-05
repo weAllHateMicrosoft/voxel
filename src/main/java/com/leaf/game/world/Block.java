@@ -46,7 +46,26 @@ public enum Block {
     IMPACT_GLASS    (0.62f, 0.78f, 0.58f, 0.70f, 2.0f),
     SCORCHED_STONE  (0.22f, 0.20f, 0.20f, 1.0f,  4.0f),
     STAR_IRON       (0.28f, 0.32f, 0.48f, 1.0f,  8.0f),
-    CRATER_BLOOM    (0.80f, 0.65f, 0.90f, 0.90f, 0.1f);
+    CRATER_BLOOM    (0.80f, 0.65f, 0.90f, 0.90f, 0.1f),
+
+    // ── Mesa / Canyon (gelami Shadertoy palette) ─────────────────
+    // Warm tan sandstone strata, vivid grass tops, pale sand shores, turquoise
+    // pools — tuned to the sample. Flat vertex colours for now.
+    MESA_GRASS      (0.48f, 0.80f, 0.18f, 1.0f,  0.8f),  // vivid green top (shader 0.55,1,0.1)
+    MESA_DIRT       (0.55f, 0.40f, 0.30f, 1.0f,  0.8f),  // warm soil under grass
+    MESA_CLAY       (0.80f, 0.62f, 0.52f, 1.0f,  1.2f),  // dominant warm tan band
+    MESA_TERRACOTTA (0.66f, 0.45f, 0.36f, 1.0f,  1.4f),  // muted darker strata band
+    MESA_SAND       (0.88f, 0.78f, 0.62f, 1.0f,  0.9f),  // pale light band / shoreline
+    MESA_STONE      (0.58f, 0.46f, 0.42f, 1.0f,  4.0f),  // deep foundation rock
+    MESA_WATER      (0.30f, 0.85f, 0.85f, 0.72f, 0.0f),  // turquoise pool (shader water ~0.5,1,1)
+
+    // ── Blue / Snow mesa (Shadertoy snow biome — dcol = vec3(0.2,0.6,0.8)) ──
+    MESA_BLUE_SNOW  (0.88f, 0.94f, 1.00f, 1.0f,  0.8f),  // white-blue snow top
+    MESA_BLUE_SOIL  (0.45f, 0.62f, 0.80f, 1.0f,  0.8f),  // sub-snow blue soil
+    MESA_BLUE_LIGHT (0.60f, 0.78f, 0.92f, 1.0f,  1.0f),  // light blue band
+    MESA_BLUE_MID   (0.28f, 0.52f, 0.72f, 1.0f,  1.2f),  // mid blue rock (dominant)
+    MESA_BLUE_DARK  (0.18f, 0.36f, 0.56f, 1.0f,  1.4f),  // deep blue band
+    MESA_BLUE_STONE (0.22f, 0.32f, 0.48f, 1.0f,  4.0f);  // blue foundation
 
     public final float r, g, b, a;
     public final float hardness;
@@ -141,8 +160,9 @@ public enum Block {
 
     public boolean isSolid() {
         // HANGING_ROOT and CRATER_BLOOM are decorative; the player walks through them
-        return this != AIR && this != WATER && this != HANGING_ROOT && this != CRATER_BLOOM;
+        return this != AIR && this != WATER && this != MESA_WATER
+                && this != HANGING_ROOT && this != CRATER_BLOOM;
     }
-    public boolean isLiquid() { return this == WATER; }
+    public boolean isLiquid() { return this == WATER || this == MESA_WATER; }
     public boolean isOpaque() { return this.a >= 1.0f; }
 }

@@ -52,7 +52,8 @@ import static org.lwjgl.openal.EXTEfx.*;
 public class AudioManager {
 
     // ── Tunables ────────────────────────────────────────────────────────────
-    private static final int POOL_SIZE = 28;   // simultaneous one-shot voices
+    private static final int POOL_SIZE = 128;   // simultaneous one-shot voices
+    private static int poolIndex = 0;           // Added for tie-breaking
 
     // ── The single audio thread ───────────────────────────────────────────────
     private static final ExecutorService AUDIO = Executors.newSingleThreadExecutor(r -> {
@@ -295,19 +296,50 @@ public class AudioManager {
 
     // ── Voice acquisition ──────────────────────────────────────────────────
 
+    // ── Voice acquisition ──────────────────────────────────────────────────
+
     /** Grab a free one-shot source, or steal the quietest one if all are busy. */
     private static int acquireSource() {
         voicesPlayed++;
-        for (int s : pool) {
-            if (alGetSourcei(s, AL_SOURCE_STATE) != AL_PLAYING) return s;
+
+        // 1. Find a completely free voice (Stopped or Initial state)
+        for (int i = 0; i < POOL_SIZE; i++) {
+            int s = pool[i];
+            int state = alGetSourcei(s, AL_SOURCE_STATE);
+            if (state == AL_INITIAL || state == AL_STOPPED) {
+                return s;
+            }
         }
-        // All busy → steal the quietest voice (least important: distant/faded).
-        int best = pool[0];
+
+        // 2. All busy → steal the quietest voice
+        // We use round-robin on ties to avoid killing the same sound over and over
+        int best = pool[poolIndex];
         float bestGain = Float.MAX_VALUE;
-        for (int s : pool) {
+        int bestIdx = poolIndex;
+
+        for (int i = 0; i < POOL_SIZE; i++) {
+            int idx = (poolIndex + i) % POOL_SIZE;
+            int s = pool[idx];
+
+            // Try to NOT steal paused sounds (like ambience during Time Stop)
+            int state = alGetSourcei(s, AL_SOURCE_STATE);
+            if (state == AL_PAUSED) continue;
+
             float g = alGetSourcef(s, AL_GAIN);
-            if (g < bestGain) { bestGain = g; best = s; }
+            if (g < bestGain) {
+                bestGain = g;
+                best = s;
+                bestIdx = idx;
+            }
         }
+
+        // Fallback: If somehow ALL 128 voices are PAUSED, just steal the round-robin one
+        if (bestGain == Float.MAX_VALUE) {
+            best = pool[poolIndex];
+            bestIdx = poolIndex;
+        }
+
+        poolIndex = (bestIdx + 1) % POOL_SIZE;
         voicesStolen++;
         alSourceStop(best);
         return best;
@@ -576,6 +608,37 @@ public class AudioManager {
     public static String getDebugStats() {
         return "voices played=" + voicesPlayed + " stolen=" + voicesStolen
                 + " activeLoops=" + loops.size();
+    }
+
+    /**
+     * Pause every currently-playing source (one-shots + loops).
+     * Only sources that are actually PLAYING are paused so resumeAll()
+     * can un-pause exactly those — sources already stopped are untouched.
+     */
+    public static void pauseAll() {
+        AUDIO.submit(() -> {
+            if (pool != null) for (int s : pool) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PLAYING) alSourcePause(s);
+            }
+            for (int s : loops.values()) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PLAYING) alSourcePause(s);
+            }
+        });
+    }
+
+    /**
+     * Resume every source that was paused (via pauseAll or otherwise).
+     * Sources that were already stopped before pauseAll() remain stopped.
+     */
+    public static void resumeAll() {
+        AUDIO.submit(() -> {
+            if (pool != null) for (int s : pool) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PAUSED) alSourcePlay(s);
+            }
+            for (int s : loops.values()) {
+                if (alGetSourcei(s, AL_SOURCE_STATE) == AL_PAUSED) alSourcePlay(s);
+            }
+        });
     }
 
     /** Release all OpenAL resources. Optional — daemon thread dies with the JVM. */

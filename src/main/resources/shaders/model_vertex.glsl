@@ -8,13 +8,16 @@ layout(location = 3) in vec2 aUV;    // texture coords (zero for untextured box 
 out vec4 vColor;
 out vec3 vNormal;
 out vec2 vUV;
+out vec3 vClipPos;   // body-local position (partPose × aPos) for the slice clip plane
 
 uniform mat4 mvp;
 uniform mat4 normalMat;
+uniform mat4 clipPose;   // body-frame pose used to clip a sliced corpse; identity normally
 
 void main() {
     gl_Position = mvp * vec4(aPos, 1.0);
-    vColor  = aColor;
-    vNormal = normalize(mat3(normalMat) * aNormal);
-    vUV     = aUV;
+    vColor   = aColor;
+    vNormal  = normalize(mat3(normalMat) * aNormal);
+    vUV      = aUV;
+    vClipPos = (clipPose * vec4(aPos, 1.0)).xyz;
 }
