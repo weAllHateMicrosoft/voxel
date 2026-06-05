@@ -80,7 +80,7 @@ public final class KeyBindings {
         register(GLFW_KEY_TAB, "Stand perspective");
         // ── New showcase abilities ──
         register(DISCO, "Chocolate Disco grid");
-        register(QUANTUM_BULLET, "Quantum Bullet (reserved)");
+        register(QUANTUM_BULLET, "Quantum Bullet (phases through walls)");
         register(DEPRIVATION_DOMAIN, "Deprivation Domain – Water God Stance");
         // ── System / debug ──
         register(GLFW_KEY_T, "Chat");

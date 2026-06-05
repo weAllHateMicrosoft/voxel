@@ -584,6 +584,20 @@ public class Window {
     // Rising-edge detectors so a teleport (blink / seal / substitute / swap) spawns FX once.
     private float lastBlinkFlash = 0f, lastSealFlash = 0f;
 
+    // ── QUANTUM BULLET (',' key) — phases through everything, rippling walls ─────
+    private static final class QBullet {
+        final Vector3f pos, vel;
+        float age; final float life;
+        boolean wasSolid;
+        final java.util.HashSet<Integer> hit = new java.util.HashSet<>();
+        QBullet(Vector3f pos, Vector3f vel, float life) {
+            this.pos = pos; this.vel = vel; this.life = life;
+        }
+    }
+    private final java.util.ArrayList<QBullet> qbBullets = new java.util.ArrayList<>();
+    private boolean lastQuantum = false;
+    private float   qbCooldown  = 0f;
+
     private static final float TS_MAXR   = 220f;   // domain reach (blocks)
     private static final float TS_EXPAND = 1.8f;   // expansion duration (s)
     private static final float TS_SHRINK = 0.9f;   // collapse duration (s)
@@ -2746,6 +2760,21 @@ public class Window {
                     if (depActive) updateDeprivationDomain(rawDeltaTime, world, camera);
                     updateFx(rawDeltaTime);   // age shared ability VFX
 
+                    // ── QUANTUM BULLET (',' key) — fire a phasing bullet ─────────
+                    qbCooldown = Math.max(0f, qbCooldown - rawDeltaTime);
+                    boolean quantumNow = glfwGetKey(window, KeyBindings.QUANTUM_BULLET) == GLFW_PRESS;
+                    if (quantumNow && !lastQuantum && qbCooldown <= 0f && !player.debugMode) {
+                        Vector3f d = camera.getLookDirection();
+                        Vector3f o = new Vector3f(camera.position.x + d.x * 0.6f,
+                                                  camera.position.y + d.y * 0.6f,
+                                                  camera.position.z + d.z * 0.6f);
+                        qbBullets.add(new QBullet(o, new Vector3f(d).mul(60f), 2.2f));
+                        qbCooldown = 0.35f;
+                        AudioManager.play("swoosh", 0.6f, 1.5f);
+                    }
+                    lastQuantum = quantumNow;
+                    updateQuantumBullets(rawDeltaTime, world);
+
                     // ── TELEPORT VFX (blink / substitute / swap / seal warp) ──────
                     // Fire once on the rising edge of each teleport flash.
                     float bfNow = player.abilities.blinkFlashTimer;
@@ -2844,7 +2873,8 @@ public class Window {
             // Domain always blooms — the HDR gold hemisphere + threads + boundary ring need it.
             boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
             // Shared ability-FX (slashes, rings, bolts) bloom whenever any are live.
-            boolean doFxBloom    = !fxList.isEmpty() && !isPreloading && bloomShader != null;
+            boolean doFxBloom    = (!fxList.isEmpty() || !qbBullets.isEmpty())
+                    && !isPreloading && bloomShader != null;
             // Stone Canon's charge gathers searing emissive energy → bloom it.
             boolean doStoneBloom = isChargingStoneCanon && !isPreloading && bloomShader != null;
             boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom
@@ -3247,8 +3277,8 @@ public class Window {
                     renderDeprivationDomain(shader, projection, view, renderMvp);
                 }
 
-                // ── Shared ability FX (slashes, rings, bolts, bursts) ─────────
-                if (!fxList.isEmpty() && !isPreloading) {
+                // ── Shared ability FX (slashes, rings, bolts, bursts) + quantum bullets ──
+                if ((!fxList.isEmpty() || !qbBullets.isEmpty()) && !isPreloading) {
                     renderFx(shader, projection, view, renderMvp);
                 }
 
@@ -5492,7 +5522,13 @@ public class Window {
     }
     private void fxRing(float x, float y, float z, float r0, float r1, float life,
                         float r, float g, float b) {
+        fxRingN(x, y, z, 0f, 1f, 0f, r0, r1, life, r, g, b);   // default horizontal (axis +Y)
+    }
+    /** Expanding ring whose plane is perpendicular to axis (nx,ny,nz). */
+    private void fxRingN(float x, float y, float z, float nx, float ny, float nz,
+                         float r0, float r1, float life, float r, float g, float b) {
         Fx e = new Fx(FX_RING, x, y, z);
+        e.dx = nx; e.dy = ny; e.dz = nz;
         e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
         fxList.add(e);
     }
@@ -5513,6 +5549,44 @@ public class Window {
     private void updateFx(float dt) {
         for (java.util.Iterator<Fx> it = fxList.iterator(); it.hasNext(); ) {
             Fx e = it.next(); e.age += dt; if (e.age >= e.life) it.remove();
+        }
+    }
+
+    /** Advance quantum bullets: they phase through everything, ripple at each
+     *  surface they enter/leave, and pierce enemies (even behind walls). */
+    private void updateQuantumBullets(float dt, World world) {
+        if (qbBullets.isEmpty()) return;
+        for (java.util.Iterator<QBullet> it = qbBullets.iterator(); it.hasNext(); ) {
+            QBullet b = it.next();
+            b.age += dt;
+            if (b.age >= b.life) { it.remove(); continue; }
+            int steps = 4;                      // substep for accurate crossings at speed
+            float sdt = dt / steps;
+            for (int s = 0; s < steps; s++) {
+                b.pos.fma(sdt, b.vel);          // pos += vel * sdt
+                boolean solid = world.getBlock((int) Math.floor(b.pos.x),
+                        (int) Math.floor(b.pos.y), (int) Math.floor(b.pos.z)).isSolid();
+                if (solid != b.wasSolid) {
+                    // Crossed a surface → a ripple spreading on the wall (perpendicular to travel).
+                    org.joml.Vector3f n = new org.joml.Vector3f(b.vel).normalize();
+                    fxRingN(b.pos.x, b.pos.y, b.pos.z, n.x, n.y, n.z, 0.3f, 3.2f, 0.45f, 0.4f, 1.8f, 2.7f);
+                    fxRingN(b.pos.x, b.pos.y, b.pos.z, n.x, n.y, n.z, 0.2f, 1.9f, 0.30f, 1.3f, 1.5f, 2.9f);
+                    fxBurst(b.pos.x, b.pos.y, b.pos.z, 0.2f, 1.3f, 0.22f, 0.7f, 1.7f, 2.7f);
+                    b.wasSolid = solid;
+                }
+            }
+            if (enemyManager != null) {
+                for (com.leaf.game.entity.Enemy e : enemyManager.getEnemies()) {
+                    if (!e.alive || b.hit.contains(e.id)) continue;
+                    float dx = e.position.x - b.pos.x, dy = (e.position.y + 0.9f) - b.pos.y,
+                          dz = e.position.z - b.pos.z;
+                    if (dx * dx + dy * dy + dz * dz < 1.7f) {
+                        e.applyDamage(45f);
+                        b.hit.add(e.id);
+                        fxBurst(b.pos.x, b.pos.y, b.pos.z, 0.3f, 1.6f, 0.2f, 1.0f, 1.8f, 2.8f);
+                    }
+                }
+            }
         }
     }
 
@@ -5556,7 +5630,7 @@ public class Window {
 
     private void renderFx(com.leaf.game.render.Shader shader,
                           Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
-        if (fxList.isEmpty()) return;
+        if (fxList.isEmpty() && qbBullets.isEmpty()) return;
         if (depCrescent == null) depCrescent = buildSlashCrescent(22);
         if (orbTorus  == null) orbTorus  = orbBuildTorus(0.05f, 72, 8);
         if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
@@ -5591,8 +5665,7 @@ public class Window {
                     float rad  = e.s0 + (e.s1 - e.s0) * ease;
                     float br   = (1f - f) * 3.2f;
                     orbDraw(shader, pv, orbTorus,
-                            new Matrix4f().translate(e.x, e.y, e.z)
-                                    .scale(rad, Math.max(0.25f, rad * 0.05f), rad),
+                            ringMatrix(e.x, e.y, e.z, e.dx, e.dy, e.dz, rad, Math.max(0.2f, rad * 0.05f)),
                             e.r * br, e.g * br, e.b * br);
                     break;
                 }
@@ -5617,6 +5690,20 @@ public class Window {
                 }
             }
         }
+
+        // ── Quantum bullets: a searing cyan-violet orb with a streaking trail ──
+        for (QBullet b : qbBullets) {
+            org.joml.Vector3f vn = new org.joml.Vector3f(b.vel);
+            if (vn.lengthSquared() > 1e-6f) vn.normalize();
+            orbDraw(shader, pv, orbCyl,
+                    cylAlong(b.pos.x - vn.x * 2.4f, b.pos.y - vn.y * 2.4f, b.pos.z - vn.z * 2.4f,
+                             vn.x, vn.y, vn.z, 2.4f, 0.07f),
+                    0.4f, 1.4f, 2.6f);          // trail
+            orbDraw(shader, pv, orbSphere,
+                    new Matrix4f().translate(b.pos.x, b.pos.y, b.pos.z).scale(0.22f),
+                    1.0f, 2.6f, 3.6f);          // hot orb
+        }
+
         shader.setUniform("emissiveMode", 0);
         shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
         shader.setUniform("mvp", renderMvp);
@@ -5636,6 +5723,23 @@ public class Window {
         org.joml.Vector3f x = new org.joml.Vector3f(up).cross(z).normalize();
         org.joml.Vector3f y = new org.joml.Vector3f(z).cross(x).normalize();
         return new Matrix4f(x.x, x.y, x.z, 0f, y.x, y.y, y.z, 0f, z.x, z.y, z.z, 0f, px, py, pz, 1f);
+    }
+
+    /** Matrix that orients the unit torus (donut in XZ, axis +Y) so its axis = (nx,ny,nz). */
+    private static Matrix4f ringMatrix(float px, float py, float pz,
+                                       float nx, float ny, float nz, float rad, float thick) {
+        org.joml.Vector3f y = new org.joml.Vector3f(nx, ny, nz);
+        if (y.lengthSquared() < 1e-6f) y.set(0, 1, 0);
+        y.normalize();
+        org.joml.Vector3f ref = Math.abs(y.y) < 0.95f
+                ? new org.joml.Vector3f(0, 1, 0) : new org.joml.Vector3f(1, 0, 0);
+        org.joml.Vector3f x = new org.joml.Vector3f(ref).cross(y).normalize();
+        org.joml.Vector3f z = new org.joml.Vector3f(x).cross(y).normalize();
+        return new Matrix4f(
+                x.x * rad,   x.y * rad,   x.z * rad,   0f,
+                y.x * thick, y.y * thick, y.z * thick, 0f,
+                z.x * rad,   z.y * rad,   z.z * rad,   0f,
+                px, py, pz, 1f);
     }
 
     /** Matrix that runs the unit cylinder (radius 1, Y∈[0,1]) from a point along a direction. */
