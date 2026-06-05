@@ -117,30 +117,49 @@ class WindowHud {
         ImGui.end();
     }
 
+    // Slider value holders (imgui-java sliderFloat needs a float[1]); synced from AudioManager.
+    private final float[] volMaster = {1f}, volSfx = {1f}, volMob = {1f}, volMusic = {1f};
+
     void renderPauseMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 100.0f, h / 2.0f - 110.0f);
-        ImGui.setNextWindowSize(200.0f, 210.0f);
+        ImGui.setNextWindowPos(w / 2.0f - 130.0f, h / 2.0f - 175.0f);
+        ImGui.setNextWindowSize(260.0f, 350.0f);
         ImGui.begin("Paused",
                 imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
         ImGui.text("Game Paused");
         ImGui.separator();
         ImGui.spacing();
-        if (ImGui.button("Resume", 180, 30)) {
+        if (ImGui.button("Resume", 240, 28)) {
             win.isPaused = false;
             glfwSetInputMode(win.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
         ImGui.spacing();
-        if (ImGui.button("Controls  [F1]", 180, 30)) {
+        if (ImGui.button("Controls  [F1]", 240, 28)) {
             // Open help without closing pause  -  win.player can read then ESC back
             win.showHelp = true;
         }
         ImGui.spacing();
-        if (ImGui.button("Save Game", 180, 30)) SaveManager.saveGame(win.world, win.player, win.inventory);
+        if (ImGui.button("Save Game", 240, 28)) SaveManager.saveGame(win.world, win.player, win.inventory);
         ImGui.spacing();
-        if (ImGui.button("Save & Quit", 180, 30)) {
+        if (ImGui.button("Save & Quit", 240, 28)) {
             SaveManager.saveGame(win.world, win.player, win.inventory);
             glfwSetWindowShouldClose(win.window, true);
         }
+
+        // ── VOLUME MIXER ──────────────────────────────────────────────────────
+        ImGui.spacing();
+        ImGui.separator();
+        ImGui.text("Volume");
+        ImGui.pushItemWidth(150f);
+        volMaster[0] = AudioManager.getMasterVolume();
+        if (ImGui.sliderFloat("Master", volMaster, 0f, 1f)) AudioManager.setMasterVolume(volMaster[0]);
+        volSfx[0] = AudioManager.getSfxVolume();
+        if (ImGui.sliderFloat("Effects", volSfx, 0f, 1f)) AudioManager.setSfxVolume(volSfx[0]);
+        volMob[0] = AudioManager.getMobVolume();
+        if (ImGui.sliderFloat("Mobs", volMob, 0f, 1f)) AudioManager.setMobVolume(volMob[0]);
+        volMusic[0] = AudioManager.getMusicVolume();
+        if (ImGui.sliderFloat("Music", volMusic, 0f, 1f)) AudioManager.setMusicVolume(volMusic[0]);
+        ImGui.popItemWidth();
+
         ImGui.end();
     }
 
