@@ -581,6 +581,8 @@ public class Window {
         Fx(int type, float x, float y, float z) { this.type = type; this.x = x; this.y = y; this.z = z; }
     }
     private final java.util.ArrayList<Fx> fxList = new java.util.ArrayList<>();
+    private com.leaf.game.render.Mesh fxCrescentMesh = null;  // gradient slash (white edge → warm body)
+    private com.leaf.game.render.Mesh fxConeMesh = null;      // fiery cone (stone canon charge)
     // Rising-edge detectors so a teleport (blink / seal / substitute / swap) spawns FX once.
     private float lastBlinkFlash = 0f, lastSealFlash = 0f;
 
@@ -1496,10 +1498,11 @@ public class Window {
                             float cx = ox + adx * 3.5f, cy = oy + ady * 3.5f, cz = oz + adz * 3.5f;
                             float roll = (float) (Math.random() * Math.PI * 2.0);
                             // Two crossing crescents (facing back at the player) → a searing X.
-                            fxSlash(cx, cy, cz, -adx, -ady, -adz, roll,        2.4f, 3.6f, 6.0f, 0.30f, 2.3f, 1.7f, 0.55f);
-                            fxSlash(cx, cy, cz, -adx, -ady, -adz, roll + 1.5f, -2.4f, 3.2f, 5.4f, 0.30f, 2.5f, 1.9f, 0.60f);
-                            fxRing(cx, oy + 0.15f, cz, 1.0f, 6.5f, 0.34f, 2.2f, 1.5f, 0.5f);
-                            fxBurst(cx, cy, cz, 0.5f, 2.6f, 0.20f, 2.8f, 2.0f, 0.8f);
+                            // Warm amber-gold tint — the baked gradient gives a white-hot
+                            // edge fading to deep amber (powerful 3D blade, not flat white).
+                            fxSlash(cx, cy, cz, -adx, -ady, -adz, roll,        2.4f, 3.6f, 6.0f, 0.30f, 1.5f, 1.0f, 0.45f);
+                            fxSlash(cx, cy, cz, -adx, -ady, -adz, roll + 1.5f, -2.4f, 3.2f, 5.4f, 0.30f, 1.6f, 1.1f, 0.5f);
+                            fxBurst(cx, cy, cz, 0.4f, 1.8f, 0.16f, 1.8f, 1.2f, 0.5f);   // small hot flash
                         }
                         player.attacks.pendingMeleeArcs.clear();
 
@@ -3710,44 +3713,29 @@ public class Window {
                     shader.setUniform("overlayVignetteColor", new Vector3f(0f));
                     shader.setUniform("alphaMultiplier", 1.0f);
 
-                    // ── DRAMATIC CHARGE FX: hot core + spiralling rock shards being
-                    //    sucked in + contracting energy rings. Builds with charge. ──
-                    if (orbCube == null)   orbCube   = orbBuildCube();
-                    if (orbTorus == null)  orbTorus  = orbBuildTorus(0.05f, 72, 8);
-                    if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
+                    // ── CHARGE: a fiery triangular CONE forming, aimed where it fires.
+                    //    White-hot tip → deep-red base, growing + pulsing with charge. ──
+                    if (fxConeMesh == null) fxConeMesh = buildCone(22);
                     Matrix4f pvSC = new Matrix4f(projection).mul(view);
+                    Vector3f look = camera.getLookDirection();
                     float scCx = stoneCanonGroundPos.x, scCy = riseY, scCz = stoneCanonGroundPos.z;
-                    float cp = chargeProgress;
+                    float cp    = chargeProgress;
+                    float pulse = 0.88f + 0.12f * (float) Math.sin(timeSecs2 * 16);
+                    float coneLen = 0.8f + cp * 4.2f + chargeScale;     // grows forward
+                    float coneRad = 0.28f + cp * 0.9f + chargeScale * 0.4f;
+                    float br = (0.55f + 0.9f * cp) * pulse;
                     glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE);
                     glDepthMask(false); glDepthFunc(GL_LEQUAL); glDisable(GL_CULL_FACE);
                     shader.setUniform("emissiveMode", 1);
-                    // Molten core pulsing inside the boulder (orange → white-hot).
-                    float coreR = chargeScale * (0.7f + 0.5f * cp) * (1f + 0.10f * (float) Math.sin(timeSecs2 * 12));
-                    orbDraw(shader, pvSC, orbSphere,
-                            new Matrix4f().translate(scCx, scCy, scCz).scale(coreR),
-                            0.9f + 1.9f * cp, 0.35f + 0.7f * cp, 0.10f + 0.15f * cp);
-                    // Rock shards spiralling inward (bigger far → small as they're devoured).
-                    int shards = 12;
-                    for (int i = 0; i < shards; i++) {
-                        float ph   = timeSecs2 * (2.2f + cp * 4.5f) + i * (6.2831853f / shards);
-                        float pull = (float) ((timeSecs2 * 1.4 + i * 0.27) % 1.0);   // 0→1 repeating
-                        float rad  = (2.6f - cp * 0.9f) * (1f - pull * 0.85f) + 0.35f;
-                        float sy   = (float) Math.sin(ph * 1.3) * 0.7f;
-                        float ssz  = (0.10f + 0.12f * (1f - pull)) * (0.7f + 0.5f * cp);
-                        float sb   = (0.5f + 0.9f * cp) * (0.4f + 0.6f * (1f - pull));
-                        orbDraw(shader, pvSC, orbCube,
-                                new Matrix4f().translate(scCx + (float) Math.cos(ph) * rad, scCy + sy,
-                                                         scCz + (float) Math.sin(ph) * rad)
-                                        .rotateY(ph).rotateX(ph * 0.7f).scale(ssz),
-                                sb, sb * 0.55f, sb * 0.2f);
-                    }
-                    // Contracting energy ring — a power-gathering pulse collapsing inward.
-                    float rp   = (float) ((timeSecs2 * 1.3) % 1.0);
-                    float rgR  = 3.2f * (1f - rp) + 0.4f;
-                    float rgB  = (1f - rp) * (0.6f + cp);
-                    orbDraw(shader, pvSC, orbTorus,
-                            new Matrix4f().translate(scCx, scCy, scCz).scale(rgR, 0.18f, rgR),
-                            1.6f * rgB, 0.9f * rgB, 0.2f * rgB);
+                    // Outer fiery cone (gradient baked: white tip → red base).
+                    orbDraw(shader, pvSC, fxConeMesh,
+                            faceMatrix(scCx, scCy, scCz, look.x, look.y, look.z).scale(coneRad, coneRad, coneLen),
+                            br, br, br);
+                    // Thin white-hot inner cone (the searing core).
+                    orbDraw(shader, pvSC, fxConeMesh,
+                            faceMatrix(scCx, scCy, scCz, look.x, look.y, look.z)
+                                    .scale(coneRad * 0.45f, coneRad * 0.45f, coneLen * 1.04f),
+                            br * 1.7f, br * 1.5f, br * 1.0f);
                     shader.setUniform("emissiveMode", 0);
                     shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
                     glDepthFunc(GL_LESS); glDepthMask(true); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
@@ -5466,12 +5454,27 @@ public class Window {
         glDisable(GL_CULL_FACE);
         shader.setUniform("emissiveMode", 1);
 
-        // ── THE HALF-DOME: a glowing gold wireframe hemisphere so the field's shape
-        //    reads clearly (meridians + parallels), with a gentle shimmer. ──────────
+        // ── THE HALF-DOME: a glowing, WOVEN gold cage (undulating, not straight)
+        //    with energy washing up it — so the shape reads and feels alive. ────────
         float domePulse = 0.55f + 0.18f * (float) Math.sin(tnow * 2.0);
+        float domR = GameConfig.depRadius;
         orbDraw(shader, pv, depDomeWire,
-                new Matrix4f().translate(depX, depY, depZ).scale(GameConfig.depRadius),
-                1.30f * domePulse, 0.95f * domePulse, 0.28f * domePulse);
+                new Matrix4f().translate(depX, depY, depZ).scale(domR),
+                1.10f * domePulse, 0.80f * domePulse, 0.24f * domePulse);
+        // Flowing energy: 3 bright bands of light rise up the dome on repeat.
+        if (orbTorus == null) orbTorus = orbBuildTorus(0.05f, 72, 8);
+        final float HALF = (float) (Math.PI * 0.5);
+        for (int k = 0; k < 3; k++) {
+            float t  = ((tnow * 0.45f + k / 3f) % 1f);     // 0→1, staggered, repeating
+            float phi = t * HALF;                          // base → pole
+            float r   = (float) Math.cos(phi) * domR;      // ring radius at that latitude
+            float yy  = (float) Math.sin(phi) * domR;
+            float br  = (1f - t) * (t < 0.12f ? t / 0.12f : 1f) * 2.6f;  // fade in then out as it climbs
+            if (br <= 0.02f) continue;
+            orbDraw(shader, pv, orbTorus,
+                    new Matrix4f().translate(depX, depY + yy, depZ).scale(r, Math.max(0.15f, r * 0.04f), r),
+                    1.5f * br, 1.1f * br, 0.3f * br);
+        }
 
         // ── THE SLASH STORM: crescents that SNAP through their arc fast, then linger
         //    + fade. (Fast expansion/sweep front-loaded so the cut reads as instant.) ─
@@ -5567,11 +5570,17 @@ public class Window {
                 boolean solid = world.getBlock((int) Math.floor(b.pos.x),
                         (int) Math.floor(b.pos.y), (int) Math.floor(b.pos.z)).isSolid();
                 if (solid != b.wasSolid) {
-                    // Crossed a surface → a ripple spreading on the wall (perpendicular to travel).
+                    // Crossed a surface → a 3D space-warp: a TRAIN of concentric rings
+                    // rippling outward on the wall + a warp bubble bulging through it.
                     org.joml.Vector3f n = new org.joml.Vector3f(b.vel).normalize();
-                    fxRingN(b.pos.x, b.pos.y, b.pos.z, n.x, n.y, n.z, 0.3f, 3.2f, 0.45f, 0.4f, 1.8f, 2.7f);
-                    fxRingN(b.pos.x, b.pos.y, b.pos.z, n.x, n.y, n.z, 0.2f, 1.9f, 0.30f, 1.3f, 1.5f, 2.9f);
-                    fxBurst(b.pos.x, b.pos.y, b.pos.z, 0.2f, 1.3f, 0.22f, 0.7f, 1.7f, 2.7f);
+                    for (int k = 0; k < 4; k++) {
+                        float r0 = 0.15f + k * 0.6f;       // staggered start radii → concentric ripple
+                        float br = 1.6f - k * 0.3f;
+                        fxRingN(b.pos.x, b.pos.y, b.pos.z, n.x, n.y, n.z,
+                                r0, r0 + 3.0f, 0.40f + k * 0.05f, 0.4f * br, 1.4f * br, 2.4f * br);
+                    }
+                    // Warp bubble — a sphere bulging out of the wall (the "space distortion").
+                    fxBurst(b.pos.x, b.pos.y, b.pos.z, 0.3f, 2.4f, 0.35f, 0.35f, 1.1f, 2.0f);
                     b.wasSolid = solid;
                 }
             }
@@ -5620,17 +5629,79 @@ public class Window {
         ScreenEffectManager.INSTANCE.flash(0.7f, 0.6f, 1.0f, 0.4f, 0.18f);
     }
 
-    /** A vivid blue-white teleport burst: implosion-ish ring + flash + light column. */
+    /** A restrained, cool teleport flourish — concentric rings + a slim shimmer
+     *  (no blinding white flash). */
     private void fxTeleport(float x, float y, float z) {
-        fxBurst(x, y + 1.0f, z, 0.4f, 3.0f, 0.30f, 1.2f, 1.9f, 3.4f);   // blue-white flash
-        fxRing(x, y + 0.1f, z, 0.5f, 5.0f, 0.34f, 1.0f, 1.7f, 3.2f);    // expanding ground ring
-        fxBolt(x, y, z, 0f, 1f, 0f, 6.5f, 0.18f, 0.26f, 1.5f, 2.1f, 3.4f);  // vertical light pillar
-        AudioManager.play("teleport", 0.7f, 0.95f + (float) Math.random() * 0.2f);
+        // Two soft blue rings rising up the body (a vertical "warp" wash, not a flash).
+        fxRingN(x, y + 0.6f, z, 0f, 1f, 0f, 2.2f, 0.2f, 0.30f, 0.35f, 0.55f, 1.0f);   // contracting
+        fxRingN(x, y + 1.4f, z, 0f, 1f, 0f, 0.3f, 2.0f, 0.32f, 0.30f, 0.55f, 1.1f);   // expanding
+        fxBolt(x, y, z, 0f, 1f, 0f, 3.2f, 0.07f, 0.24f, 0.4f, 0.7f, 1.3f);            // slim shimmer column
+        AudioManager.play("teleport", 0.6f, 0.95f + (float) Math.random() * 0.2f);
+    }
+
+    /** Crescent with a baked WIDTH gradient — white-hot leading edge fading to a
+     *  warm, dim trailing body — so a slash reads as a powerful 3D blade, not a flat
+     *  white shape. (Colour comes from this gradient × the per-slash emissive tint.) */
+    private com.leaf.game.render.Mesh buildFxCrescent(int seg) {
+        final float A = 1.22f, R = 1.0f, wMax = 0.16f;
+        float[] v = new float[(seg + 1) * 2 * 10];
+        int vi = 0;
+        for (int i = 0; i <= seg; i++) {
+            float t = (float) i / seg;
+            float a = -A + 2f * A * t;
+            float dirX = (float) Math.sin(a), dirY = (float) Math.cos(a);
+            float taper = (float) Math.pow(Math.max(0f, 1f - (a / A) * (a / A)), 0.6);
+            float w = wMax * taper;
+            // inner (concave) — warm, dim body
+            int o = (vi++) * 10;
+            float bIn = 0.20f + 0.30f * taper;
+            v[o] = (R - w) * dirX; v[o+1] = (R - w) * dirY; v[o+2] = 0f;
+            v[o+3] = 1.0f * bIn; v[o+4] = 0.45f * bIn; v[o+5] = 0.14f * bIn; v[o+6] = 1f;
+            v[o+7] = 0f; v[o+8] = 0f; v[o+9] = 1f;
+            // outer (convex) — white-hot leading edge
+            o = (vi++) * 10;
+            float bOut = 0.65f + 0.35f * taper;
+            v[o] = (R + w) * dirX; v[o+1] = (R + w) * dirY; v[o+2] = 0f;
+            v[o+3] = 1.0f * bOut; v[o+4] = 0.96f * bOut; v[o+5] = 0.82f * bOut; v[o+6] = 1f;
+            v[o+7] = 0f; v[o+8] = 0f; v[o+9] = 1f;
+        }
+        int[] idx = new int[seg * 6];
+        int ii = 0;
+        for (int i = 0; i < seg; i++) {
+            int a = i*2, b = i*2+1, c = i*2+2, d = i*2+3;
+            idx[ii++] = a; idx[ii++] = c; idx[ii++] = b;
+            idx[ii++] = b; idx[ii++] = c; idx[ii++] = d;
+        }
+        return new com.leaf.game.render.Mesh(v, idx);
+    }
+
+    /** A solid cone, apex at +Z (tip), base ring at z=0 radius 1. Baked fiery gradient:
+     *  white-hot tip → deep red base. For the Stone Canon charge. */
+    private com.leaf.game.render.Mesh buildCone(int seg) {
+        // verts: apex + base ring; triangles apex→edge, plus a base fan.
+        float[] v = new float[(seg + 2) * 10];
+        int vi = 0;
+        // apex (tip) — white-hot
+        int o = (vi++) * 10;
+        v[o]=0; v[o+1]=0; v[o+2]=1f; v[o+3]=1f; v[o+4]=0.95f; v[o+5]=0.7f; v[o+6]=1f; v[o+7]=0; v[o+8]=0; v[o+9]=1f;
+        // base ring — deep red-orange
+        for (int i = 0; i <= seg; i++) {
+            double th = 2 * Math.PI * i / seg;
+            o = (vi++) * 10;
+            v[o]=(float)Math.cos(th); v[o+1]=(float)Math.sin(th); v[o+2]=0f;
+            v[o+3]=1.0f; v[o+4]=0.30f; v[o+5]=0.08f; v[o+6]=1f;
+            v[o+7]=(float)Math.cos(th); v[o+8]=(float)Math.sin(th); v[o+9]=0.4f;
+        }
+        int[] idx = new int[seg * 3];
+        int ii = 0;
+        for (int i = 0; i < seg; i++) { idx[ii++] = 0; idx[ii++] = 1 + i; idx[ii++] = 1 + (i + 1); }
+        return new com.leaf.game.render.Mesh(v, idx);
     }
 
     private void renderFx(com.leaf.game.render.Shader shader,
                           Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
         if (fxList.isEmpty() && qbBullets.isEmpty()) return;
+        if (fxCrescentMesh == null) fxCrescentMesh = buildFxCrescent(24);
         if (depCrescent == null) depCrescent = buildSlashCrescent(22);
         if (orbTorus  == null) orbTorus  = orbBuildTorus(0.05f, 72, 8);
         if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
@@ -5653,11 +5724,11 @@ public class Window {
                     float scale = e.s0 + (e.s1 - e.s0) * snapE;
                     float rise  = f < 0.06f ? f / 0.06f : 1f;
                     float fall  = f > 0.5f ? (1f - (f - 0.5f) / 0.5f) : 1f;
-                    float br    = rise * fall * 4.6f;
+                    float br    = rise * fall * 1.9f;   // softer so the gradient/colour reads (not pure white)
                     if (br <= 0.01f) break;
                     Matrix4f m = faceMatrix(e.x, e.y, e.z, e.dx, e.dy, e.dz)
                             .rotateZ(e.roll + e.sweep * snapE).scale(scale);
-                    orbDraw(shader, pv, depCrescent, m, e.r * br, e.g * br, e.b * br);
+                    orbDraw(shader, pv, fxCrescentMesh, m, e.r * br, e.g * br, e.b * br);
                     break;
                 }
                 case FX_RING: {
@@ -5805,31 +5876,40 @@ public class Window {
      * inside. Brighter near the base. (10 floats/vertex; drawn additive + emissive.)
      */
     private com.leaf.game.render.Mesh buildDomeWire(int rings, int meridians) {
-        java.util.ArrayList<Float>   vl = new java.util.ArrayList<>(4096);
-        java.util.ArrayList<Integer> il = new java.util.ArrayList<>(4096);
-        final float hw = 0.014f;          // ribbon half-width on the unit sphere
+        java.util.ArrayList<Float>   vl = new java.util.ArrayList<>(16384);
+        java.util.ArrayList<Integer> il = new java.util.ArrayList<>(16384);
+        final float hw   = 0.018f;
         final float HALF = (float) (Math.PI * 0.5);
+        final float wAmp = 0.17f, wFreq = 3.5f;   // meridian undulation — woven, not straight
 
-        // Meridians: arcs from base (phi=0) to pole (phi=HALF) at fixed azimuth.
-        int segM = 18;
+        // Undulating meridians: each spirals/waves as it climbs (per-meridian phase).
+        int segM = 30;
         for (int m = 0; m < meridians; m++) {
-            float theta = (float) (2 * Math.PI * m / meridians);
-            float ct = (float) Math.cos(theta), st = (float) Math.sin(theta);
-            float wx = -st, wz = ct;       // azimuthal tangent (ribbon width dir, constant)
-            for (int s = 0; s < segM; s++) {
-                addDomeQuad(vl, il, theta, ct, st, wx, 0f, wz, hw,
-                        HALF * s / segM, HALF * (s + 1) / segM, true);
+            float base = (float) (2 * Math.PI * m / meridians);
+            float[] prev = null; float prevBr = 0f;
+            for (int s = 0; s <= segM; s++) {
+                float phi = HALF * s / segM;
+                float th  = base + (float) Math.sin(phi * wFreq + m * 0.6f) * wAmp;
+                float cp = (float) Math.cos(phi), sp = (float) Math.sin(phi);
+                float[] P = { cp * (float) Math.cos(th), sp, cp * (float) Math.sin(th) };
+                float br = 0.40f + 0.60f * (1f - phi / HALF);
+                if (prev != null) addDomeTube(vl, il, prev, P, prevBr, br, hw);
+                prev = P; prevBr = br;
             }
         }
-        // Parallels: rings at several latitudes (skip the very pole).
-        int segR = meridians * 2;
+        // Rippled parallels: latitude wobbles around the ring (flowing, not flat).
+        int segR = meridians * 3;
         for (int k = 0; k < rings; k++) {
-            float phi = HALF * k / rings;   // base … near pole
-            float cp = (float) Math.cos(phi), sp = (float) Math.sin(phi);
-            for (int s = 0; s < segR; s++) {
-                float t0 = (float) (2 * Math.PI * s / segR);
-                float t1 = (float) (2 * Math.PI * (s + 1) / segR);
-                addDomeRingQuad(vl, il, cp, sp, t0, t1, hw, phi);
+            float phi0 = HALF * (k + 0.4f) / rings;
+            float br   = 0.40f + 0.60f * (1f - phi0 / HALF);
+            float[] prev = null;
+            for (int s = 0; s <= segR; s++) {
+                float th  = (float) (2 * Math.PI * s / segR);
+                float phi = phi0 + (float) Math.sin(th * 5f + k) * 0.045f;
+                float cp = (float) Math.cos(phi), sp = (float) Math.sin(phi);
+                float[] P = { cp * (float) Math.cos(th), sp, cp * (float) Math.sin(th) };
+                if (prev != null) addDomeTube(vl, il, prev, P, br, br, hw);
+                prev = P;
             }
         }
         float[] va = new float[vl.size()];
@@ -5839,39 +5919,23 @@ public class Window {
         return new com.leaf.game.render.Mesh(va, ia);
     }
 
-    /** One quad segment of a meridian ribbon between two latitudes (phi0..phi1). */
-    private static void addDomeQuad(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
-                                    float theta, float ct, float st, float wx, float wy, float wz,
-                                    float hw, float phi0, float phi1, boolean meridian) {
-        float c0 = (float) Math.cos(phi0), s0 = (float) Math.sin(phi0);
-        float c1 = (float) Math.cos(phi1), s1 = (float) Math.sin(phi1);
-        float[] p0 = { c0 * ct, s0, c0 * st };
-        float[] p1 = { c1 * ct, s1, c1 * st };
-        float b0 = 0.45f + 0.55f * (1f - phi0 / (float)(Math.PI * 0.5));   // brighter at base
-        float b1 = 0.45f + 0.55f * (1f - phi1 / (float)(Math.PI * 0.5));
+    /** A crossed-ribbon tube between two unit-sphere points A,B (visible from any angle). */
+    private static void addDomeTube(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
+                                    float[] A, float[] B, float brA, float brB, float hw) {
+        float dx = B[0]-A[0], dy = B[1]-A[1], dz = B[2]-A[2];
+        float mx = (A[0]+B[0])*0.5f, my = (A[1]+B[1])*0.5f, mz = (A[2]+B[2])*0.5f;
+        float ml = (float) Math.sqrt(mx*mx+my*my+mz*mz); if (ml < 1e-5f) ml = 1f;
+        float rx = mx/ml, ry = my/ml, rz = mz/ml;                    // radial
+        float w1x = dy*rz-dz*ry, w1y = dz*rx-dx*rz, w1z = dx*ry-dy*rx; // perp to dir & radial
+        float w1l = (float) Math.sqrt(w1x*w1x+w1y*w1y+w1z*w1z); if (w1l < 1e-5f) w1l = 1f;
+        w1x = w1x/w1l*hw; w1y = w1y/w1l*hw; w1z = w1z/w1l*hw;
         domePush(vl, il,
-            p0[0]+wx*hw, p0[1]+wy*hw, p0[2]+wz*hw,
-            p1[0]+wx*hw, p1[1]+wy*hw, p1[2]+wz*hw,
-            p1[0]-wx*hw, p1[1]-wy*hw, p1[2]-wz*hw,
-            p0[0]-wx*hw, p0[1]-wy*hw, p0[2]-wz*hw, b0, b1);
-    }
-
-    /** One quad segment of a parallel ring between two azimuths (t0..t1) at latitude phi. */
-    private static void addDomeRingQuad(java.util.ArrayList<Float> vl, java.util.ArrayList<Integer> il,
-                                        float cp, float sp, float t0, float t1, float hw, float phi) {
-        float ct0 = (float) Math.cos(t0), st0 = (float) Math.sin(t0);
-        float ct1 = (float) Math.cos(t1), st1 = (float) Math.sin(t1);
-        // width dir = toward the pole (d/dphi), per endpoint
-        float w0x = -sp*ct0, w0y = cp, w0z = -sp*st0;
-        float w1x = -sp*ct1, w1y = cp, w1z = -sp*st1;
-        float[] p0 = { cp*ct0, sp, cp*st0 };
-        float[] p1 = { cp*ct1, sp, cp*st1 };
-        float b = 0.45f + 0.55f * (1f - phi / (float)(Math.PI * 0.5));
+            A[0]+w1x,A[1]+w1y,A[2]+w1z, B[0]+w1x,B[1]+w1y,B[2]+w1z,
+            B[0]-w1x,B[1]-w1y,B[2]-w1z, A[0]-w1x,A[1]-w1y,A[2]-w1z, brA, brB);
+        float w2x = rx*hw, w2y = ry*hw, w2z = rz*hw;                 // radial ribbon
         domePush(vl, il,
-            p0[0]+w0x*hw, p0[1]+w0y*hw, p0[2]+w0z*hw,
-            p1[0]+w1x*hw, p1[1]+w1y*hw, p1[2]+w1z*hw,
-            p1[0]-w1x*hw, p1[1]-w1y*hw, p1[2]-w1z*hw,
-            p0[0]-w0x*hw, p0[1]-w0y*hw, p0[2]-w0z*hw, b, b);
+            A[0]+w2x,A[1]+w2y,A[2]+w2z, B[0]+w2x,B[1]+w2y,B[2]+w2z,
+            B[0]-w2x,B[1]-w2y,B[2]-w2z, A[0]-w2x,A[1]-w2y,A[2]-w2z, brA, brB);
     }
 
     /** Push one dome ribbon quad (4 verts, white×brightness; normal = radial-ish). */
