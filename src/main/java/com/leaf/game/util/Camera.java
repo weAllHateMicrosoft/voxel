@@ -91,7 +91,11 @@ public class Camera {
         return gravityRot.transform(local);
     }
 
+    /** When true (gravity is flipped), the ±89° pitch limit is lifted for full look freedom. */
+    public boolean freeLook = false;
+
     public void clampPitch() {
+        if (freeLook) return;   // no pitch limit under non-standard gravity
         pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, pitch));
     }
 

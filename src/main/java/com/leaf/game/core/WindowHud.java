@@ -513,6 +513,20 @@ class WindowHud {
             int col = up ? ImGui.colorConvertFloat4ToU32(0.4f, 1f, 0.5f, 0.95f)
                          : ImGui.colorConvertFloat4ToU32(1f, 0.4f, 0.3f, 0.95f);
             draw.addText(14f, 40f, col, line);
+
+            // ── KILL BANNER — big and clear when you eliminate the opponent ──
+            if (win.killBannerTimer > 0f) {
+                float a = Math.min(1f, win.killBannerTimer / 1.5f);
+                String txt = "ENEMY ELIMINATED";
+                ImFont font = ImGui.getFont();
+                float scale = 2.6f;
+                float sz = font.getFontSize() * scale;
+                float tw = ImGui.calcTextSize(txt).x * scale;
+                int gold = ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.25f, a);
+                int shad = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a * 0.7f);
+                draw.addText(font, sz, cx - tw / 2f + 2f, screenH * 0.26f + 2f, shad, txt);
+                draw.addText(font, sz, cx - tw / 2f,      screenH * 0.26f,      gold, txt);
+            }
         }
 
         // ── LIGHTNING BOLT RENDERING ──────────────────────────────────────────

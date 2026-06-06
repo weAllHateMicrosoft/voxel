@@ -72,6 +72,7 @@ public class Window {
     boolean mpLastSummonKey = false;
     float   mpSummonSendTimer = 0f;
     com.leaf.game.render.Mesh summonCubeMine, summonCubeFoe;   // cyan = ours, red = theirs
+    float   killBannerTimer = 0f;   // >0 shows "ENEMY ELIMINATED" after a PvP kill
 
     private boolean networkInitialized = false;
     final ImString ipInput = new ImString("127.0.0.1", 64);
@@ -160,7 +161,7 @@ public class Window {
 
     final Block[] hotbar = {
             Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
-            Block.AIR, Block.AIR, Block.AIR, Block.AIR, Block.AIR
+            Block.GATLING_GUN, Block.AIR, Block.AIR, Block.AIR, Block.AIR
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -471,6 +472,8 @@ public class Window {
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
+    private boolean lastF4         = false;            // meteor storm edge-detect
+    private boolean lastF11        = false;            // colossal meteor edge-detect
     // ── RADAR SWEEP (F10) — one-shot scan over the REAL world ────────────────────
     // A 3D radar scope projects onto the terrain (rings + spokes + rotating sweep
     // arm with an opaque→transparent afterglow), enemies light up in wireframe and
@@ -596,6 +599,26 @@ public class Window {
         Fx(int type, float x, float y, float z) { this.type = type; this.x = x; this.y = y; this.z = z; }
     }
     private final java.util.ArrayList<Fx> fxList = new java.util.ArrayList<>();
+
+    // ── METEOR STORM ───────────────────────────────────────────────────────────
+    /** A falling meteorite: a glowing hot core + comet trail that carves a crater. */
+    private static final class Meteor {
+        final Vector3f pos = new Vector3f();
+        final Vector3f vel = new Vector3f();
+        float size;
+        boolean alive = true;
+        final java.util.ArrayDeque<float[]> trail = new java.util.ArrayDeque<>();
+    }
+    private final java.util.ArrayList<Meteor> meteors = new java.util.ArrayList<>();
+    private float meteorStormTimer = 0f;   // >0 while a storm is actively raining
+    private float meteorSpawnTimer = 0f;   // countdown between drops during a storm
+
+    // ── GATLING GUN (held item, hold LMB to rip) ───────────────────────────────
+    private float gatlingCooldown = 0f;    // fire-rate timer
+    private float gatlingFlash    = 0f;    // muzzle-flash glow timer (viewmodel)
+    private float barrelSpin      = 0f;    // spinning-barrel angle (rad)
+    private int   gatlingShots    = 0;     // round counter (for sound throttling)
+    private com.leaf.game.render.Mesh gunBodyMesh, gunBarrelMesh;   // viewmodel meshes
     private com.leaf.game.render.Mesh fxCrescentMesh = null;  // gradient slash (white edge → warm body)
     private com.leaf.game.render.Mesh fxConeMesh = null;      // fiery cone (stone canon charge)
     // Rising-edge detectors so a teleport (blink / seal / substitute / swap) spawns FX once.
@@ -783,7 +806,8 @@ public class Window {
                 boolean standConsumedLMB = player.stand.isInStandPerspective()
                         || player.stand.autoAimedThisFrame;
                 boolean kamuiConsumedLMB = player != null && player.abilities.isKamui;
-                if (!standConsumedLMB && !kamuiConsumedLMB) {
+                boolean gunHeld          = hotbar[selectedSlot] == Block.GATLING_GUN;  // LMB = shoot, not break
+                if (!standConsumedLMB && !kamuiConsumedLMB && !gunHeld) {
                     breakingActive = (action == GLFW_PRESS || action == GLFW_REPEAT);
                     if (action == GLFW_RELEASE) { breakProgress = 0.0f; digPreDelay = 0.0f; }
                 }
@@ -797,7 +821,8 @@ public class Window {
             }
 
             if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
-                if (lastTarget != null && lastTarget.hit && selectedBlock != Block.AIR) {
+                if (lastTarget != null && lastTarget.hit && selectedBlock != Block.AIR
+                        && selectedBlock != Block.GATLING_GUN) {   // the gun is a weapon, not a block
                     if (!playerOccupies(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ) &&
                             !remotePlayerOccupies(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ)) {
                         if (inventory.useBlock(selectedBlock)) {
@@ -876,6 +901,20 @@ public class Window {
     private void triggerDeath() {
         if (showDeathScreen || deathCutscenePending) return;   // already dying
         player.health = 0f;
+
+        // ── DEATH ANIMATION — a clear, broadcast death burst so the killer sees the
+        //    elimination at the victim's spot (the FX helpers auto-sync over the net).
+        float px = player.position.x, py = player.position.y, pz = player.position.z;
+        fxBurst(px, py + 1.0f, pz, 0.5f, 4.6f, 0.50f, 3.2f, 0.9f, 0.55f);          // white-hot flash
+        fxRing (px, py + 0.6f, pz, 0.5f, 7.5f, 0.62f, 2.9f, 0.45f, 0.35f);         // red shockwave
+        fxRing (px, py + 0.6f, pz, 0.5f, 4.0f, 0.46f, 3.3f, 1.4f, 0.9f);           // inner bright ring
+        for (int i = 0; i < 8; i++) {                                              // upward soul-bolts
+            double a = i / 8.0 * Math.PI * 2;
+            fxBolt(px, py, pz, (float) Math.cos(a) * 0.4f, 1f, (float) Math.sin(a) * 0.4f,
+                    4.5f, 0.12f, 0.55f, 3.0f, 0.8f, 0.5f);
+        }
+        if (network != null && network.connected) network.sendDeath(px, py, pz);   // kill banner for the foe
+
         AudioManager.stopContinuous("kamui_duration");
         AudioManager.stopContinuous("kamui_distortion");
         deathScreenLines = RunRecords.INSTANCE.recordDeath(
@@ -889,6 +928,26 @@ public class Window {
             cutscene.startRevival();
         }
         ScreenEffectManager.INSTANCE.desaturate(0.7f, 1.5f);
+    }
+
+    /**
+     * Multiplayer DUEL setup, run BEFORE abilities each frame so PvP hits land reliably:
+     *  • keeps the arena clear of unsynced wave mobs (this mode is duel + summon-troops),
+     *  • creates/positions the opponent hitbox proxy from the FRESHEST synced position,
+     *    so any enemy-targeting ability that fires this frame hits the right spot.
+     * The damage the proxy soaks up is read + relayed at the end of the frame.
+     */
+    private void updateMpProxyEarly() {
+        if (network == null || !network.connected || enemyManager == null) return;
+        // No wave mobs in PvP (they'd be unsynced); troops live in mySummons, not here.
+        enemyManager.wavesEnabled = false;
+        enemyManager.getEnemies().removeIf(e -> e != mpProxy);
+        if (mpProxy == null) {
+            mpProxy = enemyManager.spawnAt(network.remoteX, network.remoteY, network.remoteZ,
+                    com.leaf.game.entity.Enemy.Type.DUMMY);
+        }
+        mpProxy.position.set(network.remoteX, network.remoteY, network.remoteZ);
+        mpProxy.alive = true;
     }
 
     /** Begin the next queued practice session, or start the next wave if the queue is empty. */
@@ -1321,6 +1380,9 @@ public class Window {
                     }
 
                     if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending) {
+                        // ── MP DUEL SETUP — runs BEFORE abilities so PvP hits land ─
+                        updateMpProxyEarly();
+
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
                         // Save state BEFORE update so we can detect transitions.
                         // player.update() resets highestY on landing and toggles debugMode.
@@ -2662,21 +2724,15 @@ public class Window {
                         }
                     }
 
-                    // ── PvP PROXY ──────────────────────────────────────────────
-                    // An invisible DUMMY mirroring the remote player so EVERY enemy-
-                    // targeting ability/attack hits them. Damage dealt to it is read
-                    // off each frame and relayed; then the proxy is topped back up so
-                    // it persists as a pure hitbox.
-                    if (mpProxy == null && enemyManager != null) {
-                        mpProxy = enemyManager.spawnAt(network.remoteX, network.remoteY,
-                                network.remoteZ, com.leaf.game.entity.Enemy.Type.DUMMY);
-                    }
+                    // ── PvP PROXY relay ────────────────────────────────────────
+                    // The proxy hitbox is created + positioned EARLY each frame (before
+                    // abilities run — see updateMpProxyEarly) so hits land reliably.
+                    // Here we just read the damage our abilities dealt it and relay it.
                     if (mpProxy != null) {
                         float dealt = mpProxy.maxHealth - mpProxy.health;
                         if (dealt > 0.01f) network.sendDamage(dealt);   // relay our hits
                         mpProxy.health = mpProxy.maxHealth;
                         mpProxy.alive  = true;
-                        mpProxy.position.set(remotePlayer.x, remotePlayer.y, remotePlayer.z);
                     }
 
                     // ── SPAWN A TROOP (press ']') that charges the opponent ─────
@@ -2720,6 +2776,17 @@ public class Window {
                     if (player.health <= 0f && !player.abilities.isKamui && immunityTimer <= 0f) {
                         triggerDeath();   // PvP/troop kill — die immediately, same flow + spawn
                     }
+
+                    // ── RECEIVE the opponent's ability VFX and replay them locally ─
+                    float[] rfx;
+                    while ((rfx = network.pollFx()) != null) addRemoteFx(rfx);
+
+                    // ── OPPONENT ELIMINATED — kill banner + confirm sound ──────────
+                    while (network.pollDeath() != null) {
+                        killBannerTimer = 3.0f;
+                        AudioManager.play("teleport");
+                    }
+                    if (killBannerTimer > 0f) killBannerTimer -= rawDeltaTime;
                 }
 
                 if (!isPreloading) {
@@ -2729,8 +2796,10 @@ public class Window {
                     world.updateChunks(world, worldGen, player);
 
                     // ── NON-EUCLIDEAN "LAYERED ROOMS" (F6 toggles in/out) ────
+                    // (single-player only — unsynced world swap would break MP)
+                    boolean mpLiveDbg = network != null && network.connected;
                     boolean f6Now = glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS;
-                    if (f6Now && !lastF6) {
+                    if (f6Now && !lastF6 && !mpLiveDbg) {
                         if (nerActive) exitLayeredRooms(camera);
                         else           enterLayeredRooms(camera);
                     }
@@ -2741,8 +2810,9 @@ public class Window {
                     if (nerActive) updateLayeredRooms();
 
                     // ── CANYON WARP (F5 toggles to the mesa region and back) ───
+                    // (single-player only — teleporting away desyncs the duel)
                     boolean f5Now = glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS;
-                    if (f5Now && !lastF5) {
+                    if (f5Now && !lastF5 && !mpLiveDbg) {
                         if (!atCanyon) {
                             canyonReturnX = player.position.x;
                             canyonReturnY = player.position.y;
@@ -2790,17 +2860,35 @@ public class Window {
                         }
                     }
 
+                    // Debug/cinematic F-keys are single-player only: they black out,
+                    // carve, teleport or time-warp the world UNSYNCED, which corrupts a
+                    // live multiplayer session (this is what made F7 "break the game").
+                    boolean mpLive = network != null && network.connected;
+
                     // ── ORBITAL ANNIHILATION (F7 fires the cinematic) ─────────
                     boolean f7Now = glfwGetKey(window, GLFW_KEY_F7) == GLFW_PRESS;
-                    if (f7Now && !lastF7 && !orbitalActive) startOrbitalStrike(camera);
+                    if (f7Now && !lastF7 && !orbitalActive && !mpLive) startOrbitalStrike(camera);
                     lastF7 = f7Now;
                     if (orbitalActive) updateOrbitalStrike(rawDeltaTime);
 
                     // ── THE WORLD: time-stop domain (F8) ──────────────────────
                     boolean f8Now = glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS;
-                    if (f8Now && !lastF8 && !timeStopActive) startTimeStop();
+                    if (f8Now && !lastF8 && !timeStopActive && !mpLive) startTimeStop();
                     lastF8 = f8Now;
                     if (timeStopActive) updateTimeStop(rawDeltaTime);
+
+                    // ── METEOR STORM (F4) — rains hot meteorites that carve craters ──
+                    boolean f4Now = glfwGetKey(window, KeyBindings.METEOR_STORM) == GLFW_PRESS;
+                    if (f4Now && !lastF4) startMeteorStorm();
+                    lastF4 = f4Now;
+                    // ── COLOSSAL METEOR (F11) — one giant rock, mountain-erasing crater ──
+                    boolean f11Now = glfwGetKey(window, com.leaf.game.core.KeyBindings.MEGA_METEOR) == GLFW_PRESS;
+                    if (f11Now && !lastF11) spawnMegaMeteor();
+                    lastF11 = f11Now;
+                    updateMeteors(rawDeltaTime);
+
+                    // ── GATLING GUN — hold LMB (with the gun selected) to rip ──────
+                    updateGatling(rawDeltaTime, camera);
 
                     // ── VOXEL LINES world restyle (F10 = one-shot cycle) ──────
                     boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
@@ -2954,7 +3042,7 @@ public class Window {
             // Domain always blooms — the HDR gold hemisphere + threads + boundary ring need it.
             boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
             // Shared ability-FX (slashes, rings, bolts) bloom whenever any are live.
-            boolean doFxBloom    = (!fxList.isEmpty() || !qbBullets.isEmpty())
+            boolean doFxBloom    = (!fxList.isEmpty() || !qbBullets.isEmpty() || !meteors.isEmpty())
                     && !isPreloading && bloomShader != null;
             // Stone Canon's charge gathers searing emissive energy → bloom it.
             boolean doStoneBloom = isChargingStoneCanon && !isPreloading && bloomShader != null;
@@ -3346,6 +3434,12 @@ public class Window {
                 if (orbitalActive && !isPreloading) {
                     renderOrbital3D(shader, projection, view, renderMvp);
                 }
+
+                // ── METEOR STORM: glowing hot bodies + comet trails ─────────────
+                if (!isPreloading) renderMeteors(shader, projection, view);
+
+                // ── GATLING GUN: first-person spinning-barrel viewmodel ─────────
+                if (!isPreloading) renderGatlingViewModel(shader, projection, view, camera);
 
                 // ── RADAR: 3D sweep blade, afterglow wedge, enemy wireframes ────
                 if (vlActive && !isPreloading) {
@@ -5696,7 +5790,7 @@ public class Window {
         Fx e = new Fx(FX_CRESCENT, x, y, z);
         e.dx = fx; e.dy = fy; e.dz = fz; e.roll = roll; e.sweep = sweep;
         e.s0 = s0; e.s1 = s1; e.life = life; e.r = r; e.g = g; e.b = b;
-        fxList.add(e);
+        pushFx(e);
     }
     private void fxRing(float x, float y, float z, float r0, float r1, float life,
                         float r, float g, float b) {
@@ -5708,19 +5802,321 @@ public class Window {
         Fx e = new Fx(FX_RING, x, y, z);
         e.dx = nx; e.dy = ny; e.dz = nz;
         e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
-        fxList.add(e);
+        pushFx(e);
     }
     private void fxBurst(float x, float y, float z, float r0, float r1, float life,
                          float r, float g, float b) {
         Fx e = new Fx(FX_BURST, x, y, z);
         e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
-        fxList.add(e);
+        pushFx(e);
     }
     private void fxBolt(float x, float y, float z, float dx, float dy, float dz,
                         float len, float thick, float life, float r, float g, float b) {
         Fx e = new Fx(FX_BOLT, x, y, z);
         e.dx = dx; e.dy = dy; e.dz = dz; e.s0 = len; e.s1 = thick;
         e.life = life; e.r = r; e.g = g; e.b = b;
+        pushFx(e);
+    }
+
+    /** Add an FX locally AND broadcast it to the MP peer so the opponent sees it too. */
+    private void pushFx(Fx e) {
+        fxList.add(e);
+        if (network != null && network.connected) {
+            network.sendFx(e.type, new float[]{
+                e.x, e.y, e.z, e.dx, e.dy, e.dz, e.roll, e.sweep,
+                e.life, e.s0, e.s1, e.r, e.g, e.b });
+        }
+    }
+
+    // ── METEOR STORM: spawn / update / impact / render ─────────────────────────
+
+    /** Begin a meteor storm: meteors rain down around the player for a few seconds. */
+    private void startMeteorStorm() {
+        meteorStormTimer = 6.0f;     // ~6 seconds of falling rocks
+        meteorSpawnTimer = 0f;       // first one drops immediately
+        hintText = "METEOR STORM"; hintTimer = 3f;
+        AudioManager.play("fall_light", 0.8f);
+    }
+
+    /** Launch one meteorite high above, streaking down toward near the player. */
+    private void spawnMeteor() {
+        if (meteors.size() > 60) return;
+        Meteor m = new Meteor();
+        double ang = Math.random() * Math.PI * 2;
+        float  off = 10f + (float) Math.random() * 70f;
+        float sx = player.position.x + (float) Math.cos(ang) * off;
+        float sz = player.position.z + (float) Math.sin(ang) * off;
+        float sy = player.position.y + 150f + (float) Math.random() * 60f;
+        m.pos.set(sx, sy, sz);
+        // Aim down at a point near the player, with a steep angle.
+        float tx = player.position.x + (float) (Math.random() - 0.5) * 50f;
+        float tz = player.position.z + (float) (Math.random() - 0.5) * 50f;
+        m.vel.set(tx - sx, -150f, tz - sz).normalize().mul(58f + (float) Math.random() * 26f);
+        m.size = 1.5f + (float) Math.random() * 2.0f;
+        meteors.add(m);
+    }
+
+    /** Drop ONE colossal meteor straight onto the player — mountain-erasing impact. */
+    private void spawnMegaMeteor() {
+        Meteor m = new Meteor();
+        float tx = player.position.x + (float)(Math.random() - 0.5) * 24f;
+        float tz = player.position.z + (float)(Math.random() - 0.5) * 24f;
+        m.pos.set(tx + (float)(Math.random() - 0.5) * 40f,
+                  player.position.y + 280f,
+                  tz + (float)(Math.random() - 0.5) * 40f);
+        m.vel.set(tx - m.pos.x, -300f, tz - m.pos.z).normalize().mul(70f);
+        m.size = 30f;                       // SUPER freaking big
+        meteors.add(m);
+        hintText = "INCOMING"; hintTimer = 4f;
+        AudioManager.play("fall_light", 1.0f);
+    }
+
+    /** Advance meteors: trail puffs, descent, and crater-carving impacts. */
+    private void updateMeteors(float dt) {
+        // Storm scheduler — staggered drops so it reads as a "rain", not a clump.
+        if (meteorStormTimer > 0f) {
+            meteorStormTimer -= dt;
+            meteorSpawnTimer -= dt;
+            if (meteorSpawnTimer <= 0f) {
+                meteorSpawnTimer = 0.16f + (float) Math.random() * 0.20f;
+                spawnMeteor();
+                if (Math.random() < 0.5) spawnMeteor();
+            }
+        }
+        if (meteors.isEmpty()) return;
+
+        for (Meteor m : meteors) {
+            // record a short comet trail
+            m.trail.addFirst(new float[]{ m.pos.x, m.pos.y, m.pos.z });
+            while (m.trail.size() > 9) m.trail.removeLast();
+
+            m.pos.fma(dt, m.vel);
+
+            // sizzling embers shed along the path
+            if (Math.random() < 0.55) {
+                fxBurst(m.pos.x, m.pos.y, m.pos.z, 0.2f, m.size * 1.5f, 0.30f, 2.6f, 1.0f, 0.32f);
+            }
+
+            int bx = (int) Math.floor(m.pos.x), by = (int) Math.floor(m.pos.y), bz = (int) Math.floor(m.pos.z);
+            boolean hit = by <= 1 || (by < Chunk.HEIGHT && world.getBlock(bx, by, bz).isSolid());
+            if (hit) meteorImpact(m, bx, by, bz);
+        }
+        meteors.removeIf(m -> !m.alive);
+    }
+
+    /** Crater + magnificent impact burst + shake when a meteor strikes the ground. */
+    private void meteorImpact(Meteor m, int bx, int by, int bz) {
+        // Crater scales with size; capped at 50 so a colossal strike erases a mountain
+        // without freezing on the (one-time) million-block carve + remesh.
+        int r = Math.min(50, (int) (3 + m.size * 1.7f));
+        world.createImpactCrater(bx, by, bz, r);
+        if (network != null && network.connected) network.sendCrater(bx, by, bz, r);
+
+        float ix = m.pos.x, iy = m.pos.y, iz = m.pos.z;
+        // White-hot detonation flash, twin shockwave rings, and flung debris.
+        fxBurst(ix, iy + 0.4f, iz, 0.6f, r * 1.7f, 0.55f, 3.6f, 1.5f, 0.6f);
+        fxRing (ix, iy + 0.3f, iz, 1f, r * 2.4f, 0.62f, 3.0f, 0.85f, 0.30f);
+        fxRing (ix, iy + 0.3f, iz, 1f, r * 1.5f, 0.46f, 3.4f, 1.4f, 0.7f);
+        for (int i = 0; i < 11; i++) {
+            double a = i / 11.0 * Math.PI * 2;
+            fxBolt(ix, iy, iz, (float) Math.cos(a) * 0.5f, 1f, (float) Math.sin(a) * 0.5f,
+                    r * 0.9f, 0.14f, 0.5f, 3.0f, 1.1f, 0.45f);
+        }
+
+        // Shake + flash + boom, scaled by how close the strike is to the player.
+        float d   = player.position.distance(new Vector3f(ix, iy, iz));
+        float amt = Math.max(0f, 1f - d / 130f);
+        if (amt > 0.02f) {
+            activeShakeAmplitude = 0.10f + 0.35f * amt;
+            smashShakeTimer      = Math.max(smashShakeTimer, 0.30f * amt + 0.05f);
+            if (d < 70f) ScreenEffectManager.INSTANCE.flash(1f, 0.55f, 0.18f, 0.45f * amt, 0.28f);
+        }
+        AudioManager.play("ground_smash", Math.min(1f, 0.35f + amt));
+        m.alive = false;
+    }
+
+    // ── GATLING GUN: fire / update / viewmodel ─────────────────────────────────
+
+    /** Hold-LMB rapid fire: hitscan rounds with tracers, muzzle flash, recoil, spread. */
+    private void updateGatling(float dt, com.leaf.game.util.Camera camera) {
+        if (gatlingFlash > 0f) gatlingFlash -= dt;
+
+        boolean held = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+        boolean canFire = hotbar[selectedSlot] == Block.GATLING_GUN && held
+                && networkInitialized && !isPreloading && !isPaused && !showChat
+                && !showHelp && !showDiscoUI && !cutscene.isActive() && !player.debugMode;
+
+        // Barrels always idle-spin a little; spin up hard while firing.
+        barrelSpin += dt * (canFire ? 34f : 3f);
+
+        if (!canFire) { gatlingCooldown = 0f; return; }
+
+        gatlingCooldown -= dt;
+        if (gatlingCooldown > 0f) return;
+        gatlingCooldown = GameConfig.gatlingFireRate;
+
+        fireGatlingRound(camera);
+        gatlingShots++;
+        if (gatlingShots % 2 == 0)
+            AudioManager.play((gatlingShots % 4 == 0) ? "snipe1" : "snipe2", 0.35f);
+    }
+
+    /** One bullet: aim (with spread) at the most-aligned enemy or the wall; spawn VFX. */
+    private void fireGatlingRound(com.leaf.game.util.Camera camera) {
+        Vector3f eye   = camera.position;
+        Vector3f look  = camera.getLookDirection();
+        Vector3f right = camera.getRight();
+        Vector3f up    = new Vector3f(right).cross(look).normalize();
+        Vector3f muzzle = new Vector3f(eye).fma(0.30f, right).fma(-0.20f, up).fma(0.85f, look);
+
+        // crazy little spread
+        float spread = GameConfig.gatlingSpread;
+        Vector3f dir = new Vector3f(look)
+                .fma((float)(Math.random() - 0.5) * spread, right)
+                .fma((float)(Math.random() - 0.5) * spread, up).normalize();
+
+        float range = GameConfig.gatlingRange;
+        Vector3f hit;
+        com.leaf.game.entity.Enemy target =
+                (enemyManager != null) ? enemyManager.findMostAligned(world, eye, dir, range) : null;
+        if (target != null) {
+            target.applyDamage(GameConfig.gatlingDamage);
+            target.applyKnockback(dir.x * 1.4f, 0.25f, dir.z * 1.4f);
+            target.hitFlashTimer = 0.12f;
+            hit = target.getCentre();
+            fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.9f, 0.16f, 2.8f, 1.3f, 0.45f);   // blood/spark
+        } else {
+            hit = rayHitPoint(eye, dir, range);
+            fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.55f, 0.12f, 2.4f, 1.7f, 0.8f);    // wall spark
+        }
+
+        // tracer: a thin, bright streak from the muzzle to the hit point
+        Vector3f td = new Vector3f(hit).sub(muzzle);
+        float len = td.length();
+        if (len > 0.05f) {
+            td.div(len);
+            fxBolt(muzzle.x, muzzle.y, muzzle.z, td.x, td.y, td.z, len, 0.03f, 0.06f, 3.2f, 2.7f, 1.0f);
+        }
+        // muzzle flash + recoil kick
+        fxBurst(muzzle.x, muzzle.y, muzzle.z, 0.1f, 0.7f, 0.06f, 3.6f, 2.1f, 0.7f);
+        gatlingFlash = 0.05f;
+        activeShakeAmplitude = 0.028f;
+        smashShakeTimer = Math.max(smashShakeTimer, 0.04f);
+        camera.pitch += 0.004f;   // tiny upward climb
+    }
+
+    /** Step a ray to the first solid block (tracer endpoint), else the max-range point. */
+    private Vector3f rayHitPoint(Vector3f origin, Vector3f dir, float maxDist) {
+        float step = 0.4f, d = 0f;
+        float x = origin.x, y = origin.y, z = origin.z;
+        while (d < maxDist) {
+            x += dir.x * step; y += dir.y * step; z += dir.z * step; d += step;
+            int bx = (int)Math.floor(x), by = (int)Math.floor(y), bz = (int)Math.floor(z);
+            if (by < 0 || by >= Chunk.HEIGHT) break;
+            if (world.getBlock(bx, by, bz).isSolid()) return new Vector3f(x, y, z);
+        }
+        return new Vector3f(origin).fma(maxDist, dir);
+    }
+
+    /** First-person Gatling gun: a dark body + ring of spinning barrels, with muzzle glow. */
+    private void renderGatlingViewModel(com.leaf.game.render.Shader shader, Matrix4f projection, Matrix4f view,
+                                        com.leaf.game.util.Camera camera) {
+        if (hotbar[selectedSlot] != Block.GATLING_GUN || player.debugMode
+                || player.stand.isInStandPerspective()) return;
+        if (gunBodyMesh   == null) gunBodyMesh   = buildColorCube(0.16f, 0.16f, 0.20f);  // gunmetal
+        if (gunBarrelMesh == null) gunBarrelMesh = buildColorCube(0.34f, 0.34f, 0.40f);  // steel
+
+        Vector3f look  = camera.getLookDirection();
+        Vector3f right = camera.getRight();
+        Vector3f up    = new Vector3f(right).cross(look).normalize();
+        Vector3f gp = new Vector3f(camera.position)
+                .fma(0.30f, right).fma(-0.26f, up).fma(0.55f, look);
+        // Orientation basis: local +X→right, +Y→up, +Z→ −look (so −Z is forward/down-barrel).
+        Matrix4f basis = new Matrix4f(
+                right.x, right.y, right.z, 0f,
+                up.x,    up.y,    up.z,    0f,
+               -look.x, -look.y, -look.z, 0f,
+                gp.x,    gp.y,    gp.z,    1f);
+        Matrix4f pvb = new Matrix4f(projection).mul(view).mul(basis);
+
+        glDisable(GL_DEPTH_TEST);   // weapon always drawn on top of the world
+
+        // Body
+        shader.setUniform("mvp", new Matrix4f(pvb).mul(
+                new Matrix4f().translate(0f, 0f, -0.02f).scale(0.10f, 0.10f, 0.34f)));
+        gunBodyMesh.render();
+        // 6 spinning barrels in a ring around the −Z axis
+        for (int k = 0; k < 6; k++) {
+            float a = barrelSpin + k * (float)(Math.PI / 3);
+            float ox = (float)Math.cos(a) * 0.055f, oy = (float)Math.sin(a) * 0.055f;
+            shader.setUniform("mvp", new Matrix4f(pvb).mul(
+                    new Matrix4f().translate(ox, oy, -0.22f).scale(0.022f, 0.022f, 0.42f)));
+            gunBarrelMesh.render();
+        }
+        // Muzzle flash (bright emissive burst at the barrel tip just after firing)
+        if (gatlingFlash > 0f) {
+            if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
+            glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE);
+            shader.setUniform("emissiveMode", 1);
+            float s = 0.08f + gatlingFlash * 1.6f;
+            shader.setUniform("mvp", new Matrix4f(pvb).mul(
+                    new Matrix4f().translate(0f, 0f, -0.46f).scale(s)));
+            shader.setUniform("emissiveTint", new Vector3f(3.6f, 2.2f, 0.8f));
+            orbSphere.render();
+            shader.setUniform("emissiveMode", 0);
+            glDisable(GL_BLEND);
+        }
+
+        glEnable(GL_DEPTH_TEST);
+        shader.setUniform("mvp", new Matrix4f(projection).mul(view));
+    }
+
+    /** Render meteor bodies as glowing hot orbs with a fading comet trail. */
+    private void renderMeteors(com.leaf.game.render.Shader shader, Matrix4f projection, Matrix4f view) {
+        if (meteors.isEmpty()) return;
+        if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
+        Matrix4f pv = new Matrix4f(projection).mul(view);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE);     // additive glow (feeds the bloom)
+        glDepthMask(false);
+        glDepthFunc(GL_LEQUAL);
+        glDisable(GL_CULL_FACE);
+        shader.setUniform("emissiveMode", 1);
+
+        for (Meteor m : meteors) {
+            // soft outer corona
+            orbDraw(shader, pv, orbSphere,
+                    new Matrix4f().translate(m.pos.x, m.pos.y, m.pos.z).scale(m.size * 1.9f),
+                    1.3f, 0.45f, 0.12f);
+            // searing white-orange core
+            orbDraw(shader, pv, orbSphere,
+                    new Matrix4f().translate(m.pos.x, m.pos.y, m.pos.z).scale(m.size),
+                    3.4f, 1.6f, 0.65f);
+            // fading comet trail
+            int i = 0, n = m.trail.size();
+            for (float[] tp : m.trail) {
+                float f = 1f - (float) i / Math.max(1, n);
+                float s = m.size * (0.30f + 0.65f * f);
+                orbDraw(shader, pv, orbSphere,
+                        new Matrix4f().translate(tp[0], tp[1], tp[2]).scale(s),
+                        2.6f * f, 1.0f * f, 0.30f * f);
+                i++;
+            }
+        }
+
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("mvp", new Matrix4f(pv));
+        glDepthFunc(GL_LESS);
+        glDepthMask(true);
+        glDisable(GL_BLEND);
+    }
+
+    /** Spawn an FX received from the peer (no re-broadcast). */
+    private void addRemoteFx(float[] f) {
+        Fx e = new Fx((int) f[0], f[1], f[2], f[3]);
+        e.dx = f[4]; e.dy = f[5]; e.dz = f[6]; e.roll = f[7]; e.sweep = f[8];
+        e.life = f[9]; e.s0 = f[10]; e.s1 = f[11]; e.r = f[12]; e.g = f[13]; e.b = f[14];
         fxList.add(e);
     }
 

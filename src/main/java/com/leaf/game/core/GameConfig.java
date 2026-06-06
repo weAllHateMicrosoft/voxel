@@ -524,6 +524,16 @@ public class GameConfig {
     // ── FAST ATTACK / KNIFE COMBO (;  key) ───────────────────────────────────
     // Three rapid knife slashes — deals damage but destroys no terrain.
     /** Damage per hit (3 hits per combo). */
+    // ── GATLING GUN ───────────────────────────────────────────────────────────
+    /** Damage per bullet. ~18 rounds/sec so 4.5 = ~80 DPS. */
+    public static float gatlingDamage      = 20f;
+    /** Seconds between rounds (lower = faster). 0.055 ≈ 18 rps. */
+    public static float gatlingFireRate    = 0.055f;
+    /** Bullet range in blocks. */
+    public static float gatlingRange       = 95f;
+    /** Random spread cone half-angle (radians). 0 = laser-precise, 0.1 = very wild. */
+    public static float gatlingSpread      = 0.045f;
+
     public static float knifeDamage        = 18f;
     /** Reach of each knife slash (blocks). */
     public static float knifeRange         = 2.8f;

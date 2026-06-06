@@ -28,6 +28,8 @@ public final class KeyBindings {
     public static final int DEPRIVATION_DOMAIN = GLFW_KEY_APOSTROPHE; // '''  Water God Stance
     public static final int GRAVITY_FLIP      = GLFW_KEY_SLASH;       // '/'  Change gravity direction (look + press)
     public static final int MP_SUMMON         = GLFW_KEY_RIGHT_BRACKET; // ']' Spawn a troop at the enemy (multiplayer)
+    public static final int METEOR_STORM      = GLFW_KEY_F4;         // F4   Call down a meteor storm
+    public static final int MEGA_METEOR       = GLFW_KEY_BACKSLASH;  // '\'  Drop the colossal mountain-eraser (F11 is eaten by macOS)
 
     /** key code → human description (insertion-ordered for a tidy printout). */
     private static final Map<Integer, String> REG = new LinkedHashMap<>();
@@ -86,6 +88,8 @@ public final class KeyBindings {
         register(DEPRIVATION_DOMAIN, "Deprivation Domain – Water God Stance");
         register(GRAVITY_FLIP, "Gravity Flip – change gravity direction");
         register(MP_SUMMON, "Spawn troop at enemy (multiplayer)");
+        register(METEOR_STORM, "Meteor Storm");
+        register(MEGA_METEOR,  "Colossal Meteor (mountain-eraser)");
         // ── System / debug ──
         register(GLFW_KEY_T, "Chat");
         register(GLFW_KEY_P, "Debug: spawn enemy");

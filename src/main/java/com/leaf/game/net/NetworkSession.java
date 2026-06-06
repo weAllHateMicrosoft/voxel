@@ -30,8 +30,10 @@ public class NetworkSession {
     private final Queue<int[]>  incomingPlaces  = new ConcurrentLinkedQueue<>();
     private final Queue<String> incomingChats   = new ConcurrentLinkedQueue<>();
     private final Queue<int[]>  incomingPickups = new ConcurrentLinkedQueue<>();
-    private final Queue<int[]>  incomingCraters = new ConcurrentLinkedQueue<>();
-    private final Queue<Float>  incomingDamage  = new ConcurrentLinkedQueue<>();
+    private final Queue<int[]>   incomingCraters = new ConcurrentLinkedQueue<>();
+    private final Queue<Float>   incomingDamage  = new ConcurrentLinkedQueue<>();
+    private final Queue<float[]> incomingFx      = new ConcurrentLinkedQueue<>();   // ability VFX events
+    private final Queue<float[]> incomingDeaths  = new ConcurrentLinkedQueue<>();   // "I died at x,y,z"
 
     private final boolean isHost;
     private final String  hostIp;
@@ -146,6 +148,16 @@ public class NetworkSession {
                 remoteSummons = arr;
                 break;
             }
+            case 13: { // ABILITY VFX event: [type, x,y,z, dx,dy,dz, roll,sweep, life, s0,s1, r,g,b]
+                float[] f = new float[15];
+                f[0] = in.readUnsignedByte();
+                for (int i = 1; i < 15; i++) f[i] = in.readFloat();
+                incomingFx.add(f);
+                break;
+            }
+            case 14: // DEATH (peer was eliminated at x,y,z)
+                incomingDeaths.add(new float[]{ in.readFloat(), in.readFloat(), in.readFloat() });
+                break;
             default:
                 // An unknown id means the byte stream has DESYNCED (a sender wrote a
                 // packet a reader didn't fully consume). We can't recover the framing,
@@ -203,6 +215,22 @@ public class NetworkSession {
     public void sendDamage(float amount) {
         synchronized (writeLock) { try { if (out == null) return; out.writeByte(11); out.writeFloat(amount); out.flush(); } catch (IOException ignored) {} }
     }
+    /** Broadcast an ability VFX event so the peer sees it. {@code p} = 14 floats
+     *  [x,y,z, dx,dy,dz, roll,sweep, life, s0,s1, r,g,b]. */
+    public void sendFx(int type, float[] p) {
+        synchronized (writeLock) {
+            try {
+                if (out == null) return;
+                out.writeByte(13); out.writeByte(type);
+                for (int i = 0; i < 14; i++) out.writeFloat(p[i]);
+                out.flush();
+            } catch (IOException ignored) {}
+        }
+    }
+    /** Tell the peer we were eliminated (drives their kill banner + sound). */
+    public void sendDeath(float x, float y, float z) {
+        synchronized (writeLock) { try { if (out == null) return; out.writeByte(14); out.writeFloat(x); out.writeFloat(y); out.writeFloat(z); out.flush(); } catch (IOException ignored) {} }
+    }
     /** Stream our troops' positions (count ≤ 255), packed [x,y,z,...]. */
     public void sendSummons(float[] packed, int count) {
         synchronized (writeLock) {
@@ -221,6 +249,8 @@ public class NetworkSession {
     public String pollChat() { return incomingChats.poll(); }
     public int[] pollPickup() { return incomingPickups.poll(); }
     public int[] pollCrater() { return incomingCraters.poll(); }
-    public Float  pollDamage() { return incomingDamage.poll(); }
+    public Float   pollDamage() { return incomingDamage.poll(); }
+    public float[] pollFx()     { return incomingFx.poll(); }
+    public float[] pollDeath()  { return incomingDeaths.poll(); }
     public boolean isHost() {return isHost; }
 }
