@@ -30,6 +30,7 @@ public final class KeyBindings {
     public static final int MP_SUMMON         = GLFW_KEY_RIGHT_BRACKET; // ']' Spawn a troop at the enemy (multiplayer)
     public static final int METEOR_STORM      = GLFW_KEY_F4;         // F4   Call down a meteor storm
     public static final int MEGA_METEOR       = GLFW_KEY_BACKSLASH;  // '\'  Drop the colossal mountain-eraser (F11 is eaten by macOS)
+    public static final int TIME_ACCEL        = GLFW_KEY_LEFT_BRACKET; // '['  HOLD: accelerate the day/night cycle ("Made in Heaven")
 
     /** key code → human description (insertion-ordered for a tidy printout). */
     private static final Map<Integer, String> REG = new LinkedHashMap<>();
@@ -90,6 +91,7 @@ public final class KeyBindings {
         register(MP_SUMMON, "Spawn troop at enemy (multiplayer)");
         register(METEOR_STORM, "Meteor Storm");
         register(MEGA_METEOR,  "Colossal Meteor (mountain-eraser)");
+        register(TIME_ACCEL,   "Made in Heaven – accelerate time (hold)");
         // ── System / debug ──
         register(GLFW_KEY_T, "Chat");
         register(GLFW_KEY_P, "Debug: spawn enemy");

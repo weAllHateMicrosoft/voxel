@@ -8,6 +8,15 @@ in vec3  vWorldPos;      // full world-space position (orbital scan)
 uniform vec3  sunDirection;
 uniform float sunStrength;
 uniform float ambientStrength;
+uniform vec3  sunColor;       // day/night light tint (warm noon → orange sunset → blue moon)
+uniform vec3  ambientColor;   // ambient sky-bounce tint
+
+// ── TORCH POINT LIGHTS (placed torches + held hand-light) ─────────────────────
+#define MAX_TORCH 12
+uniform int   torchCount;
+uniform vec3  torchPos[MAX_TORCH];   // world-space positions
+uniform vec3  torchCol[MAX_TORCH];   // colour × intensity
+uniform float torchRad[MAX_TORCH];   // reach in blocks
 uniform int   isUnderwater;
 uniform float cameraY;        // camera eye world-Y, set each frame from Java
 
@@ -147,7 +156,19 @@ void main() {
     }
 
     float diffuse = max(0.0, dot(normalize(vertexNormal), normalize(sunDirection)));
-    float light   = ambientStrength + sunStrength * diffuse;
+    // Coloured lighting: ambient sky-bounce + tinted directional luminary (sun/moon).
+    vec3 lit = ambientColor * ambientStrength + sunColor * (sunStrength * diffuse);
+
+    // ── Torch point lights — warm pools of light that pop at night ─────────────
+    vec3 nN = normalize(vertexNormal);
+    for (int i = 0; i < torchCount; i++) {
+        vec3  d    = torchPos[i] - vWorldPos;
+        float dist = length(d);
+        float att  = clamp(1.0 - dist / torchRad[i], 0.0, 1.0);
+        att = att * att;                                   // soft quadratic falloff
+        float ndl  = max(0.0, dot(nN, d / max(dist, 0.001)));
+        lit += torchCol[i] * att * (0.35 + 0.65 * ndl);
+    }
 
     // ── Base colour: vertex colour or texture × vertex colour ─────────────────
     vec4 baseColor;
@@ -158,7 +179,7 @@ void main() {
         baseColor = vertexColor;
     }
 
-    vec3 color          = baseColor.rgb * light;
+    vec3 color          = baseColor.rgb * lit;
     vec3 gammaCorrected = pow(clamp(color, 0.0, 1.0), vec3(1.0 / 1.2));
 
     // ── ABYSS DEPTH DARKNESS ──────────────────────────────────────────────────

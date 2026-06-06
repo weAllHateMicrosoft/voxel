@@ -494,6 +494,30 @@ class WindowHud {
         }
     }
 
+    /** Simple gatling-gun glyph for the hotbar (body + barrel cluster + grip). */
+    private void drawGunIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        int metal = ImGui.colorConvertFloat4ToU32(0.34f, 0.34f, 0.40f, 1f);
+        int dark  = ImGui.colorConvertFloat4ToU32(0.12f, 0.12f, 0.16f, 1f);
+        draw.addRectFilled(x0 + w*0.04f, y0 + h*0.40f, x0 + w*0.62f, y0 + h*0.72f, metal, 2f);  // body
+        draw.addRectFilled(x0 + w*0.14f, y0 + h*0.66f, x0 + w*0.30f, y1,            dark, 1.5f); // grip
+        for (int k = 0; k < 3; k++) {                                                            // barrels
+            float yy = y0 + h * (0.46f + 0.10f * k);
+            draw.addLine(x0 + w*0.55f, yy, x1, yy, dark, 2.4f);
+        }
+    }
+
+    /** Simple torch glyph for the hotbar (wooden stick + glowing flame). */
+    private void drawTorchIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0, cx = (x0 + x1) * 0.5f;
+        int wood    = ImGui.colorConvertFloat4ToU32(0.45f, 0.30f, 0.14f, 1f);
+        int flameO  = ImGui.colorConvertFloat4ToU32(1.0f, 0.50f, 0.10f, 1f);
+        int flameY  = ImGui.colorConvertFloat4ToU32(1.0f, 0.90f, 0.45f, 1f);
+        draw.addRectFilled(cx - w*0.08f, y0 + h*0.42f, cx + w*0.08f, y1, wood, 1.5f);  // stick
+        draw.addCircleFilled(cx, y0 + h*0.36f, w*0.24f, flameO);                       // flame
+        draw.addCircleFilled(cx, y0 + h*0.32f, w*0.13f, flameY);                       // hot core
+    }
+
     void renderHUD(Camera camera, float screenW, float screenH) {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
@@ -1022,16 +1046,22 @@ class WindowHud {
                         (i == win.selectedSlot) ? 3.0f : 1.5f);
                 Block b = win.hotbar[i];
                 int count = win.inventory.getCount(b);
-                if (b != Block.AIR && count > 0) {
-                    float shrink = 8.0f;
-                    int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
-                    draw.addRectFilled(x + shrink, startY + shrink,
-                            x + slotSize - shrink, startY + slotSize - shrink, blockCol, 2.0f);
-                    draw.addRect(x + shrink, startY + shrink,
-                            x + slotSize - shrink, startY + slotSize - shrink, black, 2.0f, 0, 1.5f);
-                    String countStr = String.valueOf(count);
-                    draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
-                    draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
+                boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH);  // items, not consumable blocks
+                if (b != Block.AIR && (tool || count > 0)) {
+                    float s = 8.0f;
+                    float ix0 = x + s, iy0 = startY + s, ix1 = x + slotSize - s, iy1 = startY + slotSize - s;
+                    if (b == Block.GATLING_GUN) {
+                        drawGunIcon(draw, ix0, iy0, ix1, iy1);
+                    } else if (b == Block.TORCH) {
+                        drawTorchIcon(draw, ix0, iy0, ix1, iy1);
+                    } else {
+                        int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
+                        draw.addRectFilled(ix0, iy0, ix1, iy1, blockCol, 2.0f);
+                        draw.addRect(ix0, iy0, ix1, iy1, black, 2.0f, 0, 1.5f);
+                        String countStr = String.valueOf(count);
+                        draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
+                        draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
+                    }
                 }
             }
         } // end !isInStandPerspective (health bar + win.hotbar guard)

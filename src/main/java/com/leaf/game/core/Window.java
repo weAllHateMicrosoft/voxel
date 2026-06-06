@@ -161,7 +161,7 @@ public class Window {
 
     final Block[] hotbar = {
             Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
-            Block.GATLING_GUN, Block.AIR, Block.AIR, Block.AIR, Block.AIR
+            Block.GATLING_GUN, Block.TORCH, Block.AIR, Block.AIR, Block.AIR
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -444,6 +444,7 @@ public class Window {
     private float   orbFlashAmt     = 0f;   // environmental white flash (0..~1.7)
     private boolean orbDark         = false;// true = real lighting blackout (sun/ambient/sky → black)
     private com.leaf.game.render.Shader bloomShader = null; // searing-bloom post-process
+    private com.leaf.game.render.Shader skyShader   = null; // procedural day/night sky
     // 3D effect meshes (unit-sized, built once, drawn emissive with per-object MVP).
     private com.leaf.game.render.Mesh orbTorus, orbSphere, orbCyl, orbCube;
     private com.leaf.game.render.Mesh radarFan;   // flat afterglow wedge (angular bright→0 fade)
@@ -619,6 +620,12 @@ public class Window {
     private float barrelSpin      = 0f;    // spinning-barrel angle (rad)
     private int   gatlingShots    = 0;     // round counter (for sound throttling)
     private com.leaf.game.render.Mesh gunBodyMesh, gunBarrelMesh;   // viewmodel meshes
+
+    // ── DAY / NIGHT CYCLE ──────────────────────────────────────────────────────
+    private final DayNight dayNight = new DayNight();
+    private float mihRamp = 0f;   // 0..1 "Made in Heaven" time-acceleration ramp
+    /** World positions of placed TORCH blocks (drive point lights). */
+    private final java.util.List<Vector3f> torchPositions = new java.util.ArrayList<>();
     private com.leaf.game.render.Mesh fxCrescentMesh = null;  // gradient slash (white edge → warm body)
     private com.leaf.game.render.Mesh fxConeMesh = null;      // fiery cone (stone canon charge)
     // Rising-edge detectors so a teleport (blink / seal / substitute / swap) spawns FX once.
@@ -825,9 +832,13 @@ public class Window {
                         && selectedBlock != Block.GATLING_GUN) {   // the gun is a weapon, not a block
                     if (!playerOccupies(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ) &&
                             !remotePlayerOccupies(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ)) {
-                        if (inventory.useBlock(selectedBlock)) {
+                        // Torches are an infinite light tool — never consumed.
+                        if (selectedBlock == Block.TORCH || inventory.useBlock(selectedBlock)) {
                             world.setBlock(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ, selectedBlock);
                             world.rebuildChunkAt(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ);
+                            if (selectedBlock == Block.TORCH)
+                                torchPositions.add(new Vector3f(lastTarget.placeX + 0.5f,
+                                        lastTarget.placeY + 0.5f, lastTarget.placeZ + 0.5f));
                             if (network != null && network.connected)
                                 network.sendPlace(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ, selectedBlock);
                             // Play a place sound based on block material
@@ -1066,6 +1077,11 @@ public class Window {
         bloomShader = new com.leaf.game.render.Shader(
                 "src/main/resources/shaders/distort_vertex.glsl",
                 "src/main/resources/shaders/bloom_fragment.glsl");
+
+        // Procedural day/night sky (gradient + sun + moon + stars).
+        skyShader = new com.leaf.game.render.Shader(
+                "src/main/resources/shaders/distort_vertex.glsl",
+                "src/main/resources/shaders/sky_fragment.glsl");
 
         // Full-screen quad: two triangles covering NDC [-1,1]
         float[] quadVerts = {
@@ -2690,8 +2706,11 @@ public class Window {
 
                     int[] plc = network.pollPlace();
                     if (plc != null) {
-                        world.setBlock(plc[0], plc[1], plc[2], Block.values()[plc[3]]);
+                        Block placed = Block.values()[plc[3]];
+                        world.setBlock(plc[0], plc[1], plc[2], placed);
                         world.rebuildChunkAt(plc[0], plc[1], plc[2]);
+                        if (placed == Block.TORCH)
+                            torchPositions.add(new Vector3f(plc[0] + 0.5f, plc[1] + 0.5f, plc[2] + 0.5f));
                     }
 
                     String chat = network.pollChat();
@@ -2889,6 +2908,15 @@ public class Window {
 
                     // ── GATLING GUN — hold LMB (with the gun selected) to rip ──────
                     updateGatling(rawDeltaTime, camera);
+
+                    // ── DAY / NIGHT CYCLE — advance the sky + light mood ───────────
+                    // "Made in Heaven": HOLD '[' to ramp the cycle up to ~400×, so the
+                    // sun & moon race across the sky. Eases in/out so it accelerates.
+                    boolean mih = glfwGetKey(window, KeyBindings.TIME_ACCEL) == GLFW_PRESS;
+                    mihRamp = mih ? Math.min(1f, mihRamp + rawDeltaTime * 3.5f)
+                                  : Math.max(0f, mihRamp - rawDeltaTime * 2.0f);
+                    GameConfig.dayNightSpeed = 1f + mihRamp * mihRamp * 400f;
+                    dayNight.update(rawDeltaTime);
 
                     // ── VOXEL LINES world restyle (F10 = one-shot cycle) ──────
                     boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
@@ -3113,18 +3141,22 @@ public class Window {
             // Orbital blackout: the SKY (clear colour) goes pure black so the only
             // light left in the world is the emissive lidar scan + laser flash.
             if (orbitalActive && orbDark) glClearColor(0f, 0f, 0f, 1f);
-            else                          glClearColor(0.5f, 0.7f, 0.9f, 1f);
+            else                          glClearColor(dayNight.skyHorizon.x, dayNight.skyHorizon.y,
+                                                       dayNight.skyHorizon.z, 1f);
 
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             if (networkInitialized) {
                 shader.bind();
-                shader.setUniform("sunDirection",
-                        new Vector3f(GameConfig.sunDirX, GameConfig.sunDirY, GameConfig.sunDirZ));
+                // Day/night drives the active luminary (sun by day, moon by night) + colour.
+                shader.setUniform("sunDirection", dayNight.lightDir);
                 // During the blackout, kill the sun + ambient so terrain is truly black.
                 boolean orbBlack = orbitalActive && orbDark;
-                shader.setUniform("sunStrength",     orbBlack ? 0f : GameConfig.sunStrength);
-                shader.setUniform("ambientStrength", orbBlack ? 0f : GameConfig.ambientStrength);
+                shader.setUniform("sunStrength",     orbBlack ? 0f : dayNight.lightStrength);
+                shader.setUniform("ambientStrength", orbBlack ? 0f : dayNight.ambientStrength);
+                shader.setUniform("sunColor",     dayNight.lightColor);
+                shader.setUniform("ambientColor", dayNight.ambientColor);
+                uploadTorchLights(shader, camera);   // placed torches + held hand-light
                 shader.setUniform("emissiveMode", 0);   // reset each frame (effects toggle it locally)
                 // Orbital "lidar" scan + environmental flash uniforms.
                 shader.setUniform("orbActive",    (orbitalActive && orbScanIntensity > 0.001f) ? 1 : 0);
@@ -3377,6 +3409,12 @@ public class Window {
                 Matrix4f renderMvp = new Matrix4f(projection).mul(view);
                 orbProjView.set(renderMvp);   // captured for the F7 cinematic overlay
                 float[] frustumPlanes = extractFrustumPlanes(renderMvp);
+
+                // ── DAY/NIGHT SKY — gradient + sun + moon + stars, behind everything ──
+                if (!isPreloading && !(orbitalActive && orbDark)) {
+                    renderSky(projection, view, camera);
+                    shader.bind();   // restore the world shader for terrain (uniforms persist)
+                }
 
                 // ── DIRTY MESH REBUILD ─────────────────────────────────────────
                 if (!isPreloading) {
@@ -6069,6 +6107,63 @@ public class Window {
 
         glEnable(GL_DEPTH_TEST);
         shader.setUniform("mvp", new Matrix4f(projection).mul(view));
+    }
+
+    /** Upload the active torch point-lights (held hand-light + nearest placed torches). */
+    private void uploadTorchLights(com.leaf.game.render.Shader shader, com.leaf.game.util.Camera camera) {
+        final int MAX = 12;
+        // Drop torches that have been broken/removed.
+        torchPositions.removeIf(p -> world.getBlock((int)Math.floor(p.x), (int)Math.floor(p.y),
+                (int)Math.floor(p.z)) != Block.TORCH);
+
+        java.util.List<float[]> lights = new java.util.ArrayList<>();   // x,y,z, r,g,b, radius
+        // Held hand-light: a torch in your hand lights the area around you.
+        if (hotbar[selectedSlot] == Block.TORCH) {
+            lights.add(new float[]{ camera.position.x, camera.position.y, camera.position.z,
+                    1.7f, 1.0f, 0.5f, 11f });
+        }
+        // Nearest placed torches.
+        Vector3f pp = player.position;
+        torchPositions.sort((a, b) -> Float.compare(a.distanceSquared(pp), b.distanceSquared(pp)));
+        for (Vector3f t : torchPositions) {
+            if (lights.size() >= MAX) break;
+            if (t.distanceSquared(pp) > 3600f) break;     // beyond 60 blocks: skip
+            lights.add(new float[]{ t.x, t.y, t.z, 1.6f, 0.9f, 0.4f, 13f });
+        }
+
+        int n = Math.min(MAX, lights.size());
+        shader.setUniform("torchCount", n);
+        for (int i = 0; i < n; i++) {
+            float[] L = lights.get(i);
+            shader.setUniform("torchPos[" + i + "]", new Vector3f(L[0], L[1], L[2]));
+            shader.setUniform("torchCol[" + i + "]", new Vector3f(L[3], L[4], L[5]));
+            shader.setUniform("torchRad[" + i + "]", L[6]);
+        }
+    }
+
+    /** Full-screen procedural sky pass (gradient + sun + moon + stars), drawn first. */
+    private void renderSky(Matrix4f projection, Matrix4f view, com.leaf.game.util.Camera camera) {
+        if (skyShader == null || kamuiScreenQuad == 0) return;
+        Matrix4f invVP = new Matrix4f(projection).mul(view).invert();
+        skyShader.bind();
+        skyShader.setUniform("invViewProj", invVP);
+        skyShader.setUniform("sunDir",       dayNight.sunDir);
+        skyShader.setUniform("moonDir",      dayNight.moonDir);
+        skyShader.setUniform("skyZenith",    dayNight.skyZenith);
+        skyShader.setUniform("skyHorizon",   dayNight.skyHorizon);
+        skyShader.setUniform("dayFactor",    dayNight.dayFactor);
+        skyShader.setUniform("nightFactor",  dayNight.nightFactor);
+        skyShader.setUniform("sunsetFactor", dayNight.sunsetFactor);
+        skyShader.setUniform("time",         (float) glfwGetTime());
+
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(false);
+        org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        org.lwjgl.opengl.GL30.glBindVertexArray(0);
+        glDepthMask(true);
+        glEnable(GL_DEPTH_TEST);
+        skyShader.unbind();
     }
 
     /** Render meteor bodies as glowing hot orbs with a fading comet trail. */

@@ -125,6 +125,14 @@ public class GameConfig {
     public static float sunStrength     = 0.75f;
     public static float ambientStrength = 0.25f;
 
+    // ── DAY / NIGHT CYCLE ─────────────────────────────────────────────────────
+    /** Real seconds for one full day→night→day loop (at normal speed). */
+    public static float dayLengthSec    = 600f;   // 5 minutes
+    /** Where the cycle starts (0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk). */
+    public static float dayStartTime    = 0.32f;  // gentle morning
+    /** Time-cycle multiplier — cranked sky-high for the "Made in Heaven" effect. */
+    public static float dayNightSpeed   = 1f;
+
     public static float mouseSensitivity = 0.001f;
     public static float fov              = 70.0f;
 
