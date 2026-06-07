@@ -45,7 +45,11 @@ public class DayNight {
         recompute();
     }
 
-    private double lastStarUpdateJD = 0.0;
+    // 30 in-game seconds worth of JD fractions (≈ 30/86400 day).
+    // Stars update this often — enough to keep the sky accurate without per-frame
+    // rebuilds (which would run 2600-star horizon transforms at 60 fps = 156k/s).
+    private static final double STAR_UPDATE_INTERVAL_JD = 30.0 / 86400.0;
+    private double lastStarUpdateJD = -1e9;
 
     public void recompute() {
         double lst = Astronomy.localSiderealTime(currentJD, Math.toRadians(GameConfig.observerLonDeg));
@@ -65,8 +69,12 @@ public class DayNight {
         moonPhaseAngle = (float) lunar.phaseAngle;
         moonBrightLimbAngle = (float) lunar.brightLimbAngle;
 
-        if (starCatalog != null) {
-            visibleStars = Astronomy.buildVisibleStars(starCatalog, currentJD, lat, Math.toRadians(GameConfig.observerLonDeg));
+        // Only rebuild the star list every STAR_UPDATE_INTERVAL_JD in-game days.
+        // This is sufficient accuracy for navigation while avoiding per-frame rebuilds.
+        if (starCatalog != null && (currentJD - lastStarUpdateJD) >= STAR_UPDATE_INTERVAL_JD) {
+            lastStarUpdateJD = currentJD;
+            visibleStars = Astronomy.buildVisibleStars(starCatalog, currentJD, lat,
+                    Math.toRadians(GameConfig.observerLonDeg));
             starsDirty = true;
         }
 
@@ -101,4 +109,5 @@ public class DayNight {
         float t = clamp((x - e0) / (e1 - e0), 0f, 1f);
         return t * t * (3f - 2f * t);
     }
+    
 }

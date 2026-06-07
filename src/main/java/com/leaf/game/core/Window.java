@@ -6281,7 +6281,8 @@ public class Window {
         Vector3f moonPos = new Vector3f(camera.position).fma(900f, dayNight.moonDir);
         Matrix4f mvp = new Matrix4f(projection).mul(view)
                 // FIX: Scaled up 10x from 4.0f to 40.0f so it is a grand, visible celestial body!
-                .mul(new Matrix4f().translate(moonPos.x, moonPos.y, moonPos.z).scale(16.2f));
+                .mul(new Matrix4f().translate(moonPos.x, moonPos.y, moonPos.z)
+                        .scale((float) GameConfig.moonSizeScale));
         moonShader.bind();
         moonShader.setUniform("mvp",            mvp);
         moonShader.setUniform("sunDir",         dayNight.sunDir);
@@ -6298,9 +6299,9 @@ public class Window {
     /** Reproject constellation line segments to world directions and re-upload to GPU. */
     private void updateConstellationBuffer() {
         if (constellVbo == 0) return;
-        double lst = Astronomy.localSiderealTime(dayNight.currentJD,
-                Math.toRadians(-79.3370));
-        double lat = Math.toRadians(43.8561);
+        double lon = Math.toRadians(GameConfig.observerLonDeg);
+        double lat = Math.toRadians(GameConfig.observerLatDeg);
+        double lst = Astronomy.localSiderealTime(dayNight.currentJD, lon);
         java.util.ArrayList<Float> pts = new java.util.ArrayList<>(4096);
         for (ConstellationData c : ConstellationData.ALL) {
             for (int i = 0; i + 3 < c.segs.length; i += 4) {
@@ -6328,8 +6329,9 @@ public class Window {
     /** Set constellName to whichever constellation is closest to the look direction. */
     private void identifyConstellation(com.leaf.game.util.Camera camera) {
         if (camera.pitch < 0.1f) { constellName = null; return; }  // only when looking up
-        double lst = Astronomy.localSiderealTime(dayNight.currentJD, Math.toRadians(-79.3370));
-        double lat = Math.toRadians(43.8561);
+        double lon = Math.toRadians(GameConfig.observerLonDeg);
+        double lat = Math.toRadians(GameConfig.observerLatDeg);
+        double lst = Astronomy.localSiderealTime(dayNight.currentJD, lon);
         Vector3f look = camera.getLookDirection();
         float best = -1f;
         constellName = null;
