@@ -19,7 +19,9 @@ public class Player {
     public final Progression progression = new Progression();
     /** Shorthand gate used at ability triggers. */
     public boolean can(Progression.Ability a) { return progression.isUnlocked(a); }
-
+    // ── NEW TESTING MOVEMENT CONTROLLER ───────────────────────────────────────
+    public boolean useTestMovement = false;
+    public final TestMovementController testMovement = new TestMovementController(this);
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
     public float   health      = GameConfig.playerMaxHealth;
     public float   maxHealth   = GameConfig.playerMaxHealth;
@@ -114,6 +116,17 @@ public class Player {
 
     public void update(long window, Camera camera, World world, float deltaTime) {
         double now = glfwGetTime();
+
+        // ── TEST MOVEMENT BYPASS ───────────────────────────────────────────────
+        if (useTestMovement) {
+            testMovement.setEnemyManager(attacks.getEnemyManager()); // Keep references synced
+            testMovement.tick(window, camera, world, deltaTime);
+            syncEye(camera);
+
+            // Still check void death for safety
+            if (position.y < 0f) { fellIntoVoid = true; }
+            return;
+        }
 
         // ── GRAVITY CHANGE (look + press key) ─────────────────────────────────
         // A pending reset (from death/respawn) snaps gravity back to normal first.

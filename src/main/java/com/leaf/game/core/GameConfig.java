@@ -147,7 +147,7 @@ public class GameConfig {
     public static float GRAVITY      = 35.0f;
     public static float JUMP_FORCE   = 10.0f;
     public static float WALK_SPEED   = 5.0f;
-    public static float SPRINT_SPEED = 8.5f;
+    public static float SPRINT_SPEED = 10.5f;
     public static float FLY_SPEED    = 100.0f;
 
     // ── FLIGHT ENGINE ─────────────────────────────────────────────────────────

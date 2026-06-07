@@ -807,6 +807,18 @@ public class Window {
                 if (enemyManager != null && enemyManager.awaitingNextWave) enemyManager.beginNextWave();
                 System.out.println("[DEV] F9 — skipped wave " + (enemyManager != null ? enemyManager.getWaveNumber() : "?"));
             }
+            if (key == GLFW_KEY_F12 && action == GLFW_RELEASE && !showChat) {
+                player.useTestMovement = !player.useTestMovement;
+                if (player.useTestMovement) {
+                    player.testMovement.setEnemyManager(enemyManager);
+                    // Inherit current velocity to avoid sudden drops
+                    player.testMovement.velocity.y = player.getVelocityY();
+                    hintText = "TEST MOVEMENT ENABLED (Parkour Mode)";
+                } else {
+                    hintText = "TEST MOVEMENT DISABLED (Survival Mode)";
+                }
+                hintTimer = 3f;
+            }
 
             // T opens chat (release event only, so holding T for time-dilation is safe
             // because time-dilation uses glfwGetKey in the game loop, not this callback)
