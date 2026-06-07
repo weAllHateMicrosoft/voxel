@@ -517,7 +517,13 @@ class WindowHud {
         draw.addCircleFilled(cx, y0 + h*0.36f, w*0.24f, flameO);                       // flame
         draw.addCircleFilled(cx, y0 + h*0.32f, w*0.13f, flameY);                       // hot core
     }
-
+    private void drawTelescopeIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        int brass = ImGui.colorConvertFloat4ToU32(0.8f, 0.6f, 0.2f, 1f);
+        int glass = ImGui.colorConvertFloat4ToU32(0.4f, 0.8f, 1.0f, 1f);
+        draw.addLine(x0 + w * 0.2f, y1 - h * 0.2f, x1 - w * 0.2f, y0 + h * 0.2f, brass, 4f);
+        draw.addCircleFilled(x1 - w * 0.2f, y0 + h * 0.2f, 4f, glass, 8);
+    }
     void renderHUD(Camera camera, float screenW, float screenH) {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
@@ -1041,6 +1047,7 @@ class WindowHud {
             draw.addText(hpX + hpWidth - 79f, mpY - 1.5f,
                     ImGui.colorConvertFloat4ToU32(0.55f, 0.75f, 1.0f, 0.9f), mpLabel);
 
+
             // Hotbar
             float slotSize = 40.0f, spacing = 5.0f;
             int numSlots = 9;
@@ -1061,7 +1068,9 @@ class WindowHud {
                         (i == win.selectedSlot) ? 3.0f : 1.5f);
                 Block b = win.hotbar[i];
                 int count = win.inventory.getCount(b);
-                boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH);  // items, not consumable blocks
+
+                // NEW: Added Block.TELESCOPE as a tool (so it renders without needing a block count)
+                boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE);
                 if (b != Block.AIR && (tool || count > 0)) {
                     float s = 8.0f;
                     float ix0 = x + s, iy0 = startY + s, ix1 = x + slotSize - s, iy1 = startY + slotSize - s;
@@ -1069,6 +1078,9 @@ class WindowHud {
                         drawGunIcon(draw, ix0, iy0, ix1, iy1);
                     } else if (b == Block.TORCH) {
                         drawTorchIcon(draw, ix0, iy0, ix1, iy1);
+                    } else if (b == Block.TELESCOPE) {
+                        // NEW: Draws the telescope glyph when holding the item
+                        drawTelescopeIcon(draw, ix0, iy0, ix1, iy1);
                     } else {
                         int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
                         draw.addRectFilled(ix0, iy0, ix1, iy1, blockCol, 2.0f);
@@ -1608,6 +1620,14 @@ class WindowHud {
                     : ImGui.colorConvertFloat4ToU32(1.0f, 0.65f, 0.2f, 0.9f);
             draw.addText(screenW - 80f, 12f, black, timeLabel);
             draw.addText(screenW - 81f, 11f, timeColor, timeLabel);
+        }
+        if (win.holdingTelescope) {
+            win.telescope.render2D((int)screenW, (int)screenH, draw);
+
+            // Generate and draw contextual navigation hint
+            String navHint = CelestialNav.generateHint(win.dayNight);
+            float nw = ImGui.calcTextSize(navHint).x;
+            draw.addText(cx - nw / 2f, screenH - 60f, ImGui.colorConvertFloat4ToU32(0.8f, 0.9f, 1f, 0.8f), navHint);
         }
     }
 

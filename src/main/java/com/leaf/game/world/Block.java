@@ -6,6 +6,7 @@ public enum Block {
     DIRT      (1.00f, 1.00f, 1.00f, 1.0f,  1.0f,  "cracked_dirt",true),  // seamless cracked-soil tile
     MUD       (0.32f, 0.18f, 0.04f, 1.0f,  0.5f), // Quagmire — dark bog mud, slows enemies forever
     GATLING_GUN(0.16f, 0.16f, 0.20f, 1.0f, 99f), // held WEAPON item — never placed/mined; hold LMB to rip
+    TELESCOPE  (0.20f, 0.20f, 0.20f, 1.0f, 99f),
     TORCH      (1.00f, 0.66f, 0.26f, 1.0f, 0.3f), // warm light source: place it, or hold it for a hand-light
     STONE     (1.00f, 1.00f, 1.00f, 1.0f,  4.0f,  "normalStone", true),  // seamless; all abilities/worldgen use Block.STONE so texture swap is automatic
     WATER     (0.10f, 0.42f, 0.80f, 0.65f, 0.0f), // 65% Opacity!

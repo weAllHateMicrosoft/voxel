@@ -13,6 +13,7 @@ public class Inventory {
     // How many blocks the player starts with. There's no pickaxe, so the player
     // relies on these for cover/barricades during waves — start them generously.
     public Inventory() {
+        items.put(Block.TELESCOPE, 1);
         items.put(Block.CRYSTAL_AMETHYST, 256);
         items.put(Block.MEGALITH,  256);
         items.put(Block.ANCIENT_MARROW, 256);

@@ -164,7 +164,7 @@ public class Window {
 
     final Block[] hotbar = {
             Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
-            Block.GATLING_GUN, Block.TORCH, Block.AIR, Block.AIR, Block.AIR
+            Block.GATLING_GUN, Block.TORCH, Block.TELESCOPE, Block.AIR, Block.AIR
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -635,7 +635,9 @@ public class Window {
     private com.leaf.game.render.Mesh gunBodyMesh, gunBarrelMesh;   // viewmodel meshes
 
     // ── DAY / NIGHT CYCLE ──────────────────────────────────────────────────────
-    private final DayNight dayNight = new DayNight();
+    final DayNight dayNight = new DayNight();
+    public Telescope telescope = new Telescope();
+    public boolean holdingTelescope = false;
     private float mihRamp = 0f;   // 0..1 "Made in Heaven" time-acceleration ramp
     /** World positions of placed TORCH blocks (drive point lights). */
     private final java.util.List<Vector3f> torchPositions = new java.util.ArrayList<>();
@@ -715,6 +717,13 @@ public class Window {
                     }
                 }
                 return;
+            }
+            if (holdingTelescope) {
+                if (key == GLFW_KEY_L && action == GLFW_PRESS) telescope.showLabels = !telescope.showLabels;
+                if (key == GLFW_KEY_C && action == GLFW_PRESS) telescope.showConstLines = !telescope.showConstLines;
+                if (key == GLFW_KEY_A && action == GLFW_PRESS) telescope.showAstroData = !telescope.showAstroData;
+                if (key == GLFW_KEY_EQUAL && action == GLFW_PRESS) telescope.fovDeg = Math.max(4f, telescope.fovDeg - 2f);
+                if (key == GLFW_KEY_MINUS && action == GLFW_PRESS) telescope.fovDeg = Math.min(20f, telescope.fovDeg + 2f);
             }
 
             if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
@@ -828,7 +837,8 @@ public class Window {
                         || player.stand.autoAimedThisFrame;
                 boolean kamuiConsumedLMB = player != null && player.abilities.isKamui;
                 boolean gunHeld          = hotbar[selectedSlot] == Block.GATLING_GUN;  // LMB = shoot, not break
-                if (!standConsumedLMB && !kamuiConsumedLMB && !gunHeld) {
+                boolean scopeHeld        = hotbar[selectedSlot] == Block.TELESCOPE;
+                if (!standConsumedLMB && !kamuiConsumedLMB && !gunHeld && !scopeHeld) {
                     breakingActive = (action == GLFW_PRESS || action == GLFW_REPEAT);
                     if (action == GLFW_RELEASE) { breakProgress = 0.0f; digPreDelay = 0.0f; }
                 }
@@ -1052,6 +1062,10 @@ public class Window {
 
         GL.createCapabilities();
         imguiGl3.init("#version 330");
+        GL.createCapabilities();
+        imguiGl3.init("#version 330");
+
+        glEnable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
 
         // ── Animated enemy model ──────────────────────────────────────────────
         // ModelRenderer has its own mini-shader; init once after GL context exists.
@@ -1600,6 +1614,10 @@ public class Window {
                             activeShakeAmplitude = 0.12f + req * 0.25f;
                             smashShakeTimer      = Math.max(smashShakeTimer, activeShakeDuration);
                             player.stand.shakeRequest = 0f;
+                        }
+                        holdingTelescope = (hotbar[selectedSlot] == Block.TELESCOPE) && (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+                        if (holdingTelescope && dayNight.nightFactor > 0.1f) {
+                            telescope.update(camera.getLookDirection(), dayNight);
                         }
 
                         // ── GRAB SLAM IMPACT ───────────────────────────────────
@@ -3550,9 +3568,6 @@ public class Window {
                 // ── METEOR STORM: glowing hot bodies + comet trails ─────────────
                 if (!isPreloading) renderMeteors(shader, projection, view);
 
-                // ── GATLING GUN: first-person spinning-barrel viewmodel ─────────
-                if (!isPreloading) renderGatlingViewModel(shader, projection, view, camera);
-
                 // ── RADAR: 3D sweep blade, afterglow wedge, enemy wireframes ────
                 if (vlActive && !isPreloading) {
                     renderRadar3D(shader, projection, view, renderMvp);
@@ -4101,6 +4116,8 @@ public class Window {
 
                 // 9. Render Ability Ghost Trails
                 renderAbilityGhosts(shader, projection, view);
+                // ── GATLING GUN: first-person spinning-barrel viewmodel ─────────
+                if (!isPreloading) renderGatlingViewModel(shader, projection, view, camera);
 
                 // 10. Knife view model — disabled (re-enable when model is ready)
                 // if (player != null && !player.debugMode && !player.stand.isInStandPerspective()) {
@@ -4205,6 +4222,7 @@ public class Window {
                     bloomShader.unbind();
                 }
             }
+
             // ── IMGUI ─────────────────────────────────────────────────────────
             imguiGlfw.newFrame();
             ImGui.newFrame();
@@ -6295,28 +6313,7 @@ public class Window {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
-    /** Draw constellation lines and identify the one the player is looking at. */
-    private void renderConstellations(Matrix4f projection, Matrix4f view,
-                                      com.leaf.game.util.Camera camera) {
-        if (!showConstellations || constellShader == null || constellLineCount == 0) return;
-        if (dayNight.nightFactor < 0.1f) return;
-        Matrix4f invVP = new Matrix4f(projection).mul(view).invert();
-        constellShader.bind();
-        constellShader.setUniform("invViewProj", invVP);
-        constellShader.setUniform("nightFactor", dayNight.nightFactor);
-        constellShader.setUniform("lineAlpha", 0.45f);
-        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(false); glDisable(GL_DEPTH_TEST);
-        glLineWidth(1.2f);
-        glBindVertexArray(constellVao);
-        glDrawArrays(GL_LINES, 0, constellLineCount);
-        glBindVertexArray(0);
-        glDepthMask(true); glEnable(GL_DEPTH_TEST); glDisable(GL_BLEND);
-        constellShader.unbind();
 
-        // Identify nearest constellation above horizon to where the player is looking.
-        identifyConstellation(camera);
-    }
 
     /** Set constellName to whichever constellation is closest to the look direction. */
     private void identifyConstellation(com.leaf.game.util.Camera camera) {
@@ -6337,9 +6334,44 @@ public class Window {
         if (best < 0.97f) constellName = null;  // only label when clearly aimed at it
     }
 
+    /** Draw constellation lines and identify the one the player is looking at. */
+    private void renderConstellations(Matrix4f projection, Matrix4f view,
+                                      com.leaf.game.util.Camera camera) {
+        if (!showConstellations || constellShader == null || constellLineCount == 0) return;
+        if (dayNight.nightFactor < 0.1f) return;
+
+        // FIX: Compute the FORWARD View-Projection matrix, not the inverse.
+        Matrix4f vp = new Matrix4f(projection).mul(view);
+
+        constellShader.bind();
+        // FIX: Correct uniform name to match the shader ("viewProj")
+        constellShader.setUniform("viewProj", vp);
+        constellShader.setUniform("nightFactor", dayNight.nightFactor);
+        constellShader.setUniform("lineAlpha", 0.45f);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(false);
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(1.2f);
+
+        glBindVertexArray(constellVao);
+        glDrawArrays(GL_LINES, 0, constellLineCount);
+        glBindVertexArray(0);
+
+        glDepthMask(true);
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        constellShader.unbind();
+
+        // Identify nearest constellation above horizon to where the player is looking.
+        identifyConstellation(camera);
+    }
+
     /** Full-screen procedural sky pass (gradient + sun + moon + stars), drawn first. */
     private void renderSky(Matrix4f projection, Matrix4f view, com.leaf.game.util.Camera camera) {
         if (skyShader == null || kamuiScreenQuad == 0) return;
+
         Matrix4f invVP = new Matrix4f(projection).mul(view).invert();
 
         // 1. Draw the Sky Gradient, Sun, and Moon
@@ -6353,6 +6385,7 @@ public class Window {
         skyShader.setUniform("nightFactor",  dayNight.nightFactor);
         skyShader.setUniform("sunsetFactor", dayNight.sunsetFactor);
 
+        // FIX: Must be called AFTER skyShader.bind() to prevent GL_INVALID_OPERATION
         skyShader.setUniform("moonPhaseAngle", dayNight.moonPhaseAngle);
         skyShader.setUniform("moonBrightLimbAngle", dayNight.moonBrightLimbAngle);
 
@@ -6365,11 +6398,16 @@ public class Window {
         // 2. Draw the Stars as Point Sprites
         if (starShader != null && dayNight.visibleStars != null && dayNight.nightFactor > 0.05f) {
             starShader.bind();
-            starShader.setUniform("invViewProj", invVP);
+
+            // FIX: Compute the FORWARD View-Projection matrix and upload to the correct uniform name.
+            Matrix4f vp = new Matrix4f(projection).mul(view);
+            starShader.setUniform("viewProj", vp);
+
             starShader.setUniform("time", (float) glfwGetTime());
             starShader.setUniform("nightFactor", dayNight.nightFactor);
 
-            glEnable(GL_PROGRAM_POINT_SIZE);
+            // FIX: Safe, explicit enabling of Point Sizes using the full LWJGL path
+            glEnable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending for stars
 
@@ -6377,7 +6415,8 @@ public class Window {
             glDrawArrays(GL_POINTS, 0, dayNight.visibleStars.size());
             glBindVertexArray(0);
 
-            glDisable(GL_PROGRAM_POINT_SIZE);
+            // Clean up OpenGL state
+            glDisable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
             glDisable(GL_BLEND);
         }
