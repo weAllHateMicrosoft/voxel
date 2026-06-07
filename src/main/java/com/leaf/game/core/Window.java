@@ -637,6 +637,8 @@ public class Window {
     // ── DAY / NIGHT CYCLE ──────────────────────────────────────────────────────
     final DayNight dayNight = new DayNight();
     public Telescope telescope = new Telescope();
+    // State to smoothly zoom the FOV when aiming the telescope
+    private float currentFov = GameConfig.fov;
     public boolean holdingTelescope = false;
     private float mihRamp = 0f;   // 0..1 "Made in Heaven" time-acceleration ramp
     /** World positions of placed TORCH blocks (drive point lights). */
@@ -1617,7 +1619,7 @@ public class Window {
                         }
                         holdingTelescope = (hotbar[selectedSlot] == Block.TELESCOPE) && (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
                         if (holdingTelescope && dayNight.nightFactor > 0.1f) {
-                            telescope.update(camera.getLookDirection(), dayNight);
+                            telescope.update(camera, dayNight);  // Passing the full Camera object
                         }
 
                         // ── GRAB SLAM IMPACT ───────────────────────────────────
@@ -3304,7 +3306,7 @@ public class Window {
                 // ── SNOW WEATHER INTENSITY (for particle effect) ──────────────
                 // Starts fading in 70 blocks below snow altitude, full by 60 above.
                 snowIntensity = 0f;
-                if (!isCameraUnderwater && lastEnv != AudioManager.ENV_CAVE) {
+                if (showSnowAtmos && !isCameraUnderwater && lastEnv != AudioManager.ENV_CAVE) {
                     float sLow  = GameConfig.snowAltitude - 70f;
                     float sHigh = GameConfig.snowAltitude + 60f;
                     snowIntensity = Math.max(0f, Math.min(1f,
@@ -3387,16 +3389,21 @@ public class Window {
                 // Default: normal rendering (not portal FBO passthrough).
                 shader.setUniform("portalMode", 0);
 
-                // ── FLIGHT CAMERA EFFECTS ─────────────────────────────────────
-                // Set dynamic FOV from flight controller boost (player camera only).
-                // Suppressed when piloting the stand drone.
+                // ── FLIGHT CAMERA EFFECTS & TELESCOPE ZOOM ────────────────────
                 boolean inStandView = player.stand.isInStandPerspective();
                 if (!inStandView) {
                     float fovBoost = player.getCameraFovBoost();
-                    // Use Math.abs so negative zoom-in (sniper charge) is applied as well as
-                    // positive zoom-out (flight speed). Previously the condition fovBoost > 0.1f
-                    // silently discarded any negative value, making sniper zoom do nothing.
-                    camera.dynamicFov = (Math.abs(fovBoost) > 0.1f) ? GameConfig.fov + fovBoost : -1f;
+                    float targetFov = holdingTelescope ? telescope.fovDeg : (GameConfig.fov + fovBoost);
+
+                    // Smoothly lerp the FOV so the telescope zoom feels mechanical
+                    currentFov += (targetFov - currentFov) * 12f * rawDeltaTime;
+
+                    if (!holdingTelescope && Math.abs(currentFov - GameConfig.fov) < 0.1f && Math.abs(fovBoost) <= 0.1f) {
+                        camera.dynamicFov = -1f;
+                        currentFov = GameConfig.fov;
+                    } else {
+                        camera.dynamicFov = currentFov;
+                    }
                 }
 
                 // ── VIEW MATRIX + ROLL ────────────────────────────────────────
@@ -6273,11 +6280,14 @@ public class Window {
         if (vis < 0.01f) return;
         Vector3f moonPos = new Vector3f(camera.position).fma(900f, dayNight.moonDir);
         Matrix4f mvp = new Matrix4f(projection).mul(view)
-                .mul(new Matrix4f().translate(moonPos.x, moonPos.y, moonPos.z).scale(4.0f));
+                // FIX: Scaled up 10x from 4.0f to 40.0f so it is a grand, visible celestial body!
+                .mul(new Matrix4f().translate(moonPos.x, moonPos.y, moonPos.z).scale(16.2f));
         moonShader.bind();
         moonShader.setUniform("mvp",            mvp);
         moonShader.setUniform("sunDir",         dayNight.sunDir);
         moonShader.setUniform("moonVisibility", vis);
+        moonShader.setUniform("moonPhaseAngle", dayNight.moonPhaseAngle);
+        moonShader.setUniform("moonBrightLimbAngle", dayNight.moonBrightLimbAngle);
         glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(false); glDepthFunc(GL_LEQUAL); glDisable(GL_CULL_FACE);
         moonMesh.render();
@@ -6337,7 +6347,11 @@ public class Window {
     /** Draw constellation lines and identify the one the player is looking at. */
     private void renderConstellations(Matrix4f projection, Matrix4f view,
                                       com.leaf.game.util.Camera camera) {
-        if (!showConstellations || constellShader == null || constellLineCount == 0) return;
+        if (!showConstellations) {
+            constellName = null; // Clear the HUD label when constellations are toggled off
+            return;
+        }
+        if (constellShader == null || constellLineCount == 0) return;
         if (dayNight.nightFactor < 0.1f) return;
 
         // FIX: Compute the FORWARD View-Projection matrix, not the inverse.

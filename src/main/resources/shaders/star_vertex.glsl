@@ -35,7 +35,7 @@ void main() {
 
     // Point size: bright stars (low/negative mag) get larger sprites.
     // Sirius (mag -1.46) → ~9px,  Polaris (2.0) → ~5.8px,  limit (6.0) → ~1.5px
-    gl_PointSize = clamp(8.0 - mag * 1.1, 1.5, 9.0);
+     gl_PointSize = clamp(14.0 - mag * 1.5, 3.0, 16.0);
 
     // Perceptual brightness (Pogson-ish, compressed for display)
     vBright = clamp(pow(2.512, (2.5 - mag) * 0.55), 0.08, 2.2);

@@ -30,14 +30,34 @@ void main() {
     col = mix(col, vec3(1.0, 0.48, 0.26), band * 0.75);
 
     // ── SUN: bright disc + tight core glow + wide warm halo ──
-    float sd    = max(dot(ray, sunDir), 0.0);
-    float sunUp = clamp(sunDir.y * 8.0 + 0.25, 0.0, 1.0);
-    float disc  = smoothstep(0.9982, 0.9990, sd);
-    float glow  = pow(sd, 250.0) * 1.3
-                + pow(sd, 22.0)  * 0.55
-                + pow(sd, 5.0)   * (0.20 + 0.55 * sunsetFactor);
-    vec3  sunCol = mix(vec3(1.0, 0.96, 0.85), vec3(1.0, 0.45, 0.16), sunsetFactor);
-    col += sunUp * (disc * 5.0 + glow) * sunCol;
+        float sd    = max(dot(ray, sunDir), 0.0);
+        float sunUp = clamp(sunDir.y * 8.0 + 0.25, 0.0, 1.0);
+        float disc  = smoothstep(0.9982, 0.9990, sd);
+
+        // RESTORED: The wide pow(5.0) atmospheric glow that flares up perfectly at sunset!
+        float glow  = pow(sd, 250.0) * 1.3
+                    + pow(sd, 22.0)  * 0.55
+                    + pow(sd, 5.0)   * (0.20 + 0.55 * sunsetFactor);
+
+        vec3  sunCol = mix(vec3(1.0, 0.96, 0.85), vec3(1.0, 0.45, 0.16), sunsetFactor);
+        col += sunUp * (disc * 5.0 + glow) * sunCol;
+        // ── MOON: Phase-Aware Atmospheric Glow ──
+            float md = max(dot(ray, moonDir), 0.0);
+
+            // Calculate how "Full" the moon is (1.0 = Full Moon, 0.0 = New Moon)
+            float phaseFrac = 0.5 * (1.0 - dot(sunDir, moonDir));
+
+            // Much tighter, fainter, and more realistic halo (no giant dome wash)
+            // pow(120) creates a soft, narrow aureole; pow(500) creates a subtle edge bleed
+            float moonGlow = pow(md, 120.0) * 0.15
+                           + pow(md, 500.0) * 0.40;
+
+            float moonVis = nightFactor * clamp(moonDir.y * 10.0 + 0.4, 0.0, 1.0);
+
+            // Desaturated slate-blue color (moonlight is almost monochrome/silver to human eyes)
+            vec3 moonGlowCol = vec3(0.24, 0.28, 0.38) * moonGlow * phaseFrac;
+
+            col += moonGlowCol * moonVis;
 
     // (Moon is rendered as a 3D sphere in Window.java — no 2D overlay here.)
     // (Stars are rendered as GL_POINTS in Window.java.)

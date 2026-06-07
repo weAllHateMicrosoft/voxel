@@ -45,24 +45,32 @@ public class DayNight {
         recompute();
     }
 
-    public void recompute() {
-        float ang = (time - 0.25f) * (float) (Math.PI * 2.0);
-        sunElev = (float) Math.sin(ang);
-        sunDir.set((float) Math.cos(ang), sunElev, 0.35f).normalize();
-        moonDir.set(sunDir).negate();
+    private double lastStarUpdateJD = 0.0;
 
+    public void recompute() {
+        double lst = Astronomy.localSiderealTime(currentJD, Math.toRadians(GameConfig.observerLonDeg));
+        double lat = Math.toRadians(GameConfig.observerLatDeg);
+
+        // 1. TRUE ASTRONOMICAL SUN
+        Astronomy.RADecDist sunPos = Astronomy.sunPosition(currentJD);
+        org.joml.Vector2d sunHoriz = Astronomy.equatorialToHorizontal(sunPos.ra, sunPos.dec, lat, lst);
+        sunDir.set(Astronomy.azAltToDirection(sunHoriz.x, sunHoriz.y));
+        sunElev = sunDir.y;
+
+        // 2. TRUE ASTRONOMICAL MOON (Decoupled from Sun! This restores the cycle)
         Astronomy.LunarInfo lunar = Astronomy.moonPosition(currentJD);
+        org.joml.Vector2d moonHoriz = Astronomy.equatorialToHorizontal(lunar.ra, lunar.dec, lat, lst);
+        moonDir.set(Astronomy.azAltToDirection(moonHoriz.x, moonHoriz.y));
+
         moonPhaseAngle = (float) lunar.phaseAngle;
         moonBrightLimbAngle = (float) lunar.brightLimbAngle;
 
-        // FIX: Actually calculate where the stars are in the sky right now so the GPU can draw them!
         if (starCatalog != null) {
-            visibleStars = Astronomy.buildVisibleStars(starCatalog, currentJD,
-                    Math.toRadians(GameConfig.observerLatDeg),
-                    Math.toRadians(GameConfig.observerLonDeg));
+            visibleStars = Astronomy.buildVisibleStars(starCatalog, currentJD, lat, Math.toRadians(GameConfig.observerLonDeg));
             starsDirty = true;
         }
 
+        // Lighting factors
         dayFactor    = smooth(-0.08f, 0.22f, sunElev);
         nightFactor  = 1f - dayFactor;
         float nearHz = clamp(1f - Math.abs(sunElev) / 0.22f, 0f, 1f);
@@ -72,8 +80,7 @@ public class DayNight {
         lightDir.set(moonDir).lerp(sunDir, sunUp).normalize();
         lightStrength = sunUp * (0.30f + 0.70f * dayFactor) + (1f - sunUp) * 0.18f;
 
-        Vector3f warm = new Vector3f(1.00f, 0.96f, 0.88f)
-                .lerp(new Vector3f(1.00f, 0.42f, 0.18f), sunsetFactor);
+        Vector3f warm = new Vector3f(1.00f, 0.96f, 0.88f).lerp(new Vector3f(1.00f, 0.42f, 0.18f), sunsetFactor);
         lightColor.set(0.55f, 0.64f, 0.98f).lerp(warm, sunUp);
 
         ambientStrength = 0.10f + 0.22f * dayFactor + 0.05f * sunsetFactor;
