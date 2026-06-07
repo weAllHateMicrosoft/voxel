@@ -46,7 +46,7 @@ float fbm(vec2 p) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MILKY WAY
+// STAR NEST VOLUMETRIC GALAXY (CLAMPED SINGULARITIES)
 // ─────────────────────────────────────────────────────────────────────────────
 vec3 milkyWay(vec3 ray, float nightAmt) {
     if (nightAmt < 0.05) return vec3(0.0);
@@ -58,48 +58,85 @@ vec3 milkyWay(vec3 ray, float nightAmt) {
     vec3 Z = normalize(milkyWayAxis);
     vec3 X = normalize(milkyWayCentre);
     vec3 Y = normalize(cross(Z, X));
-    X = cross(Y, Z); // Ensure perfect orthogonality
+    X = cross(Y, Z);
 
     // Project ray into galactic frame
     vec3 g = vec3(dot(ray, X), dot(ray, Y), dot(ray, Z));
 
+    // Calculate galactic latitude to constrain the volume to a band
     float lat = asin(clamp(g.z, -1.0, 1.0));
     float lon = atan(g.y, g.x);
 
-    // The band is centred on lat=0 with width ~13°
-    float bandFade = exp(-lat * lat / 0.055);
+    float bandFade = exp(-lat * lat / 0.06);
 
-    // Distance from Galactic Centre (lon=0, lat=0) — core is brighter
-    float gcDist  = sqrt(lon * lon + lat * lat * 4.0);
-    float coreBrightness = exp(-gcDist * gcDist * 0.4) * 1.8;
+    // Early exit
+    if (bandFade < 0.01) return vec3(0.0);
 
-    // Procedural texture using galactic coords
-    vec2 noiseCoord = vec2(lon * 2.5, lat * 6.0);
-    float nebulaNoise = fbm(noiseCoord + vec2(1.7, 3.2));
-    float dustLane    = fbm(noiseCoord * 1.4 + vec2(4.1, 1.5));
+    vec3 dir = g;
 
-    // Dark dust lanes cut through the band (Great Rift)
-    float dust = smoothstep(0.45, 0.65, dustLane);
-    float brightness = (nebulaNoise * 0.7 + 0.3) * bandFade * (1.0 - dust * 0.7);
-    brightness += coreBrightness * bandFade;
-    brightness = clamp(brightness, 0.0, 1.0);
+    // Drifting slowly over time to animate the dust clouds smoothly
+    vec3 from = vec3(1.0, 0.5, 0.5) + vec3(time * 0.002, time * 0.001, -time * 0.0015);
 
-    // Colour: outer regions are blue-white, core is warm yellow/orange
-    vec3 outerCol = vec3(0.55, 0.62, 0.90);
-    vec3 coreCol  = vec3(0.90, 0.75, 0.50);
-    vec3 mwCol    = mix(outerCol, coreCol, clamp(coreBrightness * 0.5, 0.0, 1.0));
+    int iterations = 13;
+    int volsteps = 12;
+    float formuparam = 0.53;
+    float stepsize = 0.12;
+    float tile = 0.85;
+    float brightness = 0.0018;
+    float darkmatter = 0.3;
+    float distfading = 0.73;
+    float saturation = 0.85;
+
+    float s = 0.1, fade = 1.0;
+    vec3 v = vec3(0.0);
+
+    for (int r = 0; r < volsteps; r++) {
+        vec3 p = from + s * dir * 0.5;
+        p = abs(vec3(tile) - mod(p, vec3(tile * 2.0)));
+
+        float pa, a = pa = 0.0;
+        for (int i = 0; i < iterations; i++) {
+            // CRITICAL FIX: Clamp the denominator to a minimum threshold.
+            // This mathematically removes the division-by-zero singularities,
+            // erasing the sharp, flickering stars at their source.
+            float d = max(dot(p, p), 0.015);
+            p = abs(p) / d - formuparam;
+            a += abs(length(p) - pa);
+            pa = length(p);
+        }
+
+        float dm = max(0.0, darkmatter - a * a * 0.001);
+
+        // CRITICAL FIX: Restore the original cubic contrast scaling.
+        // Combined with the denominator clamp above, this recovers the rich
+        // high-contrast red/blue color gradients and volumetric borders.
+        a *= a * a;
+
+        if (r > 4) fade *= 1.0 - dm;
+
+        v += vec3(s, s * s, s * s * s * s) * a * brightness * fade;
+        fade *= distfading;
+        s += stepsize;
+    }
+
+    v = mix(vec3(length(v)), v, saturation);
 
     float moonWash = 1.0 - moonBrightness * 0.85;
 
-    // Fixed brightness scale
-    return mwCol * brightness * 0.055 * nightAmt * nightAmt * moonWash;
+    vec3 finalGalaxy = v * 0.015 * bandFade * vec3(0.65, 0.75, 1.2);
+
+    float gcDist  = sqrt(lon * lon + lat * lat * 4.0);
+    float coreBrightness = exp(-gcDist * gcDist * 0.4);
+    finalGalaxy += vec3(0.9, 0.7, 0.5) * coreBrightness * bandFade * v * 0.01;
+
+    return finalGalaxy * nightAmt * nightAmt * moonWash;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NEBULA PATCHES
 // ─────────────────────────────────────────────────────────────────────────────
 vec3 nebulaBlob(vec3 ray, vec3 centre, float radius, vec3 colour, float intensity) {
-    if (dot(centre, centre) < 0.01) return vec3(0.0);  // not uploaded yet
+    if (dot(centre, centre) < 0.01) return vec3(0.0);
     float d = distance(ray, normalize(centre));
     return colour * exp(-d * d / (radius * radius)) * intensity;
 }
@@ -185,10 +222,13 @@ void main() {
     col += sunUp * (disc * 5.0 + glow) * sunCol;
 
     if (ray.y > -0.05 && nightFactor > 0.05) {
-        col += milkyWay(ray, nightFactor);
-        col += nebulae(ray, nightFactor);
-        col += airglow(ray, nightFactor);
-        col += aurora(ray, nightFactor);
+        // Atmospheric extinction: smoothly fade all volumetric night sky features
+        // to zero between 5 degrees above the horizon and slightly below it.
+        float horizonFade = smoothstep(-0.02, 0.08, ray.y);
+        col += milkyWay(ray, nightFactor) * horizonFade;
+        col += nebulae(ray, nightFactor) * horizonFade;
+        col += airglow(ray, nightFactor) * horizonFade;
+        col += aurora(ray, nightFactor) * horizonFade;
     }
 
     if (lunarEclipseFactor > 0.01 && nightFactor > 0.5) {
