@@ -9,29 +9,52 @@ uniform float time;
 uniform float nightFactor;
 
 void main() {
-    // Point coordinates map [0,1] across the sprite. Remap to [-1, 1]
     vec2  c  = gl_PointCoord * 2.0 - 1.0;
-    float d2 = dot(c, c); // squared distance from center
-
-    // Circular clipping
+    float d2 = dot(c, c);
     if (d2 > 1.0) discard;
 
-    // Normalize brightness factor to control the Gaussian spread
-    float bFactor = clamp(vBright / 2.2, 0.0, 1.0);
+    // ── Core: tight gaussian ──────────────────────────────────────────────────
+    // Two gaussians: a sharp pinpoint core + a slightly wider halo
+    // This makes stars look like they have real angular extent in atmosphere
+    float core  = exp(-d2 * 5.5);                  // sharp spike
+    float bloom = exp(-d2 * 1.6) * 0.22;           // soft halo around it
+    float sprite = core + bloom;
 
-    // 1. Core Gaussian (sharp, intensely bright centre)
-    float core = exp(-d2 * (16.0 - bFactor * 8.0));
+    // ── Diffraction spikes (only for bright stars, mag < 1.5) ─────────────────
+    // Real telescope / eye sees 4-point cross on very bright stars due to diffraction.
+    // We approximate with two perpendicular "spike" functions.
+    float spikes = 0.0;
+    if (vMag < 1.5) {
+        float spikeStr = clamp((1.5 - vMag) * 0.5, 0.0, 0.75);
+        // Axis-aligned cross
+        float sx = exp(-abs(c.y) * 18.0) * exp(-d2 * 0.3);   // horizontal spike
+        float sy = exp(-abs(c.x) * 18.0) * exp(-d2 * 0.3);   // vertical spike
+        // Diagonal spikes (45° rotated) — slightly weaker
+        float sd1 = exp(-abs(c.x - c.y) * 14.0) * exp(-d2 * 0.3);
+        float sd2 = exp(-abs(c.x + c.y) * 14.0) * exp(-d2 * 0.3);
+        spikes = (sx + sy) * 0.4 + (sd1 + sd2) * 0.12;
+        spikes *= spikeStr;
+        // Spikes are whiter/cooler than the star colour
+        sprite += spikes;
+    }
 
-    // 2. Bloom Gaussian (wide, faint halo that makes bright stars look luminous)
-    float bloom = exp(-d2 * (4.0 - bFactor * 2.0)) * 0.35 * bFactor;
+    // ── Scintillation (atmospheric twinkling) ─────────────────────────────────
+    // Only noticeably affects bright stars. Faint stars don't visibly twinkle.
+    // Amplitude is small — never goes dark, just pulses ±10%.
+    float twinkleAmp = clamp((3.0 - vMag) * 0.032, 0.0, 0.10);
+    float tw = 1.0 - twinkleAmp
+             + twinkleAmp * sin(time * (1.5 + vSeed * 3.2) + vSeed * 31.4)
+             + twinkleAmp * 0.4 * sin(time * (3.3 + vSeed * 1.8) + vSeed * 17.2);
 
-    float profile = core + bloom;
+    // ── Colour: spikes slightly bluer/whiter than star body ──────────────────
+    // Hot blue-white stars: their bloom should be slightly blue-shifted
+    // Red/orange stars: their bloom is warm
+    // We just tint the spike contribution toward white
+    vec3 spikeColor = mix(vColor, vec3(1.0, 1.0, 0.95), 0.6);
+    vec3 finalColor = vColor * (core + bloom) + spikeColor * spikes;
 
-    // Subtle twinkling (only bright stars twinkle noticeably)
-    float twinkleAmp = clamp((3.0 - vMag) * 0.05, 0.0, 0.15);
-    float tw = 1.0 - twinkleAmp + twinkleAmp * sin(time * (1.8 + vSeed * 3.0) + vSeed * 30.0);
+    float a = sprite * vBright * tw * nightFactor;
 
-    float alpha = profile * vBright * tw * nightFactor;
-
-    FragColor = vec4(vColor * alpha, alpha);
+    // Additive blending — colour is pre-multiplied into alpha channel weight
+    FragColor = vec4(finalColor * a, a);
 }

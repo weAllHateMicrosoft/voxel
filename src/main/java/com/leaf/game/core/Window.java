@@ -461,6 +461,8 @@ public class Window {
     // 3D effect meshes (unit-sized, built once, drawn emissive with per-object MVP).
     private com.leaf.game.render.Mesh orbTorus, orbSphere, orbCyl, orbCube;
     private com.leaf.game.render.Mesh radarFan;   // flat afterglow wedge (angular bright→0 fade)
+    private Shader meteorShader = null;
+    private MeteorSystem meteorSystem = null;
     /** Lightweight 3D particles for embers (float up) and debris (burst out). */
     private static final class OrbParticle {
         float x, y, z, vx, vy, vz, life, maxLife, size, r, g, b;
@@ -637,6 +639,8 @@ public class Window {
     // ── DAY / NIGHT CYCLE ──────────────────────────────────────────────────────
     final DayNight dayNight = new DayNight();
     public Telescope telescope = new Telescope();
+    private int meteorVao = 0;
+    private int meteorVbo = 0;
     // State to smoothly zoom the FOV when aiming the telescope
     private float currentFov = GameConfig.fov;
     public boolean holdingTelescope = false;
@@ -1053,8 +1057,6 @@ public class Window {
 
     private void loop() {
         // ── MAC OS CRASH FIX ──────────────────────────────────────────────
-        // Flush the window creation events and give macOS 150ms to finish
-        // building the native window chrome before we slam the CPU with threads.
         glfwPollEvents();
         try { Thread.sleep(150); } catch (InterruptedException e) {}
         // ──────────────────────────────────────────────────────────────────
@@ -1064,65 +1066,34 @@ public class Window {
 
         GL.createCapabilities();
         imguiGl3.init("#version 330");
-        GL.createCapabilities();
-        imguiGl3.init("#version 330");
 
         glEnable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
 
-        // ── Animated enemy model ──────────────────────────────────────────────
-        // ModelRenderer has its own mini-shader; init once after GL context exists.
         com.leaf.game.anim.ModelRenderer.init();
-        com.leaf.game.anim.AnimModel enemyAnimModelLoaded =
-                com.leaf.game.anim.AnimModel.loadFromClasspath("enemy_basic");
-        if (enemyAnimModelLoaded != null)
-            this.enemyAnimModel = enemyAnimModelLoaded;
-        com.leaf.game.anim.AnimModel slimeAnimModelLoaded =
-                com.leaf.game.anim.AnimModel.loadFromClasspath("slime");
-        if (slimeAnimModelLoaded != null)
-            this.slimeAnimModel = slimeAnimModelLoaded;
-        com.leaf.game.anim.AnimModel golemAnimModelLoaded =
-                com.leaf.game.anim.AnimModel.loadFromClasspath("golem");
-        if (golemAnimModelLoaded != null)
-            this.golemAnimModel = golemAnimModelLoaded;
+        com.leaf.game.anim.AnimModel enemyAnimModelLoaded = com.leaf.game.anim.AnimModel.loadFromClasspath("enemy_basic");
+        if (enemyAnimModelLoaded != null) this.enemyAnimModel = enemyAnimModelLoaded;
+        com.leaf.game.anim.AnimModel slimeAnimModelLoaded = com.leaf.game.anim.AnimModel.loadFromClasspath("slime");
+        if (slimeAnimModelLoaded != null) this.slimeAnimModel = slimeAnimModelLoaded;
+        com.leaf.game.anim.AnimModel golemAnimModelLoaded = com.leaf.game.anim.AnimModel.loadFromClasspath("golem");
+        if (golemAnimModelLoaded != null) this.golemAnimModel = golemAnimModelLoaded;
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
 
-        Shader shader = new Shader(
-                "src/main/resources/shaders/vertex.glsl",
-                "src/main/resources/shaders/fragment.glsl");
-
-        // ── KEY BINDING REGISTRY ─────────────────────────────────────────────
-        // Documents every key and shouts at startup if two actions share one
-        // (every letter A–Z is already taken — new abilities use punctuation keys).
+        Shader shader = new Shader("src/main/resources/shaders/vertex.glsl", "src/main/resources/shaders/fragment.glsl");
         KeyBindings.verify();
 
-        // ── KAMUI DISTORTION SHADER + SCREEN QUAD ────────────────────────────
-        distortShader = new com.leaf.game.render.Shader(
-                "src/main/resources/shaders/distort_vertex.glsl",
-                "src/main/resources/shaders/distort_fragment.glsl");
+        distortShader = new com.leaf.game.render.Shader("src/main/resources/shaders/distort_vertex.glsl", "src/main/resources/shaders/distort_fragment.glsl");
+        bloomShader = new com.leaf.game.render.Shader("src/main/resources/shaders/distort_vertex.glsl", "src/main/resources/shaders/bloom_fragment.glsl");
+        skyShader = new com.leaf.game.render.Shader("src/main/resources/shaders/distort_vertex.glsl", "src/main/resources/shaders/sky_fragment.glsl");
+        starShader = new Shader("src/main/resources/shaders/star_vertex.glsl", "src/main/resources/shaders/star_fragment.glsl");
+        constellShader = new Shader("src/main/resources/shaders/constellation_vertex.glsl", "src/main/resources/shaders/constellation_fragment.glsl");
+        moonShader = new Shader("src/main/resources/shaders/moon_vertex.glsl", "src/main/resources/shaders/moon_fragment.glsl");
 
-        // Searing-bloom post-process for the Orbital Annihilation cinematic
-        // (reuses the same fullscreen-quad vertex shader as the distort pass).
-        bloomShader = new com.leaf.game.render.Shader(
-                "src/main/resources/shaders/distort_vertex.glsl",
-                "src/main/resources/shaders/bloom_fragment.glsl");
+        meteorShader = new Shader("src/main/resources/shaders/meteor_vertex.glsl", "src/main/resources/shaders/meteor_fragment.glsl");
+        meteorSystem = new MeteorSystem();
 
-        // Procedural day/night sky (gradient + sun + moon + stars).
-        skyShader = new com.leaf.game.render.Shader(
-                "src/main/resources/shaders/distort_vertex.glsl",
-                "src/main/resources/shaders/sky_fragment.glsl");
-        starShader = new Shader(
-                "src/main/resources/shaders/star_vertex.glsl",
-                "src/main/resources/shaders/star_fragment.glsl");
-
-        // 3-D moon sphere shader.
-        moonShader = new Shader("src/main/resources/shaders/moon_vertex.glsl",
-                                "src/main/resources/shaders/moon_fragment.glsl");
-
-        // Constellation line overlay.
-        constellShader = new Shader("src/main/resources/shaders/constellation_vertex.glsl",
-                                    "src/main/resources/shaders/constellation_fragment.glsl");
+        // ── Initialize Constellation VAO/VBO ──
         constellVao = glGenVertexArrays();
         constellVbo = glGenBuffers();
         glBindVertexArray(constellVao);
@@ -1131,39 +1102,42 @@ public class Window {
         org.lwjgl.opengl.GL20.glEnableVertexAttribArray(0);
         glBindVertexArray(0);
 
-        // Create VAO and VBO for Point Sprite Stars
-                starVao = glGenVertexArrays();
-                starVbo = glGenBuffers();
-                glBindVertexArray(starVao);
-                glBindBuffer(GL_ARRAY_BUFFER, starVbo);
-        // location 0: vec3 direction
-                glVertexAttribPointer(0, 3, GL_FLOAT, false, 5 * Float.BYTES, 0);
-                glEnableVertexAttribArray(0);
-        // location 1: vec2 (magnitude, B-V)
-                glVertexAttribPointer(1, 2, GL_FLOAT, false, 5 * Float.BYTES, 3 * Float.BYTES);
-                glEnableVertexAttribArray(1);
-                glBindVertexArray(0);
+        // ── Initialize Star VAO/VBO ──
+        starVao = glGenVertexArrays();
+        starVbo = glGenBuffers();
+        glBindVertexArray(starVao);
+        glBindBuffer(GL_ARRAY_BUFFER, starVbo);
+        glVertexAttribPointer(0, 3, GL_FLOAT, false, 5 * Float.BYTES, 0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 2, GL_FLOAT, false, 5 * Float.BYTES, 3 * Float.BYTES);
+        glEnableVertexAttribArray(1);
+        glBindVertexArray(0);
 
-        // Full-screen quad: two triangles covering NDC [-1,1]
+        // ── Initialize Meteor VAO/VBO ──
+        meteorVao = glGenVertexArrays();
+        meteorVbo = glGenBuffers();
+        glBindVertexArray(meteorVao);
+        glBindBuffer(GL_ARRAY_BUFFER, meteorVbo);
+        glVertexAttribPointer(0, 3, GL_FLOAT, false, 5 * Float.BYTES, 0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 1, GL_FLOAT, false, 5 * Float.BYTES, 3 * Float.BYTES);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 1, GL_FLOAT, false, 5 * Float.BYTES, 4 * Float.BYTES);
+        glEnableVertexAttribArray(2);
+        glBindVertexArray(0);
+
+        // Full-screen quad
         float[] quadVerts = {
-            // x      y     u     v
-            -1.0f,  1.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f,
-             1.0f, -1.0f, 1.0f, 0.0f,
-            -1.0f,  1.0f, 0.0f, 1.0f,
-             1.0f, -1.0f, 1.0f, 0.0f,
-             1.0f,  1.0f, 1.0f, 1.0f
+                -1.0f,  1.0f, 0.0f, 1.0f,  -1.0f, -1.0f, 0.0f, 0.0f,   1.0f, -1.0f, 1.0f, 0.0f,
+                -1.0f,  1.0f, 0.0f, 1.0f,   1.0f, -1.0f, 1.0f, 0.0f,   1.0f,  1.0f, 1.0f, 1.0f
         };
         kamuiScreenQuad = org.lwjgl.opengl.GL30.glGenVertexArrays();
         int quadVbo = org.lwjgl.opengl.GL15.glGenBuffers();
         org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
         org.lwjgl.opengl.GL15.glBindBuffer(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, quadVbo);
-        org.lwjgl.opengl.GL15.glBufferData(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER,
-                quadVerts, org.lwjgl.opengl.GL15.GL_STATIC_DRAW);
-        // attrib 0: position (xy)
+        org.lwjgl.opengl.GL15.glBufferData(org.lwjgl.opengl.GL15.GL_ARRAY_BUFFER, quadVerts, org.lwjgl.opengl.GL15.GL_STATIC_DRAW);
         org.lwjgl.opengl.GL20.glVertexAttribPointer(0, 2, GL_FLOAT, false, 4*4, 0L);
         org.lwjgl.opengl.GL20.glEnableVertexAttribArray(0);
-        // attrib 1: texcoord (uv)
         org.lwjgl.opengl.GL20.glVertexAttribPointer(1, 2, GL_FLOAT, false, 4*4, 2L*4);
         org.lwjgl.opengl.GL20.glEnableVertexAttribArray(1);
         org.lwjgl.opengl.GL30.glBindVertexArray(0);
@@ -3009,6 +2983,9 @@ public class Window {
                                   : Math.max(0f, mihRamp - rawDeltaTime * 2.0f);
                     GameConfig.dayNightSpeed = 1f + mihRamp * mihRamp * 400f;
                     dayNight.update(rawDeltaTime);
+                    if (!isPaused && !isPreloading) {
+                        meteorSystem.update(rawDeltaTime * tc.getScale(), dayNight);
+                    }
 
                     // ── VOXEL LINES world restyle (F10 = one-shot cycle) ──────
                     boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
@@ -3512,6 +3489,38 @@ public class Window {
                     renderSky(projection, view, camera);
                     renderMoon3D(projection, view, camera);     // 3D sphere moon
                     renderConstellations(projection, view, camera);
+                    if (meteorShader != null && meteorSystem != null && dayNight.nightFactor > 0.05f) {
+                        meteorShader.bind();
+
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                        glDepthMask(false);
+                        glDisable(GL_DEPTH_TEST);
+
+                        Matrix4f vp = new Matrix4f(projection).mul(view);
+                        meteorShader.setUniform("viewProj", vp);
+
+                        // FIX: Upload the raw meteor vertices to the VBO and render them
+                        if (meteorSystem.getVertexCount() > 0) {
+                            glBindVertexArray(meteorVao);
+                            glBindBuffer(GL_ARRAY_BUFFER, meteorVbo);
+
+                            // Upload the flat float buffer [x, y, z, trailFrac, brightness]
+                            glBufferData(GL_ARRAY_BUFFER, meteorSystem.getGPUBuffer(), GL_DYNAMIC_DRAW);
+
+                            glEnable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
+                            glDrawArrays(GL_POINTS, 0, meteorSystem.getVertexCount());
+                            glDisable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
+
+                            glBindVertexArray(0);
+                        }
+
+                        glEnable(GL_DEPTH_TEST);
+                        glDepthMask(true);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                        glDisable(GL_BLEND);
+                        meteorShader.unbind();
+                    }
                     shader.bind();   // restore the world shader for terrain (uniforms persist)
                 }
 
@@ -6272,30 +6281,95 @@ public class Window {
         return new com.leaf.game.render.Mesh(v, idx);
     }
 
-    /** Render the 3-D moon sphere: lit by sunDir, correct phase, no yin-yang. */
+    private void renderSky(Matrix4f projection, Matrix4f view, com.leaf.game.util.Camera camera) {
+        if (skyShader == null || kamuiScreenQuad == 0) return;
+
+        Matrix4f invVP = new Matrix4f(projection).mul(view).invert();
+        skyShader.bind();
+        skyShader.setUniform("milkyWayAxis",   dayNight.milkyWay.axis);
+        skyShader.setUniform("milkyWayCentre", dayNight.milkyWay.centre);
+        skyShader.setUniform("time",               (float) glfwGetTime());
+        skyShader.setUniform("moonBrightness",     dayNight.moonBrightness);
+        skyShader.setUniform("auroraStrength",     dayNight.auroraStrength);
+        skyShader.setUniform("lunarEclipseFactor", dayNight.lunarEclipseFactor);
+        skyShader.setUniform("nebulaDir_M42",      dayNight.nebulaDir_M42);
+        skyShader.setUniform("nebulaDir_M31",      dayNight.nebulaDir_M31);
+        skyShader.setUniform("nebulaDir_M8",       dayNight.nebulaDir_M8);
+        skyShader.setUniform("nebulaDir_EtaCar",   dayNight.nebulaDir_EtaCar);
+
+        // 1. Draw the Sky Gradient, Sun, and Moon
+        skyShader.setUniform("invViewProj", invVP);
+        skyShader.setUniform("sunDir",       dayNight.sunDir);
+        skyShader.setUniform("moonDir",      dayNight.moonDir);
+        skyShader.setUniform("skyZenith",    dayNight.skyZenith);
+        skyShader.setUniform("skyHorizon",   dayNight.skyHorizon);
+        skyShader.setUniform("dayFactor",    dayNight.dayFactor);
+        skyShader.setUniform("nightFactor",  dayNight.nightFactor);
+        skyShader.setUniform("sunsetFactor", dayNight.sunsetFactor);
+
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(false);
+        org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        org.lwjgl.opengl.GL30.glBindVertexArray(0);
+
+        // 2. Draw the Stars as Point Sprites
+        if (starShader != null && dayNight.visibleStars != null && dayNight.nightFactor > 0.05f) {
+            starShader.bind();
+            Matrix4f vp = new Matrix4f(projection).mul(view);
+            starShader.setUniform("viewProj", vp);
+            starShader.setUniform("time", (float) glfwGetTime());
+            starShader.setUniform("nightFactor", dayNight.nightFactor);
+
+            glEnable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending for stars
+
+            glBindVertexArray(starVao);
+            glDrawArrays(GL_POINTS, 0, dayNight.visibleStars.size());
+            glBindVertexArray(0);
+
+            glDisable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDisable(GL_BLEND);
+        }
+
+        glDepthMask(true);
+        glEnable(GL_DEPTH_TEST);
+        skyShader.unbind();
+    }
     private void renderMoon3D(Matrix4f projection, Matrix4f view, com.leaf.game.util.Camera camera) {
         if (moonShader == null || dayNight.moonDir.y < -0.06f || dayNight.nightFactor < 0.02f) return;
         if (moonMesh == null) moonMesh = buildMoonMesh(24, 36);
         float vis = dayNight.nightFactor * Math.min(1f, dayNight.moonDir.y * 10f + 0.4f);
         if (vis < 0.01f) return;
+
         Vector3f moonPos = new Vector3f(camera.position).fma(900f, dayNight.moonDir);
         Matrix4f mvp = new Matrix4f(projection).mul(view)
-                // FIX: Scaled up 10x from 4.0f to 40.0f so it is a grand, visible celestial body!
-                .mul(new Matrix4f().translate(moonPos.x, moonPos.y, moonPos.z)
-                        .scale((float) GameConfig.moonSizeScale));
+                .mul(new Matrix4f().translate(moonPos.x, moonPos.y, moonPos.z).scale((float) GameConfig.moonSizeScale));
+
         moonShader.bind();
+        moonShader.setUniform("lunarEclipseFactor", dayNight.lunarEclipseFactor);
         moonShader.setUniform("mvp",            mvp);
-        moonShader.setUniform("sunDir",         dayNight.sunDir);
         moonShader.setUniform("moonVisibility", vis);
         moonShader.setUniform("moonPhaseAngle", dayNight.moonPhaseAngle);
-        moonShader.setUniform("moonBrightLimbAngle", dayNight.moonBrightLimbAngle);
-        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(false); glDepthFunc(GL_LEQUAL); glDisable(GL_CULL_FACE);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(false);
+        glDepthFunc(GL_LEQUAL);
+
+        // FIX: CULL FACE ensures the dark back-side doesn't glitch through the bright front-side!
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+
         moonMesh.render();
-        glDepthMask(true); glDisable(GL_BLEND);
+
+        glDisable(GL_CULL_FACE);
+        glDepthMask(true);
+        glDisable(GL_BLEND);
         moonShader.unbind();
     }
-
     /** Reproject constellation line segments to world directions and re-upload to GPU. */
     private void updateConstellationBuffer() {
         if (constellVbo == 0) return;
@@ -6384,63 +6458,7 @@ public class Window {
         identifyConstellation(camera);
     }
 
-    /** Full-screen procedural sky pass (gradient + sun + moon + stars), drawn first. */
-    private void renderSky(Matrix4f projection, Matrix4f view, com.leaf.game.util.Camera camera) {
-        if (skyShader == null || kamuiScreenQuad == 0) return;
 
-        Matrix4f invVP = new Matrix4f(projection).mul(view).invert();
-
-        // 1. Draw the Sky Gradient, Sun, and Moon
-        skyShader.bind();
-        skyShader.setUniform("invViewProj", invVP);
-        skyShader.setUniform("sunDir",       dayNight.sunDir);
-        skyShader.setUniform("moonDir",      dayNight.moonDir);
-        skyShader.setUniform("skyZenith",    dayNight.skyZenith);
-        skyShader.setUniform("skyHorizon",   dayNight.skyHorizon);
-        skyShader.setUniform("dayFactor",    dayNight.dayFactor);
-        skyShader.setUniform("nightFactor",  dayNight.nightFactor);
-        skyShader.setUniform("sunsetFactor", dayNight.sunsetFactor);
-
-        // FIX: Must be called AFTER skyShader.bind() to prevent GL_INVALID_OPERATION
-        skyShader.setUniform("moonPhaseAngle", dayNight.moonPhaseAngle);
-        skyShader.setUniform("moonBrightLimbAngle", dayNight.moonBrightLimbAngle);
-
-        glDisable(GL_DEPTH_TEST);
-        glDepthMask(false);
-        org.lwjgl.opengl.GL30.glBindVertexArray(kamuiScreenQuad);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
-        org.lwjgl.opengl.GL30.glBindVertexArray(0);
-
-        // 2. Draw the Stars as Point Sprites
-        if (starShader != null && dayNight.visibleStars != null && dayNight.nightFactor > 0.05f) {
-            starShader.bind();
-
-            // FIX: Compute the FORWARD View-Projection matrix and upload to the correct uniform name.
-            Matrix4f vp = new Matrix4f(projection).mul(view);
-            starShader.setUniform("viewProj", vp);
-
-            starShader.setUniform("time", (float) glfwGetTime());
-            starShader.setUniform("nightFactor", dayNight.nightFactor);
-
-            // FIX: Safe, explicit enabling of Point Sizes using the full LWJGL path
-            glEnable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE); // Additive blending for stars
-
-            glBindVertexArray(starVao);
-            glDrawArrays(GL_POINTS, 0, dayNight.visibleStars.size());
-            glBindVertexArray(0);
-
-            // Clean up OpenGL state
-            glDisable(org.lwjgl.opengl.GL32.GL_PROGRAM_POINT_SIZE);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glDisable(GL_BLEND);
-        }
-
-        glDepthMask(true);
-        glEnable(GL_DEPTH_TEST);
-        skyShader.unbind();
-    }
     /** Render meteor bodies as glowing hot orbs with a fading comet trail. */
     private void renderMeteors(com.leaf.game.render.Shader shader, Matrix4f projection, Matrix4f view) {
         if (meteors.isEmpty()) return;

@@ -1,34 +1,34 @@
 #version 330 core
-in  vec3 vNormal;
+in vec3 vNormal;
 out vec4 FragColor;
 
-uniform vec3  sunDir;
 uniform float moonVisibility;
+uniform float moonPhaseAngle;
+uniform float lunarEclipseFactor;
 
 void main() {
-    // Normal of the 3D sphere
     vec3 n = normalize(vNormal);
-    // Direction TO the sun
-    vec3 L = normalize(sunDir);
 
-    // Standard 3D lighting naturally creates the crescent shape!
-    float diff = dot(n, L);
+    // We fake the light direction to simulate phases while the moon physically remains opposite the sun.
+    vec3 virtualLight = normalize(vec3(sin(moonPhaseAngle), 0.0, cos(moonPhaseAngle)));
 
-    // Smooth step creates a crisp, clean terminator line (no noise/craters)
-    float lit = smoothstep(-0.02, 0.05, diff);
+    // Clean, crisp terminator line
+    float diff = max(0.0, dot(n, virtualLight));
+    float lit = smoothstep(0.02, 0.1, diff);
 
-    // Clean colors: Bright pale-yellow for the lit side, dark blue-grey for the unlit side
-    vec3 moonBase = vec3(0.95, 0.95, 0.92);
-    vec3 moonDark = vec3(0.08, 0.08, 0.12);
+    vec3 brightColor = vec3(0.95, 0.94, 0.90);
+    vec3 darkColor = vec3(0.08, 0.12, 0.20) * 0.4; // Faint earthshine
 
-    vec3 col = mix(moonDark, moonBase, lit);
+    vec3 finalCol = mix(darkColor, brightColor, lit);
 
-    // Give the bright crescent a very slight emissive pop
-    if (lit > 0.5) {
-        col *= 1.1;
+    // Add a tiny bit of spherical pop to the bright side
+    finalCol *= (0.6 + 0.4 * diff);
+
+    // Blood Moon Eclipse
+    if (lunarEclipseFactor > 0.01) {
+        vec3 bloodCol = vec3(0.6, 0.1, 0.05);
+        finalCol = mix(finalCol, bloodCol, lunarEclipseFactor);
     }
 
-    // IMPORTANT: No 'discard'.
-    // The dark side of the moon is solid rock; it physically blocks the stars behind it.
-    FragColor = vec4(col, moonVisibility);
+    FragColor = vec4(finalCol, moonVisibility);
 }
