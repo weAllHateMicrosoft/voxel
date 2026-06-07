@@ -1592,8 +1592,8 @@ public class Window {
                             player.stand.shakeRequest = 0f;
                         }
                         holdingTelescope = (hotbar[selectedSlot] == Block.TELESCOPE) && (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
-                        if (holdingTelescope && dayNight.nightFactor > 0.1f) {
-                            telescope.update(camera, dayNight);  // Passing the full Camera object
+                        if (holdingTelescope) {
+                            telescope.update(camera, dayNight);  // Always update compass and tracking math
                         }
 
                         // ── GRAB SLAM IMPACT ───────────────────────────────────

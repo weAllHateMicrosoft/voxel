@@ -122,7 +122,6 @@ public class Player {
             gravAxis = 1; gravSign = -1f; upDir.set(0f, 1f, 0f);
             velocityY = 0f; onGround = false;
             camera.snapGravityUp(upDir);
-            camera.freeLook = false;          // standard gravity → restore pitch limit
             highestY = upHeight();
         }
         // Always animate the view toward the current gravity orientation, and on a
@@ -459,7 +458,9 @@ public class Player {
         onGround  = false;                                    // let them fall into the new frame
         highestY  = upHeight();                               // reset fall reference for the new axis
         camera.setGravityUp(upDir);                           // animate the view flip
-        camera.freeLook = !(gravAxis == 1 && gravSign == -1f); // lift pitch limit when flipped
+
+        // Ensure pitch is clamped during the rotation to prevent glitches
+        camera.clampPitch();
     }
 
     // ── Package-private accessors for AbilityController ───────────────────────

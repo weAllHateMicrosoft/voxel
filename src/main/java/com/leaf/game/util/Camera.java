@@ -95,7 +95,9 @@ public class Camera {
     public boolean freeLook = false;
 
     public void clampPitch() {
-        if (freeLook) return;   // no pitch limit under non-standard gravity
+        // ALWAYS clamp the pitch. The gravity quaternion handles the macro-rotation,
+        // so local pitch never needs to exceed 89 degrees. This prevents the
+        // "neck-breaking" upside-down camera flip.
         pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, pitch));
     }
 

@@ -76,7 +76,8 @@ public class Telescope {
         targets.clear();
         Matrix4f vp = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
 
-        if (showLabels) {
+        // Always update tracking/compass, but only calculate stellar labels if it's night
+        if (showLabels && dn.nightFactor > 0.1f) {
             double lst = Astronomy.localSiderealTime(dn.currentJD, Math.toRadians(GameConfig.observerLonDeg));
             double lat = Math.toRadians(GameConfig.observerLatDeg);
 
