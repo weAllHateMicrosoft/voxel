@@ -202,7 +202,10 @@ void main() {
 
     // ── SNOW BIOME ATMOSPHERE ─────────────────────────────────────────────────
     if (snowAtmosphereStrength > 0.001) {
-        vec3 snowAtmColor = vec3(0.68, 0.82, 0.96);
+        // Darken the haze with the sky's light level so mountains don't glow pale
+        // white at night (it used to be a fixed bright colour at all hours).
+        float skyLight = clamp(ambientStrength * 1.5 + sunStrength * 0.8, 0.06, 1.0);
+        vec3 snowAtmColor = vec3(0.68, 0.82, 0.96) * skyLight;
         gammaCorrected = mix(gammaCorrected, snowAtmColor, snowAtmosphereStrength);
     }
 

@@ -553,6 +553,21 @@ class WindowHud {
             }
         }
 
+        // ── STARGAZING ─────────────────────────────────────────────────────────
+        if (win.showConstellations) {
+            int starC = ImGui.colorConvertFloat4ToU32(0.7f, 0.85f, 1.0f, 0.85f);
+            draw.addText(14f, screenH - 120f, starC,
+                    "Constellations ON  [F2] toggle   [=] snow toggle");
+        }
+        if (win.constellName != null) {
+            String txt = win.constellName;
+            int gold  = ImGui.colorConvertFloat4ToU32(1.0f, 0.92f, 0.60f, 0.95f);
+            int shad  = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.7f);
+            float tw  = ImGui.calcTextSize(txt).x;
+            draw.addText(cx - tw/2 + 1, screenH * 0.18f + 1, shad, txt);
+            draw.addText(cx - tw/2,     screenH * 0.18f,      gold, txt);
+        }
+
         // ── LIGHTNING BOLT RENDERING ──────────────────────────────────────────
         // Multiple parallel zigzag paths per bolt for a thick, impressive look.
         if (!win.player.lightning.activeBolts.isEmpty()) {

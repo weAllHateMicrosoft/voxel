@@ -132,6 +132,11 @@ public class GameConfig {
     public static float dayStartTime    = 0.32f;  // gentle morning
     /** Time-cycle multiplier — cranked sky-high for the "Made in Heaven" effect. */
     public static float dayNightSpeed   = 1f;
+    /** Moon disc size (world scale of the 3D sphere at 900 blocks ≈ angular size). */
+    public static float moonSizeScale   = 22f;
+    /** Observer latitude/longitude (degrees) — drives the whole sky's geometry. */
+    public static double observerLatDeg = 43.8561;   // Markham, ON (change to relocate the sky)
+    public static double observerLonDeg = -79.3370;
 
     public static float mouseSensitivity = 0.001f;
     public static float fov              = 70.0f;
