@@ -386,6 +386,46 @@ class WindowHud {
     // ─────────────────────────────────────────────────────────────────────────
     void renderDeathScreen(float w, float h) {
         imgui.ImDrawList draw = ImGui.getForegroundDrawList();
+
+        // ── FLAPPY MODE ARCADE DEATH OVERLAY ──
+        if (win.player.useTestMovement && win.player.testMovement.state == TestMovementController.State.FLAPPY) {
+            // Dark retro violet backdrop
+            draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.04f, 0.85f));
+
+            float cy = h * 0.5f - 110f;
+            ImFont font = ImGui.getFont();
+
+            // Big Red "GAME OVER"
+            String title = "GAME OVER";
+            float titleScale = 2.6f;
+            float sz = font.getFontSize() * titleScale;
+            float tw = ImGui.calcTextSize(title).x * titleScale;
+            draw.addText(font, sz, (w - tw) / 2f + 2f, cy + 2f, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), title);
+            draw.addText(font, sz, (w - tw) / 2f,      cy,      ImGui.colorConvertFloat4ToU32(0.95f, 0.2f, 0.15f, 1f), title);
+
+            cy += 70f;
+
+            // Score summary
+            String scoreLine = "FINAL SCORE: " + win.player.testMovement.flappyScore;
+            float sw = ImGui.calcTextSize(scoreLine).x * 1.5f;
+            draw.addText(font, font.getFontSize() * 1.5f, (w - sw) / 2f, cy, ImGui.colorConvertFloat4ToU32(1f, 1f, 0.9f, 1f), scoreLine);
+
+            cy += 50f;
+
+            // Arcade Prompt Options (Play Again or Exit)
+            String opt1 = "[ ENTER ]  Play Again";
+            String opt2 = "[ X ]  Exit to Normal World";
+            float pw1 = ImGui.calcTextSize(opt1).x * 1.2f;
+            float pw2 = ImGui.calcTextSize(opt2).x * 1.2f;
+
+            float pa = 0.5f + 0.5f * (float) Math.abs(Math.sin(glfwGetTime() * 3.5f));
+            draw.addText(font, font.getFontSize() * 1.2f, (w - pw1) / 2f, cy, ImGui.colorConvertFloat4ToU32(0.2f, 0.85f, 0.4f, pa), opt1);
+            draw.addText(font, font.getFontSize() * 1.2f, (w - pw2) / 2f, cy + 28f, ImGui.colorConvertFloat4ToU32(0.85f, 0.85f, 0.9f, 0.75f), opt2);
+            return; // Completely bypass the standard survival death screen
+        }
+
+        // Heavy dark overlay  -  the world is barely visible (Normal death screen continues below)
+        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
         // Heavy dark overlay  -  the world is barely visible
         draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
 
@@ -1081,6 +1121,8 @@ class WindowHud {
                     } else if (b == Block.TELESCOPE) {
                         // NEW: Draws the telescope glyph when holding the item
                         drawTelescopeIcon(draw, ix0, iy0, ix1, iy1);
+                    } else if (b == Block.GRAPPLING_HOOK) {
+                        drawGrappleIcon(draw, ix0, iy0, ix1, iy1); // Render hook icon
                     } else {
                         int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
                         draw.addRectFilled(ix0, iy0, ix1, iy1, blockCol, 2.0f);
@@ -1629,6 +1671,26 @@ class WindowHud {
             float nw = ImGui.calcTextSize(navHint).x;
             draw.addText(cx - nw / 2f, screenH - 60f, ImGui.colorConvertFloat4ToU32(0.8f, 0.9f, 1f, 0.8f), navHint);
         }
+        // ── FLAPPY BIRD ARCADE SCORE ──
+        if (win.player.useTestMovement && win.player.testMovement.state == TestMovementController.State.FLAPPY) {
+            String scoreStr = "SCORE: " + win.player.testMovement.flappyScore;
+            ImFont font = ImGui.getFont();
+            float scale = 2.4f;
+            float sz = font.getFontSize() * scale;
+            float tw = ImGui.calcTextSize(scoreStr).x * scale;
+
+            // Render centered drop-shadow score
+            draw.addText(font, sz, cx - tw / 2f + 2f, screenH * 0.16f + 2f, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), scoreStr);
+            draw.addText(font, sz, cx - tw / 2f,      screenH * 0.16f,      ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.25f, 1f), scoreStr);
+
+            // Flashing start instruction
+            if (win.player.testMovement.flappyWaitingToStart) {
+                String startPrompt = "Press [ SPACE ] to Flap & Start";
+                float sw = ImGui.calcTextSize(startPrompt).x * 1.5f;
+                float pa = 0.5f + 0.5f * (float) Math.abs(Math.sin(glfwGetTime() * 4.5f));
+                draw.addText(font, font.getFontSize() * 1.5f, cx - sw / 2f, screenH * 0.28f, ImGui.colorConvertFloat4ToU32(1f, 1.0f, 1.0f, pa), startPrompt);
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1879,6 +1941,7 @@ class WindowHud {
         helpRow("SOAR", "Full 3D free-flight. WASD moves relative to your look direction. Space = up, Shift = down. No gravity.");
         helpRow("GRAPPLE", "Swing on a grapple line attached to the block you're looking at.");
         ImGui.spacing();
+
 
         // ── COMBAT ────────────────────────────────────────────────────────────
         ImGui.textColored(1.0f, 0.35f, 0.2f, 1.0f, "COMBAT");
@@ -2459,4 +2522,18 @@ class WindowHud {
             }
         }
     }
+    /** Simple hook glyph for the hotbar (diagonal line + three-prong grappling tip). */
+    private void drawGrappleIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        float cx = (x0 + x1) * 0.5f;
+        int ropeCol = ImGui.colorConvertFloat4ToU32(0.85f, 0.85f, 0.85f, 0.9f);
+        int hookCol = ImGui.colorConvertFloat4ToU32(0.55f, 0.55f, 0.60f, 1.0f);
+
+        // Draw cable
+        draw.addLine(x0 + w*0.22f, y1 - h*0.22f, cx, y0 + h*0.42f, ropeCol, 2.2f);
+        // Draw hook head
+        draw.addTriangleFilled(cx, y0 + h*0.42f, cx - w*0.14f, y0 + h*0.24f, cx + w*0.14f, y0 + h*0.24f, hookCol);
+    }
+
+
 }

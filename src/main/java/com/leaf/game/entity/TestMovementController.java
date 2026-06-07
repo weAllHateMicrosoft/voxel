@@ -10,75 +10,115 @@ import static org.lwjgl.glfw.GLFW.*;
 
 public class TestMovementController {
 
-    // ── TUNABLE CONSTANTS ──────────────────────────────────────────────────
-    public float WALK_SPEED            = GameConfig.WALK_SPEED;
-    public float SPRINT_MULTIPLIER     = 1.8f;     // Cranked up for parkour feel
-    public float GRAPPLE_Y_SCALE       = 0.4f;     // Less vertical pull, more horizontal zip
-    public float GRAPPLE_MAX_DURATION  = 0.6f;
-    public float WALLRUN_GRAVITY_SCALE = 0.08f;    // 8% gravity while on a wall
-    public float WALLRUN_CAMERA_ROLL   = 8.0f;     // degrees
-    public int   STEP_UP_MAX_BLOCKS    = 2;
-    public float WALL_ENTRY_DOT_MAX    = 0.6f;     // More forgiving wall approach angle
-    public float WALL_ENTRY_MIN_SPEED  = 1.2f;     // Must be moving faster than walking to wallrun
-    public float SLIDE_SPEED_SCALE     = 1.4f;
-    public float SLIDE_MIN_SPEED       = 8.0f;
-    public float SLIDE_MAX_SPEED       = 35.0f;
-    public float JUMP_FORCE            = GameConfig.JUMP_FORCE * 1.1f;
-    public float GRAVITY               = GameConfig.GRAVITY;
+    // ─── STATE MACHINE ────────────────────────────────────────────────────────
+    public enum State { GROUNDED, AIRBORNE, WALLRUN, GRAPPLING, SURFACE_SLIDE, FLAPPY }
 
-    // ── STATE MACHINE ──────────────────────────────────────────────────────
-    public enum State { GROUNDED, AIRBORNE, WALLRUN, GRAPPLING, SURFACE_SLIDE }
+    // ─── FLAPPY BIRD MECHANICS ────────────────────────────────────────────────
+    public int flappyScore = 0;
+    public int lastPassedPipeX = 5010; // Initialize to 5010 to prevent ghost scores on the platform
+    private static final int FLAPPY_START_X = 5020;
+    private static final int FLAPPY_INTERVAL = 35; // Matches WorldGen spacing
+    public boolean flappyWaitingToStart = true;
+
     public State state = State.AIRBORNE;
 
-    // ── PHYSICS STATE ──────────────────────────────────────────────────────
-    public Vector3f velocity = new Vector3f(0, 0, 0);
-    private int jumpsRemaining = 2;
+    // ─── PHYSICS ─────────────────────────────────────────────────────────────
+    public  Vector3f velocity   = new Vector3f();
+    public int      jumpsLeft  = 2; // Unified double jump tracker
 
-    // Sprint tracking (isolated from Player.java)
-    private boolean isSprinting = false;
-    private boolean lastW       = false;
-    private double  lastWTime   = 0;
-
-    // Jump edge-detection
-    private boolean lastSpace = false;
-
-    // Grapple state
-    private float grappleTimer = 0f;
-    private Vector3f hookPoint = new Vector3f();
-    private Enemy hookedEnemy = null;
-    private boolean lastRightClick = false;
-
-    // Wallrun state
-    private Vector3f wallNormal = new Vector3f();
-    private float cameraRoll = 0f;
-
-    // Reference
+    // Step-up (Tunable)
+    public float STEP_UP_MAX_BLOCKS = 2.0f;
+    private EnemyManager enemyManager = null;
     private final Player player;
-    private EnemyManager enemyManager;
 
-    public TestMovementController(Player player) {
-        this.player = player;
-    }
+    // ─── TUNABLE CONSTANTS ────────────────────────────────────────────────────
+    public float WALK_SPEED          = 7.0f;
+    public float SPRINT_SPEED        = 14.0f;
+    public float SPRINT_MULTIPLIER   = 1.6f;
+    public float TEST_DASH_SPEED     = 32.0f;
 
-    public void setEnemyManager(EnemyManager em) {
-        this.enemyManager = em;
-    }
+    // Quake-style acceleration
+    public float GROUND_ACCEL        = 80f;
+    public float GROUND_FRICTION     = 10f;
+    public float AIR_ACCEL           = 18f;
 
-    public float getCameraRoll() {
-        return cameraRoll;
-    }
+    // Slide
+    public float SLIDE_FRICTION      = 1.2f;
+    public float SLIDE_SPEED_SCALE   = 1.4f;
+    public float SLIDE_MIN_SPEED     = 6.0f;
+    public float SLIDE_MAX_SPEED     = 35.0f;
+    public float SLIDE_EXIT_SPEED    = 3.0f;
 
-    // ── MAIN TICK ─────────────────────────────────────────────────────────
+    // Vertical
+    public float GRAVITY             = 60.0f;
+    public float JUMP_FORCE          = 16.0f;
+    public float MAX_FALL_SPEED      = 60.0f;
+
+    // Grapple (Pendulum Physics)
+    public float GRAPPLE_REEL_SPEED  = 12.0f;  // Speed the rope shrinks
+    public float GRAPPLE_PULL_ACCEL  = 25.0f;  // Extra forward tug
+    public float GRAPPLE_MAX_DUR     = 3.0f;   // Extended for big swings
+
+    // Wall run
+    public float WALLRUN_GRAV_SCALE  = 0.08f;
+    public float WALLRUN_STICK       = 3.0f;
+    public float WALLRUN_ROLL_DEG    = 6.0f;
+    public float WALL_PROBE_DIST     = 0.65f;
+    public float WALL_MIN_SPEED_MUL  = 1.1f;
+    public float WALL_DOT_MAX        = 0.7f;
+
+    // State Trackers
+    private boolean lastSpace = false;
+    private boolean lastW     = false;
+    private double  lastWTime = 0.0;
+    private boolean isSprinting = false;
+    private boolean wasDashing  = false;
+
+    // Grapple
+    private boolean  lastRMB     = false;
+    private float    grappleTime = 0f;
+    private float    ropeLength  = 0f;
+    private Vector3f hookPoint   = new Vector3f();
+    private Enemy    hookedEnemy = null;
+
+    // Wall run
+    private Vector3f wallNormal  = new Vector3f();
+    private float    cameraRoll  = 0f;
+
+    // ─── HITBOX ───────────────────────────────────────────────────────────────
+    private static final float WIDTH  = 0.6f;
+    private static final float HEIGHT = 1.8f;
+    private static final float EPSILON = 0.01f;
+
+    private static final float HW = WIDTH / 2f;
+    private static final float HH = HEIGHT;
+
+    private static final float[][] CARDINALS = {
+            { 1, 0,  0}, {-1, 0,  0},
+            { 0, 0,  1}, { 0, 0, -1}
+    };
+
+    public TestMovementController(Player p) { this.player = p; }
+    public void setEnemyManager(EnemyManager em) { this.enemyManager = em; }
+    public float getCameraRoll() { return cameraRoll; }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  MAIN TICK
+    // ─────────────────────────────────────────────────────────────────────────
     public void tick(long window, Camera camera, World world, float dt) {
-        boolean wHeld = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
-        boolean sHeld = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
-        boolean aHeld = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
-        boolean dHeld = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
-        boolean spacePressed = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        // Gather Input
+        boolean wHeld     = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+        boolean sHeld     = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+        boolean aHeld     = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
+        boolean dHeld     = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
+        boolean jumpHeld  = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         boolean shiftHeld = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
-        boolean rightClick = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+        boolean rmb       = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
-        // [BUG 3 FIX] Local sprint double-tap logic
+        boolean jumpPressed = jumpHeld && !lastSpace;
+        lastSpace = jumpHeld;
+
+        // Sprint Tracking (Double-tap W or Left Control)
         double now = glfwGetTime();
         if (wHeld && !lastW) {
             if (now - lastWTime < 0.3) isSprinting = true;
@@ -86,355 +126,584 @@ public class TestMovementController {
         }
         if (!wHeld) isSprinting = false;
         lastW = wHeld;
+        boolean sprintActive = isSprinting || glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+        float targetSpeed = sprintActive ? SPRINT_SPEED : WALK_SPEED;
 
-        // [BUG 4 FIX] Edge detect jump
-        boolean spaceJustPressed = spacePressed && !lastSpace;
-        lastSpace = spacePressed;
+        // Flatten directions to XZ plane to prevent floaty vertical drifting
+        Vector3f fwd = flat(camera.getForward());
+        Vector3f rt  = flat(camera.getRight());
+        Vector3f wishDir = new Vector3f();
+        if (wHeld) wishDir.add(fwd);
+        if (sHeld) wishDir.sub(fwd);
+        if (dHeld) wishDir.add(rt);
+        if (aHeld) wishDir.sub(rt);
+        if (wishDir.lengthSquared() > 1e-6f) wishDir.normalize();
 
-        // 1. Process Grapple Hook
-        handleGrapple(camera, world, rightClick, dt);
+        // ── Grapple Evaluation ──
+        handleGrapple(camera, world, rmb, dt);
 
-        // 2. Input to Acceleration
-        Vector3f inputDir = new Vector3f();
-        Vector3f fwd = camera.getForward();
-        Vector3f right = camera.getRight();
+        // ── Jump Logic (Double Jump) ──
+        // FIX (Bug 3): Removed the outer jump block that was duplicating the jump
+        // velocity on the same frame as the GROUNDED case's doJump() call.
+        // All jumping is now handled exclusively inside the state machine cases below.
 
-        if (wHeld) inputDir.add(fwd);
-        if (sHeld) inputDir.sub(fwd);
-        if (dHeld) inputDir.add(right);
-        if (aHeld) inputDir.sub(right);
-
-        // [BUG 1 FIX] Explicitly zero Y to prevent flying, then normalize
-        inputDir.y = 0f;
-        if (inputDir.lengthSquared() > 0.01f) {
-            inputDir.normalize();
-        }
-
-        float targetSpeed = WALK_SPEED;
-        if (isSprinting) targetSpeed *= SPRINT_MULTIPLIER;
-
-        // 3. State Processing & Forces
+        // ── State Machine ──
         switch (state) {
             case GROUNDED -> {
-                jumpsRemaining = 2;
-                cameraRoll += (0f - cameraRoll) * 10f * dt;
+                jumpsLeft = 2;
+                rollToward(0f, 10f, dt);
 
-                // Slide Entry
-                if (shiftHeld && isSprinting && velocity.lengthSquared() > 10f) {
+                if (shiftHeld && horizSpeed() > WALK_SPEED * 0.8f) {
                     state = State.SURFACE_SLIDE;
                     break;
                 }
 
-                // [BUG 2 FIX] Use horizontal friction
-                applyHorizontalFriction(dt, 10.0f);
-                velocity.add(new Vector3f(inputDir).mul(targetSpeed * 10f * dt));
-
-                if (spaceJustPressed) performJump(1);
+                groundMove(wishDir, targetSpeed, dt);
+                if (jumpPressed) doJump();
             }
+
             case AIRBORNE -> {
-                cameraRoll += (0f - cameraRoll) * 10f * dt;
+                rollToward(0f, 10f, dt);
+                velocity.y = Math.max(-MAX_FALL_SPEED, velocity.y - GRAVITY * dt);
+                airMove(wishDir, targetSpeed, dt);
+                detectWallRun(world, wHeld);
 
-                // Air Strafing (Preserves momentum, allows steering)
-                if (inputDir.lengthSquared() > 0) {
-                    velocity.add(new Vector3f(inputDir).mul(targetSpeed * 2.5f * dt)); // Air control
-                }
-                velocity.y -= GRAVITY * dt;
-
-                detectWallRun(world, targetSpeed);
-
-                if (spaceJustPressed) performJump(2);
+                if (jumpPressed && jumpsLeft > 0) doJump();
             }
+
             case SURFACE_SLIDE -> {
-                cameraRoll += (0f - cameraRoll) * 10f * dt;
+                rollToward(0f, 10f, dt);
+                velocity.y = Math.max(-MAX_FALL_SPEED, velocity.y - GRAVITY * dt);
+                horizFriction(SLIDE_FRICTION, dt);
 
-                // Very low friction for sliding
-                applyHorizontalFriction(dt, 0.8f);
-
-                if (spaceJustPressed) performJump(1);
-
-                // Exit slide if we release shift or get too slow
-                float horizSpeedSq = velocity.x * velocity.x + velocity.z * velocity.z;
-                if (!shiftHeld || horizSpeedSq < SLIDE_MIN_SPEED * SLIDE_MIN_SPEED * 0.25f) {
-                    state = State.AIRBORNE; // Will resolve to grounded naturally in collision loop
-                }
+                if (!shiftHeld || horizSpeed() < SLIDE_EXIT_SPEED) state = State.AIRBORNE;
+                if (jumpPressed) doJump();
             }
+
             case WALLRUN -> {
-                jumpsRemaining = 1;
-                velocity.y -= (GRAVITY * WALLRUN_GRAVITY_SCALE) * dt;
+                // Instantly exit wall run if W is released
+                if (!wHeld) {
+                    state = State.AIRBORNE;
+                    break;
+                }
 
-                // Project velocity onto wall (v = v - dot(v, n)*n)
-                float dotN = velocity.dot(wallNormal);
-                velocity.sub(new Vector3f(wallNormal).mul(dotN));
+                jumpsLeft = 1;
+                velocity.y = Math.max(-MAX_FALL_SPEED, velocity.y - GRAVITY * WALLRUN_GRAV_SCALE * dt);
 
-                // Stick to wall slightly so we don't peel off accidentally
-                velocity.add(new Vector3f(wallNormal).mul(-4.0f * dt));
+                float into = velocity.dot(wallNormal);
+                if (into < 0) velocity.sub(new Vector3f(wallNormal).mul(into));
+                velocity.add(new Vector3f(wallNormal).mul(-WALLRUN_STICK * dt));
 
-                // Camera Roll - lean away from the wall
-                Vector3f look = camera.getLookDirection();
-                float crossY = new Vector3f(wallNormal).cross(look).y;
-                float rollTarget = (float) Math.toRadians(crossY > 0 ? WALLRUN_CAMERA_ROLL : -WALLRUN_CAMERA_ROLL);
+                float side = camera.getRight().dot(wallNormal);
+                float rollTarget = (float) Math.toRadians(-WALLRUN_ROLL_DEG * Math.signum(side));
                 cameraRoll += (rollTarget - cameraRoll) * 8f * dt;
 
-                if (spaceJustPressed) {
-                    // Wall Jump - push off the wall normal and upwards
-                    velocity.add(new Vector3f(wallNormal).mul(JUMP_FORCE * 0.8f));
-                    velocity.y = JUMP_FORCE;
+                if (jumpPressed) {
+                    velocity.x = wallNormal.x * JUMP_FORCE;
+                    velocity.z = wallNormal.z * JUMP_FORCE;
+                    velocity.y = JUMP_FORCE * 0.8f;
                     state = State.AIRBORNE;
-                } else if (!checkCollision(new Vector3f(player.position).add(new Vector3f(wallNormal).mul(-0.5f)), world)) {
-                    // Wall ended, we ran off the edge
-                    state = State.AIRBORNE;
+                } else {
+                    Vector3f intoWall = new Vector3f(player.position).sub(new Vector3f(wallNormal).mul(WALL_PROBE_DIST));
+                    if (!checkCollision(intoWall, world)) state = State.AIRBORNE;
                 }
             }
+
             case GRAPPLING -> {
-                cameraRoll += (0f - cameraRoll) * 10f * dt;
+                rollToward(0f, 10f, dt);
 
                 if (hookedEnemy != null) {
-                    if (!hookedEnemy.alive) {
-                        state = State.AIRBORNE;
-                    } else {
-                        hookPoint.set(hookedEnemy.getCentre()).add(0, 0.5f, 0);
+                    if (!hookedEnemy.alive) { state = State.AIRBORNE; break; }
+                    hookPoint.set(hookedEnemy.getCentre()).add(0, 0.5f, 0);
+                }
+
+                velocity.y = Math.max(-MAX_FALL_SPEED, velocity.y - GRAVITY * dt);
+                airMove(wishDir, targetSpeed, dt); // Allow swinging
+
+                // Reel in the rope
+                ropeLength = Math.max(1.5f, ropeLength - GRAPPLE_REEL_SPEED * dt);
+
+                // Pendulum Constraint
+                Vector3f toPlayer = new Vector3f(player.position).sub(hookPoint);
+                float dist = toPlayer.length();
+
+                if (dist > ropeLength) {
+                    toPlayer.normalize();
+                    // Snap position to edge of sphere
+                    player.position.set(hookPoint.x + toPlayer.x * ropeLength,
+                            hookPoint.y + toPlayer.y * ropeLength,
+                            hookPoint.z + toPlayer.z * ropeLength);
+
+                    // Remove outward velocity (Tension)
+                    float outward = velocity.dot(toPlayer);
+                    if (outward > 0) {
+                        velocity.sub(new Vector3f(toPlayer).mul(outward));
                     }
                 }
 
+                // Add gentle forward tug
                 Vector3f toHook = new Vector3f(hookPoint).sub(player.position);
-                float dist = toHook.length();
-                if (dist > 1.5f && grappleTimer < GRAPPLE_MAX_DURATION) {
-                    Vector3f dir = toHook.normalize();
-                    float pullStrength = 65f;
+                if (toHook.lengthSquared() > 0.001f) {
+                    velocity.add(new Vector3f(toHook).normalize().mul(GRAPPLE_PULL_ACCEL * dt));
+                }
 
-                    // Reduce vertical pull as requested
-                    float yPull = dir.y * pullStrength * GRAPPLE_Y_SCALE;
-                    velocity.lerp(new Vector3f(dir.x * pullStrength, yPull, dir.z * pullStrength), 6f * dt);
-
-                    grappleTimer += dt;
-                } else {
-                    // Force detach when time runs out or we reach the point
+                grappleTime += dt;
+                if (dist <= 1.8f || grappleTime > GRAPPLE_MAX_DUR) {
                     state = State.AIRBORNE;
                 }
 
-                if (spaceJustPressed) performJump(1);
+                // Sever on Jump
+                if (jumpPressed) {
+                    state = State.AIRBORNE;
+                    velocity.y = Math.max(velocity.y, JUMP_FORCE * 0.8f);
+                }
             }
-        }
 
-        // 4. Move and Slide (Custom Collision Loop)
-        moveAndSlide(world, dt, shiftHeld);
-    }
+            case FLAPPY -> {
+                rollToward(0f, 10f, dt);
 
-    // ── MOVEMENT & COLLISION ─────────────────────────────────────────────
+                // Disable WASD! Motion is completely locked to the 2D plane
+                player.position.z = 5000f; // Force lock on Z=5000
+                velocity.z = 0f;
 
-    private void moveAndSlide(World world, float dt, boolean shiftHeld) {
-        Vector3f delta = new Vector3f(velocity).mul(dt);
-
-        int substeps = (int) Math.ceil(delta.length() * 10f);
-        substeps = Math.max(1, substeps);
-        Vector3f step = new Vector3f(delta).div(substeps);
-
-        for (int i = 0; i < substeps; i++) {
-            // X-AXIS
-            if (step.x != 0) {
-                player.position.x += step.x;
-                if (checkCollision(player.position, world)) {
-                    player.position.x -= step.x;
-                    // If we hit a wall, try to step over it. If that fails, slide along it (zero out X).
-                    if (!attemptStepUp(world, step.x, 0)) {
-                        velocity.x = 0;
+                if (flappyWaitingToStart) {
+                    // FIX (Bug 2): Re-ordered so jumpPressed sets velocity BEFORE
+                    // the blanket velocity.set(0,0,0), which was always stomping it.
+                    // Now: check jump first, then zero velocity only if not jumping.
+                    if (jumpPressed) {
+                        flappyWaitingToStart = false;
+                        // FIX (Bug 1): Spawn y was 230f, which placed the player's
+                        // feet exactly at y=230 — the interior of the platform block
+                        // whose top face sits at y=230. checkCollision() swept that
+                        // block and immediately resolved a floor collision, zeroing
+                        // velocity.y and snapping position back every frame.
+                        // Raising to 230.05f places the player cleanly above the surface.
+                        player.position.x = 4980f;
+                        player.position.y = 230.05f;
+                        player.position.z = 5000f;
+                        camera.yaw   = 0f;
+                        camera.pitch = 0f;
+                        velocity.set(0f, JUMP_FORCE * 1.5f, 0f); // Clean launch, no leftover Z
+                        com.leaf.game.core.AudioManager.play("swoosh", 0.6f, 1.25f);
+                    } else {
+                        // Not started yet — hold static
+                        velocity.set(0f, 0f, 0f);
+                        player.position.x = 4980f;
+                        player.position.y = 230.05f; // FIX: same correction here
+                        player.position.z = 5000f;
+                        camera.yaw   = 0f;
+                        camera.pitch = 0f;
                     }
+                    break;
                 }
-            }
 
-            // Y-AXIS
-            if (step.y != 0) {
-                player.position.y += step.y;
-                if (checkCollision(player.position, world)) {
-                    player.position.y -= step.y;
+                // Constant, automatic forward motion along +X
+                velocity.x = 8.5f;
 
-                    if (step.y < 0) { // Hit floor
-                        // Fall-to-Slide Momentum Conversion
-                        if (shiftHeld && state == State.AIRBORNE && velocity.y < -10f) {
-                            float slideSpeed = Math.max(SLIDE_MIN_SPEED, Math.min(SLIDE_MAX_SPEED, Math.abs(velocity.y) * SLIDE_SPEED_SCALE));
+                // Heavy Flappy Gravity
+                velocity.y = Math.max(-MAX_FALL_SPEED, velocity.y - GRAVITY * dt);
 
-                            Vector3f horizDir = new Vector3f(velocity.x, 0, velocity.z);
-                            if (horizDir.lengthSquared() < 0.1f) horizDir.set(1, 0, 0); // fallback if dropping straight down
-                            horizDir.normalize();
-
-                            velocity.x = horizDir.x * slideSpeed;
-                            velocity.z = horizDir.z * slideSpeed;
-                            state = State.SURFACE_SLIDE;
-                        }
-                    } else { // Hit ceiling
-                        velocity.y = 0;
-                    }
-                    if (state != State.SURFACE_SLIDE) velocity.y = 0;
+                // Space bar acts as the vertical FLAP
+                if (jumpPressed) {
+                    velocity.y = JUMP_FORCE * 1.2f;
+                    com.leaf.game.core.AudioManager.play("swoosh", 0.6f, 1.25f);
                 }
-            }
 
-            // Z-AXIS
-            if (step.z != 0) {
-                player.position.z += step.z;
-                if (checkCollision(player.position, world)) {
-                    player.position.z -= step.z;
-                    if (!attemptStepUp(world, 0, step.z)) {
-                        velocity.z = 0;
-                    }
+                // ── LAVA TICK DAMAGE (In-mode check) ──
+                if (player.position.y <= 201.2f) {
+                    player.health -= 250f * dt;
+                    if (player.health < 0f) player.health = 0f;
+                }
+
+                // ── SCORE DETECTOR ──
+                int currentPipeIndex = (int) Math.floor((player.position.x - FLAPPY_START_X) / FLAPPY_INTERVAL);
+                int currentPipeX = FLAPPY_START_X + currentPipeIndex * FLAPPY_INTERVAL;
+                if (player.position.x > currentPipeX + 2.0f && currentPipeX > lastPassedPipeX) {
+                    lastPassedPipeX = currentPipeX;
+                    flappyScore++;
+                    com.leaf.game.core.AudioManager.play("seal_collect", 1.2f, 1.2f);
                 }
             }
         }
 
-        // Resolve Ground State dynamically
-        if (state != State.GRAPPLING && state != State.WALLRUN) {
-            boolean floorBelow = checkCollision(new Vector3f(player.position).add(0, -0.05f, 0), world);
-            if (floorBelow) {
-                if (state != State.SURFACE_SLIDE) state = State.GROUNDED;
-            } else {
-                state = State.AIRBORNE;
-            }
-        }
+        // Apply physical movement and robust AABB sub-stepping
+        applyCollision(world, dt, shiftHeld, wishDir);
     }
 
-    private boolean attemptStepUp(World world, float dirX, float dirZ) {
-        if (state != State.GROUNDED && state != State.SURFACE_SLIDE && !player.abilities.isDashing) return false;
+    // ─────────────────────────────────────────────────────────────────────────
+    //  MOVEMENT HELPERS
+    // ─────────────────────────────────────────────────────────────────────────
 
-        for (int stepH = 1; stepH <= STEP_UP_MAX_BLOCKS; stepH++) {
-            Vector3f upCheck = new Vector3f(player.position).add(0, stepH + 0.1f, 0);
-            // Check if there is headroom to step up
-            if (!checkCollision(upCheck, world)) {
-                // Check if we can move forward into the new elevated space
-                Vector3f forwardCheck = new Vector3f(upCheck).add(Math.signum(dirX) * 0.3f, 0, Math.signum(dirZ) * 0.3f);
-                if (!checkCollision(forwardCheck, world)) {
-                    // Impulse popping us up and over
-                    velocity.y = Math.max(velocity.y, 6.0f + (stepH * 1.5f));
-                    return true;
-                }
-            }
-        }
-        return false;
+    private void doJump() {
+        velocity.y = JUMP_FORCE;
+        jumpsLeft = Math.max(0, jumpsLeft - 1);
+        state = State.AIRBORNE;
     }
 
-    // [BUG 2 FIX] Pure horizontal friction
-    private void applyHorizontalFriction(float dt, float amount) {
-        float speed = (float) Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-        if (speed > 0) {
-            float drop = speed * amount * dt;
-            float newSpeed = Math.max(speed - drop, 0);
-            float mult = newSpeed / speed;
-            velocity.x *= mult;
-            velocity.z *= mult;
+    private void groundMove(Vector3f wishDir, float targetSpeed, float dt) {
+        if (player.abilities.isDashing) {
+            if (!wasDashing) { velocity.y = 0f; wasDashing = true; }
+            velocity.x = player.abilities.dashDirX * TEST_DASH_SPEED;
+            velocity.z = player.abilities.dashDirZ * TEST_DASH_SPEED;
+            return;
         }
+        wasDashing = false;
+
+        horizFriction(GROUND_FRICTION, dt);
+        if (wishDir.lengthSquared() < 1e-6f) return;
+
+        float cur = velocity.x * wishDir.x + velocity.z * wishDir.z;
+        float add = targetSpeed - cur;
+        if (add <= 0f) return;
+
+        float accel = Math.min(GROUND_ACCEL * dt, add);
+        velocity.x += wishDir.x * accel;
+        velocity.z += wishDir.z * accel;
     }
 
-    private void performJump(int cost) {
-        if (jumpsRemaining > 0 || state == State.WALLRUN || state == State.GRAPPLING) {
-            velocity.y = JUMP_FORCE;
-            jumpsRemaining--;
-            state = State.AIRBORNE;
+    private void airMove(Vector3f wishDir, float targetSpeed, float dt) {
+        if (player.abilities.isDashing) {
+            if (!wasDashing) { velocity.y = 0f; wasDashing = true; }
+            velocity.x = player.abilities.dashDirX * TEST_DASH_SPEED;
+            velocity.z = player.abilities.dashDirZ * TEST_DASH_SPEED;
+            return;
         }
+        wasDashing = false;
+
+        if (wishDir.lengthSquared() < 1e-6f) return;
+
+        float cur = velocity.x * wishDir.x + velocity.z * wishDir.z;
+        float add = targetSpeed - cur;
+        if (add <= 0f) return;
+
+        float accel = Math.min(AIR_ACCEL * dt, add);
+        velocity.x += wishDir.x * accel;
+        velocity.z += wishDir.z * accel;
     }
 
-    // ── ABILITIES ────────────────────────────────────────────────────────
+    private void horizFriction(float rate, float dt) {
+        float speed = horizSpeed();
+        if (speed < 0.1f) return;
 
-    private void handleGrapple(Camera camera, World world, boolean rightClick, float dt) {
-        if (rightClick && !lastRightClick && state != State.GRAPPLING) {
-            // Find target
+        // Stop speed prevents asymptotic sliding
+        float drop = Math.max(speed, 4.0f) * rate * dt;
+        float newSpeed = Math.max(0, speed - drop);
+
+        velocity.x *= newSpeed / speed;
+        velocity.z *= newSpeed / speed;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  GRAPPLE (PENDULUM PHYSICS)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void handleGrapple(Camera camera, World world, boolean rmb, float dt) {
+        if (rmb && !lastRMB && state != State.GRAPPLING) {
             Vector3f dir = camera.getLookDirection();
-            float step = 0.5f;
-            float max = 60f;
             float rx = camera.position.x, ry = camera.position.y, rz = camera.position.z;
-
+            final float STEP = 0.5f, MAX_DIST = 50f;
             boolean hit = false;
-            for (float d = 0f; d < max; d += step) {
-                rx += dir.x * step; ry += dir.y * step; rz += dir.z * step;
+            hookedEnemy = null;
 
-                // 1. Check Enemies First
+            for (float d = 0f; d < MAX_DIST && !hit; d += STEP) {
+                rx += dir.x * STEP; ry += dir.y * STEP; rz += dir.z * STEP;
+
                 if (enemyManager != null) {
                     for (Enemy e : enemyManager.getEnemies()) {
-                        if (e.alive && new Vector3f(rx, ry, rz).distance(e.getCentre()) < e.collisionRadius + 0.5f) {
+                        if (e.alive && vecDist(rx, ry, rz, e.getCentre()) < e.collisionRadius + 0.5f) {
                             hookedEnemy = e;
-                            hit = true; break;
+                            hookPoint.set(e.getCentre()).add(0, 0.9f, 0);
+                            hit = true;
+                            break;
                         }
                     }
                 }
-                if (hit) break;
-
-                // 2. Check Voxel Blocks
-                int bx = (int)Math.floor(rx);
-                int by = (int)Math.floor(ry);
-                int bz = (int)Math.floor(rz);
-
-                if (by >= 0 && by < Chunk.HEIGHT && world.getBlock(bx, by, bz).isSolid()) {
+                if (!hit && world.getBlock((int) Math.floor(rx), (int) Math.floor(ry), (int) Math.floor(rz)).isSolid()) {
                     hookPoint.set(rx, ry, rz);
-                    hookedEnemy = null;
-                    hit = true; break;
+                    hit = true;
                 }
             }
 
             if (hit) {
                 state = State.GRAPPLING;
-                grappleTimer = 0f;
-                // Pop the player off the ground immediately to start flying
-                velocity.y = Math.max(velocity.y, JUMP_FORCE * 0.8f);
+                grappleTime = 0f;
+                ropeLength = new Vector3f(hookPoint).distance(player.position);
+                velocity.y = Math.max(velocity.y, JUMP_FORCE * 0.4f); // Small launch pop
             }
-        } else if (!rightClick && state == State.GRAPPLING) {
-            // Detach when button is released
+
+        } else if (!rmb && state == State.GRAPPLING) {
             state = State.AIRBORNE;
+            hookedEnemy = null;
         }
-        lastRightClick = rightClick;
+        lastRMB = rmb;
     }
 
-    // [BUG 5 FIX] Detect walls using cardinal Voxel geometry directions
-    private void detectWallRun(World world, float walkSpeed) {
-        if (state == State.WALLRUN || state == State.GRAPPLING) return;
+    // ─────────────────────────────────────────────────────────────────────────
+    //  WALL RUN DETECTION (Requires W)
+    // ─────────────────────────────────────────────────────────────────────────
 
-        Vector3f horizVel = new Vector3f(velocity.x, 0, velocity.z);
-        if (horizVel.length() < walkSpeed * WALL_ENTRY_MIN_SPEED) return;
+    private void detectWallRun(World world, boolean wHeld) {
+        if (!wHeld) return; // Must hold forward to wall run
 
-        // Voxel cardinal directions
-        Vector3f[] cardinals = {
-                new Vector3f(1, 0, 0), new Vector3f(-1, 0, 0),
-                new Vector3f(0, 0, 1), new Vector3f(0, 0, -1)
-        };
+        float hs = horizSpeed();
+        if (hs < WALK_SPEED * WALL_MIN_SPEED_MUL) return;
 
-        for (Vector3f dir : cardinals) {
-            // Probe slightly further than the player's AABB (0.3f)
-            Vector3f probe = new Vector3f(player.position).add(new Vector3f(dir).mul(0.45f));
+        for (float[] dir : CARDINALS) {
+            Vector3f probe = new Vector3f(
+                    player.position.x + dir[0] * WALL_PROBE_DIST,
+                    player.position.y,
+                    player.position.z + dir[2] * WALL_PROBE_DIST);
 
-            if (checkCollision(probe, world)) {
-                // The surface normal is the opposite of the probe direction
-                Vector3f normal = new Vector3f(dir).negate();
+            if (!checkCollision(probe, world)) continue;
 
-                // Ensure we aren't face-planting straight into the wall
-                float dot = horizVel.normalize().dot(normal);
-                if (Math.abs(dot) < WALL_ENTRY_DOT_MAX) {
-                    state = State.WALLRUN;
-                    wallNormal.set(normal);
+            float velToward = (velocity.x * dir[0] + velocity.z * dir[2]) / hs;
+            if (velToward < 0f || velToward >= WALL_DOT_MAX) continue;
 
-                    // Pop up slightly upon gripping the wall
-                    velocity.y = Math.max(velocity.y, 3.0f);
-                    return;
+            state = State.WALLRUN;
+            wallNormal.set(-dir[0], 0f, -dir[2]);
+            velocity.y = Math.max(velocity.y, 1.5f);
+            return;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  COLLISION & STEP-UP
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void applyCollision(World world, float dt, boolean shiftHeld, Vector3f wishDir) {
+        Vector3f delta = new Vector3f(velocity).mul(dt);
+
+        // Number of substeps scales with the largest displacement component
+        // to prevent tunnelling at high speed.
+        int n = Math.max(1, (int) Math.ceil(
+                Math.max(Math.abs(delta.x),
+                        Math.max(Math.abs(delta.y), Math.abs(delta.z))) * 12f));
+
+        float sx = delta.x / n;
+        float sy = delta.y / n;
+        float sz = delta.z / n;
+
+        boolean groundedThisFrame = false;
+
+        for (int i = 0; i < n; i++) {
+
+            // ── X ────────────────────────────────────────────────────────────
+            if (sx != 0f) {
+                player.position.x += sx;
+                if (checkCollision(player.position, world)) {
+                    // Only kill if we are past the safe starting platform!
+                    if (state == State.FLAPPY && player.position.x > 5000f) { killFlappyPlayer(); return; } // Instant pipe-hit death
+                    player.position.x -= sx;
+                    if (!tryStepUp(world, sx, 0f)) { velocity.x = 0f; sx = 0f; }
+                }
+            }
+
+            // ── Y ────────────────────────────────────────────────────────────
+            if (sy != 0f) {
+                player.position.y += sy;
+                if (checkCollision(player.position, world)) {
+                    // Only kill if we are past the safe starting platform!
+                    if (state == State.FLAPPY && player.position.x > 5000f) { killFlappyPlayer(); return; } // Instant pipe-hit death
+                    player.position.y -= sy;
+                    if (sy < 0f) {                      // hit the floor
+                        groundedThisFrame = true;
+                        tryLandingSlide(shiftHeld, wishDir);
+                    }
+                    velocity.y = 0f; sy = 0f;
+                }
+            }
+
+            // ── Z ────────────────────────────────────────────────────────────
+            if (sz != 0f) {
+                player.position.z += sz;
+                if (checkCollision(player.position, world)) {
+                    if (state == State.FLAPPY && player.position.x > 5000f) { killFlappyPlayer(); return; } // Instant pipe-hit death
+                    player.position.z -= sz;
+                    if (!tryStepUp(world, 0f, sz)) { velocity.z = 0f; sz = 0f; }
                 }
             }
         }
+
+        // ── Ground state resolution ──────────────────────────────────────────
+        // State Guard: Prevent State.FLAPPY from being overwritten back to Airborne/Grounded
+        if (state != State.GRAPPLING && state != State.WALLRUN && state != State.FLAPPY) {
+            boolean onFloor = groundedThisFrame ||
+                    checkCollision(new Vector3f(player.position).add(0, -0.05f, 0), world);
+
+            if (onFloor) {
+                if (state == State.AIRBORNE) state = State.GROUNDED;
+            } else {
+                if (state == State.GROUNDED)      state = State.AIRBORNE;
+                if (state == State.SURFACE_SLIDE) state = State.AIRBORNE; // flew off a ledge — keep momentum
+            }
+        }
     }
 
-    // ── UTILITIES ────────────────────────────────────────────────────────
+    public boolean resolveAxisFluid(World world, int axis, float delta) {
+        float halfW = WIDTH / 2f;
+        float[] lo = { -halfW, 0f,     -halfW };
+        float[] hi = {  halfW, HEIGHT,  halfW };
+
+        float p[] = { player.position.x, player.position.y, player.position.z };
+        int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;
+
+        int lo1 = (int)Math.floor(p[a1] + lo[a1] + EPSILON), hi1 = (int)Math.floor(p[a1] + hi[a1] - EPSILON);
+        int lo2 = (int)Math.floor(p[a2] + lo[a2] + EPSILON), hi2 = (int)Math.floor(p[a2] + hi[a2] - EPSILON);
+
+        boolean positive = delta > 0f;
+        int block = (int)Math.floor(positive ? p[axis] + hi[axis] : p[axis] + lo[axis]);
+
+        int[] c = new int[3];
+        c[axis] = block;
+
+        boolean hit = false;
+        float highestHitY = -1;
+
+        for (int i1 = lo1; i1 <= hi1; i1++) {
+            c[a1] = i1;
+            for (int i2 = lo2; i2 <= hi2; i2++) {
+                c[a2] = i2;
+                if (world.getBlock(c[0], c[1], c[2]).isSolid()) {
+                    hit = true;
+                    if (axis == 0 || axis == 2) {
+                        int checkY = (axis == 0) ? i1 : i2;
+                        highestHitY = Math.max(highestHitY, checkY);
+                    }
+                }
+            }
+            if (hit) break;
+        }
+
+        if (hit) {
+            // ── FLAPPY BIRD COLLISION DEATH ──
+            if (state == State.FLAPPY) {
+                // Only die if we collide with blocks above the starting platform floor (Y=229)
+                // This prevents the platform beneath our feet from instantly killing us!
+                if (player.position.x > 5000f) {
+                    killFlappyPlayer();
+                    return true;
+                }
+            }
+
+            player.position.setComponent(axis, positive ? (block - hi[axis]) : (block + 1f - lo[axis]));
+
+            if (axis == 1) {
+                velocity.y = 0;
+                // State-Corruption Guard: Never let the floor reset State.FLAPPY
+                if (delta < 0 && state != State.FLAPPY) {
+                    state = State.GROUNDED;
+                    jumpsLeft = 2;
+                }
+                return true;
+            }
+
+            if (state == State.GROUNDED || player.abilities.isDashing || state == State.SURFACE_SLIDE) {
+                float wallH = (highestHitY + 1f) - player.position.y;
+                if (wallH > 0f && wallH <= STEP_UP_MAX_BLOCKS) {
+                    int headCheckY = (int) Math.floor(player.position.y + wallH + HEIGHT);
+                    boolean hasHeadroom = !world.getBlock((int)player.position.x, headCheckY, (int)player.position.z).isSolid();
+
+                    if (hasHeadroom) {
+                        float glideSpeed = (float) Math.sqrt(2 * GRAVITY * (wallH + 0.1f));
+                        if (velocity.y < glideSpeed) {
+                            velocity.y = glideSpeed;
+                        }
+                        return true;
+                    }
+                }
+            }
+
+            if (axis == 0) velocity.x = 0;
+            if (axis == 2) velocity.z = 0;
+            return true;
+        }
+        return false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  UTILITIES
+    // ─────────────────────────────────────────────────────────────────────────
 
     private boolean checkCollision(Vector3f pos, World world) {
-        float hw = 0.3f - 0.01f;
-        float h  = 1.8f - 0.01f;
-        int minX = (int)Math.floor(pos.x - hw);
-        int maxX = (int)Math.floor(pos.x + hw);
-        int minY = (int)Math.floor(pos.y);
-        int maxY = (int)Math.floor(pos.y + h);
-        int minZ = (int)Math.floor(pos.z - hw);
-        int maxZ = (int)Math.floor(pos.z + hw);
-
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
+        int x0 = (int) Math.floor(pos.x - HW), x1 = (int) Math.floor(pos.x + HW);
+        int y0 = (int) Math.floor(pos.y),       y1 = (int) Math.floor(pos.y + HEIGHT);
+        int z0 = (int) Math.floor(pos.z - HW), z1 = (int) Math.floor(pos.z + HW);
+        for (int x = x0; x <= x1; x++) {
+            for (int y = y0; y <= y1; y++) {
                 if (y < 0 || y >= Chunk.HEIGHT) return true;
-                for (int z = minZ; z <= maxZ; z++) {
+                for (int z = z0; z <= z1; z++) {
                     if (world.getBlock(x, y, z).isSolid()) return true;
                 }
             }
         }
         return false;
+    }
+
+    private static Vector3f flat(Vector3f v) {
+        float len = (float) Math.sqrt(v.x * v.x + v.z * v.z);
+        return len > 1e-6f ? new Vector3f(v.x / len, 0f, v.z / len) : new Vector3f();
+    }
+
+    private float horizSpeed() { return (float) Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z); }
+    private void rollToward(float t, float r, float dt) { cameraRoll += (t - cameraRoll) * r * dt; }
+    private static float vecDist(float x, float y, float z, Vector3f v) {
+        float dx = x - v.x, dy = y - v.y, dz = z - v.z;
+        return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    /**
+     * Attempts to step over a low obstacle (up to STEP_UP_MAX_BLOCKS).
+     * Teleports the player up immediately — no velocity impulse — so the
+     * step is instant and smooth rather than a physics bounce.
+     */
+    private boolean tryStepUp(World world, float dirX, float dirZ) {
+        // Allow step-up during active dashes, but keep other states restricted
+        boolean canStep = (state == State.GROUNDED) || player.abilities.isDashing;
+        if (!canStep) return false;
+
+        // Cast our float constant to an int for the loop
+        for (int h = 1; h <= (int) STEP_UP_MAX_BLOCKS; h++) {
+            Vector3f above = new Vector3f(player.position.x, player.position.y + h, player.position.z);
+            if (checkCollision(above, world)) continue;
+
+            Vector3f ahead = new Vector3f(above.x + Math.signum(dirX) * 0.4f,
+                    above.y,
+                    above.z + Math.signum(dirZ) * 0.4f);
+            if (checkCollision(ahead, world)) continue;
+
+            // Both clear — step up instantly (camera Y-offset smoothing handles the rest)
+            player.position.y += h;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * When the player hits the floor while airborne and holding shift,
+     * convert the downward velocity into a horizontal slide.
+     */
+    private void tryLandingSlide(boolean shiftHeld, Vector3f wishDir) {
+        if (!shiftHeld || state != State.AIRBORNE) return;
+        if (velocity.y > -SLIDE_MIN_SPEED) return;
+
+        float hs = horizSpeed();
+        float slideSpeed = Math.min(SLIDE_MAX_SPEED, Math.abs(velocity.y) * SLIDE_SPEED_SCALE);
+
+        if (hs > 1f) {
+            float scale = slideSpeed / hs;
+            velocity.x *= scale;
+            velocity.z *= scale;
+        } else if (wishDir.lengthSquared() > 1e-6f) {
+            velocity.x = wishDir.x * slideSpeed;
+            velocity.z = wishDir.z * slideSpeed;
+        }
+
+        state = State.SURFACE_SLIDE;
+    }
+
+    // ─── HELPER METHOD FOR FLAPPY COLLISION DEATH ───
+    private void killFlappyPlayer() {
+        com.leaf.game.core.AudioManager.play("fall_hit", 1.4f);
+        player.health = 0f; // Instantly triggers central death flow
     }
 }

@@ -31,6 +31,7 @@ public final class KeyBindings {
     public static final int METEOR_STORM      = GLFW_KEY_F4;         // F4   Call down a meteor storm
     public static final int MEGA_METEOR       = GLFW_KEY_BACKSLASH;  // '\'  Drop the colossal mountain-eraser (F11 is eaten by macOS)
     public static final int TIME_ACCEL        = GLFW_KEY_LEFT_BRACKET; // '['  HOLD: accelerate the day/night cycle ("Made in Heaven")
+    public static final int FLAPPY_MODE       = GLFW_KEY_GRAVE_ACCENT;
 
     /** key code → human description (insertion-ordered for a tidy printout). */
     private static final Map<Integer, String> REG = new LinkedHashMap<>();
@@ -103,6 +104,7 @@ public final class KeyBindings {
         register(GLFW_KEY_F8, "The World (time stop)");
         register(GLFW_KEY_F9, "Debug: skip wave");
         register(GLFW_KEY_F10, "Radar Sweep");
+        register(FLAPPY_MODE, "Debug: Toggle Flappy Bird Mode");
     }
 
     /** Print the binding table once at startup, and shout if anything clashed. */

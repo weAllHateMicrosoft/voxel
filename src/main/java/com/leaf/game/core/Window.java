@@ -1,15 +1,6 @@
 package com.leaf.game.core;
 
-import com.leaf.game.entity.AttackController;
-import com.leaf.game.entity.DroppedItem;
-import com.leaf.game.entity.Enemy;
-import com.leaf.game.entity.EnemyManager;
-import com.leaf.game.entity.FlightController;
-import com.leaf.game.entity.Inventory;
-import com.leaf.game.entity.Player;
-import com.leaf.game.entity.RemotePlayer;
-import com.leaf.game.entity.SealController;
-import com.leaf.game.entity.StandController;
+import com.leaf.game.entity.*;
 import com.leaf.game.net.NetworkSession;
 import com.leaf.game.render.Mesh;
 import com.leaf.game.render.Shader;
@@ -111,6 +102,7 @@ public class Window {
     String[]     deathScreenLines    = null;
     private boolean lastDeathEnter   = false;
 
+
     /**
      * Set when the player dies and a cutscene sequence is pending.
      * KAMUI_AWAKEN plays first (on 3rd death), then REVIVAL auto-plays, then
@@ -164,7 +156,7 @@ public class Window {
 
     final Block[] hotbar = {
             Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
-            Block.GATLING_GUN, Block.TORCH, Block.TELESCOPE, Block.AIR, Block.AIR
+            Block.GATLING_GUN, Block.TORCH, Block.TELESCOPE, Block.GRAPPLING_HOOK, Block.AIR
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -242,6 +234,13 @@ public class Window {
     /** F1 toggles the full controls reference overlay. */
     boolean showHelp       = false;
     private boolean lastF1         = false;
+    private boolean lastF11 = false;
+    private boolean lastTilde = false;     // Tracks Flappy Mode key (`)
+    // ── FLAPPY RECOVERY STATE ──
+    private float   flappyPrevX, flappyPrevY, flappyPrevZ;
+    private float   flappyPrevYaw, flappyPrevPitch;
+    private boolean flappyPrevWaves = true;
+    private boolean lastBackspace   = false;
     /** Auto-dismiss welcome banner shown when the game first loads. */
     float   welcomeTimer   = 0f;
     private boolean welcomeStarted = false;
@@ -287,7 +286,6 @@ public class Window {
     private double lastNetSendTime = 0;
     private int    lastNetState = 0;
     private boolean lastNetHooked = false;
-
     // ── TIME CONTROLLER ───────────────────────────────────────────────────────
     // Accessed every frame: TimeController.getInstance().
     // Keybindings:
@@ -489,7 +487,6 @@ public class Window {
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
     private boolean lastF4         = false;            // meteor storm edge-detect
-    private boolean lastF11        = false;            // colossal meteor edge-detect
     // ── RADAR SWEEP (F10) — one-shot scan over the REAL world ────────────────────
     // A 3D radar scope projects onto the terrain (rings + spokes + rotating sweep
     // arm with an opaque→transparent afterglow), enemies light up in wireframe and
@@ -820,6 +817,60 @@ public class Window {
                 hintTimer = 3f;
             }
 
+            // ── FLAPPY BIRD MODE (Tilde key `) ──
+            if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS && !showChat) {
+                // Save current world position & parameters before we enter Flappy Mode
+                flappyPrevX = player.position.x;
+                flappyPrevY = player.position.y;
+                flappyPrevZ = player.position.z;
+                flappyPrevWaves = enemyManager.wavesEnabled;
+
+                player.useTestMovement = true;
+                player.testMovement.state = TestMovementController.State.FLAPPY;
+
+                // HEAL TO FULL ON START
+                player.health = player.maxHealth;
+
+                // Initialize starting Flappy states
+                player.testMovement.flappyScore = 0;
+                player.testMovement.lastPassedPipeX = 5010;
+                player.testMovement.flappyWaitingToStart = true;
+
+                player.position.set(4980f, 230f, 5000f);
+                player.testMovement.velocity.set(0f, 0f, 0f);
+
+                world.clearAllChunks();
+
+                hintText = "FLAPPY BIRD 3D - SPACE to flap, steer with WASD, don't touch the pipes!";
+                hintTimer = 5f;
+            }
+
+            // ── DEVELOPER CHEAT KEY (Backspace) ──
+            if (key == GLFW_KEY_BACKSPACE && action == GLFW_PRESS && !showChat) {
+                // 1. Skip onboarding tutorial
+                if (tutorial != null && tutorial.isActive()) {
+                    tutorial.skip();
+                }
+                // 2. Clear any active tutorial practice sessions
+                if (practiceAbility != null) {
+                    endPractice();
+                }
+                // 3. Force wave spawning onto the normal loop
+                enemyManager.wavesEnabled = true;
+                if (enemyManager.awaitingNextWave) {
+                    enemyManager.beginNextWave();
+                }
+
+                // 4. Grant absolute mastery (unlock every single ability)
+                player.progression.unlockAll();
+
+                // 5. Send a funny chat message
+                chatHistory.add("[System]: UNLIMITED POWER! All tutorials obliterated, all abilities unlocked.");
+
+                // 6. Play a satisfying deep teleport boom
+                com.leaf.game.core.AudioManager.play("teleport", 1.5f, 0.7f);
+            }
+
             // T opens chat (release event only, so holding T for time-dilation is safe
             // because time-dilation uses glfwGetKey in the game loop, not this callback)
             if (key == GLFW_KEY_T && action == GLFW_RELEASE && !showChat && !showDebug && !isPaused) {
@@ -951,28 +1002,39 @@ public class Window {
      * respawns at the same consistent spawn point via the revival flow. Idempotent: a
      * no-op if a death is already in progress.
      */
+    /**
+     * Central death handler. Routes Flappy mode to the instant arcade menu,
+     * and normal survival mode to the cinematic revival flow.
+     */
     private void triggerDeath() {
         if (showDeathScreen || deathCutscenePending) return;   // already dying
         player.health = 0f;
 
-        // ── DEATH ANIMATION — a clear, broadcast death burst so the killer sees the
-        //    elimination at the victim's spot (the FX helpers auto-sync over the net).
+        // Death VFX Broadcast
         float px = player.position.x, py = player.position.y, pz = player.position.z;
-        fxBurst(px, py + 1.0f, pz, 0.5f, 4.6f, 0.50f, 3.2f, 0.9f, 0.55f);          // white-hot flash
-        fxRing (px, py + 0.6f, pz, 0.5f, 7.5f, 0.62f, 2.9f, 0.45f, 0.35f);         // red shockwave
-        fxRing (px, py + 0.6f, pz, 0.5f, 4.0f, 0.46f, 3.3f, 1.4f, 0.9f);           // inner bright ring
-        for (int i = 0; i < 8; i++) {                                              // upward soul-bolts
+        fxBurst(px, py + 1.0f, pz, 0.5f, 4.6f, 0.50f, 3.2f, 0.9f, 0.55f);
+        fxRing (px, py + 0.6f, pz, 0.5f, 7.5f, 0.62f, 2.9f, 0.45f, 0.35f);
+        for (int i = 0; i < 8; i++) {
             double a = i / 8.0 * Math.PI * 2;
             fxBolt(px, py, pz, (float) Math.cos(a) * 0.4f, 1f, (float) Math.sin(a) * 0.4f,
                     4.5f, 0.12f, 0.55f, 3.0f, 0.8f, 0.5f);
         }
-        if (network != null && network.connected) network.sendDeath(px, py, pz);   // kill banner for the foe
+        if (network != null && network.connected) network.sendDeath(px, py, pz);
 
+        // ── FLAPPY BIRD ARCADE OVERRIDE ──
+        if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY) {
+            showDeathScreen = true; // Instantly show the GAME OVER menu. Skip the cinematic!
+            return;
+        }
+
+        // ── NORMAL SURVIVAL CINEMATIC ──
         AudioManager.stopContinuous("kamui_duration");
         AudioManager.stopContinuous("kamui_distortion");
         deathScreenLines = RunRecords.INSTANCE.recordDeath(
                 enemyManager.getWaveNumber(), (float) org.lwjgl.glfw.GLFW.glfwGetTime());
+
         deathCutscenePending = true;
+
         if (RunRecords.INSTANCE.wasKamuiAwakenDeath()) {
             player.progression.grantKamui();
             kamuiJustUnlockedThisRevival = true;
@@ -1411,35 +1473,71 @@ public class Window {
                         }
                     }
 
-                    // ── DEATH SCREEN — restart on ENTER ──────────────────────
-                    // Must be OUTSIDE the !showDeathScreen gate so ENTER is reachable.
+                    // ── DEATH SCREEN INPUT HANDLER ───────────────────────────
                     if (showDeathScreen) {
-                        boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
-                                || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-                        if (en && !lastDeathEnter) {
-                            showDeathScreen = false;
-                            player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
-                            player.setVelocityY(0f);
-                            player.pendingGravityReset = true;  // respawn upright if gravity was flipped
-                            player.health = player.maxHealth;
-                            player.mana   = player.maxMana;
-                            player.abilities.isKamui          = false;
-                            player.abilities.kamuiAutoExited  = false;
-                            player.abilities.absorptionCharge = 0f;
-                            player.abilities.isDashing        = false;
-                            player.abilities.isCannonballing  = false;
-                            // Fresh run: abilities reset to the starting kit, wave back to 1.
-                            player.progression.reset();
-                            enemyManager.resetForNewRun();
-                            practiceAbility = null; practiceSteps = null; practiceQueue.clear();
-                            showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
-                            deathCutscenePending = false;
-                            gameEnded       = false;
-                            RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
-                            AudioManager.stopContinuous("kamui_duration");
-                            AudioManager.stopContinuous("kamui_distortion");
+                        if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY) {
+                            // Flappy Mode Keyboard Menu
+                            boolean enterPressed = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                            boolean exitPressed = glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS; // Changed to X!
+
+                            if (enterPressed && !lastDeathEnter) {
+                                // Option 1: Play Again
+                                showDeathScreen = false;
+                                player.health = player.maxHealth; // CRITICAL FIX: Prevent instant re-death
+
+                                player.testMovement.flappyScore = 0;
+                                player.testMovement.lastPassedPipeX = 0;
+                                player.testMovement.flappyWaitingToStart = true;
+                                player.position.set(4980f, 230f, 5000f); // Spawn moved back
+                                player.testMovement.velocity.set(0f, 0f, 0f);
+                                camera.yaw = 0f;
+                                camera.pitch = 0f;
+                                world.clearAllChunks();
+                            } else if (exitPressed) {
+                                // Option 2: Exit and return to standard world
+                                showDeathScreen = false;
+                                player.health = player.maxHealth; // Reset health here too
+
+                                player.useTestMovement = false;
+                                player.testMovement.state = TestMovementController.State.AIRBORNE;
+
+                                // Restore pre-flappy position
+                                player.position.set(flappyPrevX, flappyPrevY, flappyPrevZ);
+                                player.setVelocityY(0f);
+                                camera.yaw = flappyPrevYaw;
+                                camera.pitch = flappyPrevPitch;
+
+                                if (enemyManager != null) enemyManager.wavesEnabled = flappyPrevWaves;
+                                world.clearAllChunks();
+                            }
+                            lastDeathEnter = enterPressed;
+                        } else {
+                            // Standard survival mode reset
+                            boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                    || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                            if (en && !lastDeathEnter) {
+                                showDeathScreen = false;
+                                player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
+                                player.setVelocityY(0f);
+                                player.pendingGravityReset = true;
+                                player.health = player.maxHealth;
+                                player.mana   = player.maxMana;
+                                player.abilities.isKamui          = false;
+                                player.abilities.kamuiAutoExited  = false;
+                                player.abilities.absorptionCharge = 0f;
+                                player.abilities.isDashing        = false;
+                                player.abilities.isCannonballing  = false;
+                                enemyManager.resetForNewRun();
+                                practiceAbility = null; practiceSteps = null; practiceQueue.clear();
+                                showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
+                                deathCutscenePending = false;
+                                gameEnded       = false;
+                            }
+                            lastDeathEnter = en;
                         }
-                        lastDeathEnter = en;
+
+                        RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
                     }
 
                     if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending) {
@@ -1452,6 +1550,7 @@ public class Window {
                         float   savedHighestY    = player.highestY;
                         boolean wasOnGroundAudio = player.isOnGround();
                         boolean wasFlightMode    = player.debugMode;
+                        player.heldBlock = hotbar[selectedSlot]; // Sync the held block to the player
                         player.update(window, camera, world, deltaTime);
 
                         // ── DEPRIVATION DOMAIN: enforce position lock every frame ─
@@ -3651,7 +3750,7 @@ public class Window {
 
                 // 1. Render Grapple Cable & Laser Sight
                 FlightController fc = player.flightController;
-                boolean grappleActive = player.debugMode && fc.getMode() == FlightController.FlightMode.GRAPPLE;
+                boolean grappleActive = player.isGrappleHooked; // Cleaned to read tool state
                 boolean voidAiming = player.attacks.getChargeFrac() > 0f;
 
                 if (grappleActive || voidAiming) {
@@ -3661,9 +3760,9 @@ public class Window {
                     Block renderBlock = Block.CRYSTAL_AMETHYST;
 
                     if (grappleActive) {
-                        targetPoint = fc.isHooked() ? fc.getHookPoint() : fc.getAimTarget(camera, world);
-                        isLaser = !fc.isHooked();
-                        renderBlock = isLaser ? Block.CRYSTAL_ROSE : Block.CRYSTAL_AMETHYST;
+                        targetPoint = player.grappleHookPoint; // Pointed to tool hook pos
+                        isLaser = false;
+                        renderBlock = Block.CRYSTAL_AMETHYST;
                     } else if (voidAiming) {
                         targetPoint = player.attacks.getAimTarget(camera, world);
                         isLaser = true;

@@ -6,6 +6,7 @@ public enum Block {
     DIRT      (1.00f, 1.00f, 1.00f, 1.0f,  1.0f,  "cracked_dirt",true),  // seamless cracked-soil tile
     MUD       (0.32f, 0.18f, 0.04f, 1.0f,  0.5f), // Quagmire — dark bog mud, slows enemies forever
     GATLING_GUN(0.16f, 0.16f, 0.20f, 1.0f, 99f), // held WEAPON item — never placed/mined; hold LMB to rip
+    GRAPPLING_HOOK(0.15f, 0.70f, 0.25f, 1.0f, 99f),
     TELESCOPE  (0.20f, 0.20f, 0.20f, 1.0f, 99f),
     TORCH      (1.00f, 0.66f, 0.26f, 1.0f, 0.3f), // warm light source: place it, or hold it for a hand-light
     STONE     (1.00f, 1.00f, 1.00f, 1.0f,  4.0f,  "normalStone", true),  // seamless; all abilities/worldgen use Block.STONE so texture swap is automatic
@@ -68,8 +69,12 @@ public enum Block {
     MESA_BLUE_LIGHT (0.60f, 0.78f, 0.92f, 1.0f,  1.0f),  // light blue band
     MESA_BLUE_MID   (0.28f, 0.52f, 0.72f, 1.0f,  1.2f),  // mid blue rock (dominant)
     MESA_BLUE_DARK  (0.18f, 0.36f, 0.56f, 1.0f,  1.4f),  // deep blue band
-    MESA_BLUE_STONE (0.22f, 0.32f, 0.48f, 1.0f,  4.0f);  // blue foundation
+    MESA_BLUE_STONE (0.22f, 0.32f, 0.48f, 1.0f,  4.0f),  // blue foundation
 
+    // ── FLAPPY BIRD CLASSIC GREEN PIPES ──
+    PIPE_BODY       (0.43f, 0.78f, 0.08f, 1.0f,  4.0f),  // Rich shaded green pipe column
+    PIPE_LIP        (0.52f, 0.86f, 0.12f, 1.0f,  4.0f),  // Brighter highlighted pipe collar
+    LAVA            (1.00f, 0.22f, 0.05f, 0.90f, 0.0f);  // Liquid glowing red/orange lava
     public final float r, g, b, a;
     public final float hardness;
 
@@ -166,6 +171,6 @@ public enum Block {
         return this != AIR && this != WATER && this != MESA_WATER
                 && this != HANGING_ROOT && this != CRATER_BLOOM;
     }
-    public boolean isLiquid() { return this == WATER || this == MESA_WATER; }
+    public boolean isLiquid() { return this == WATER || this == MESA_WATER || this == LAVA; }
     public boolean isOpaque() { return this.a >= 1.0f; }
 }

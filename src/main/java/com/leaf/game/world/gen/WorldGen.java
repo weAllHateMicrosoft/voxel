@@ -238,9 +238,15 @@ public class WorldGen {
     private void generateSurfaceChunk(Chunk chunk) {
         int worldX = chunk.cx * Chunk.SIZE;
         int worldZ = chunk.cz * Chunk.SIZE;
-        // cy == 0, so worldYOffset == 0 and worldY == localY throughout
-        final float seaFrac = (GameConfig.seaLevel - GameConfig.heightBase) / (float) GameConfig.heightRange;
 
+        // ── FLAPPY BIRD INFINITE PIPE INTERCEPT ──
+        // If the chunk falls inside the Flappy Zone, bypass normal terrain entirely
+        if (worldX >= 4800 && worldX <= 6000 && worldZ >= 4960 && worldZ <= 5040) {
+            generateFlappyTrackChunk(chunk, worldX, worldZ);
+            return;
+        }
+
+        final float seaFrac = (GameConfig.seaLevel - GameConfig.heightBase) / (float) GameConfig.heightRange;
         for (int lx = 0; lx < Chunk.SIZE; lx++) {
             for (int lz = 0; lz < Chunk.SIZE; lz++) {
                 int wx = worldX + lx;
@@ -489,5 +495,89 @@ public class WorldGen {
     private float remap(float val, float inMin, float inMax, float outMin, float outMax) {
         float t = Math.max(0f, Math.min(1f, (val - inMin) / (inMax - inMin)));
         return outMin + t * (outMax - outMin);
+    }
+    private void generateFlappyTrackChunk(Chunk chunk, int worldX, int worldZ) {
+        for (int lx = 0; lx < Chunk.SIZE; lx++) {
+            for (int lz = 0; lz < Chunk.SIZE; lz++) {
+                int wx = worldX + lx;
+                int wz = worldZ + lz;
+
+                int floorY = 200;
+                int ceilY = 260;
+
+                boolean[] solid = new boolean[Chunk.HEIGHT];
+                for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
+                    solid[ly] = (ly <= floorY) || (ly >= ceilY);
+                }
+
+                // ── SAFE STARTING PLATFORM ──
+                // Shifted backward: X is now 4960 to 4995. You spawn at 4980.
+                if (wx >= 4960 && wx <= 4995 && wz >= 4994 && wz <= 5006) {
+                    for (int ly = floorY + 1; ly <= 229; ly++) {
+                        solid[ly] = true;
+                    }
+                }
+
+                // Pipes start after the platform
+                int startX = 5020;
+                int interval = 20;
+
+                int pipeX = startX + Math.round((float)(wx - startX) / interval) * interval;
+                int dx = Math.abs(wx - pipeX);
+                int dz = Math.abs(wz - 5000);
+
+                // Build square pipes only if we are past the starting platform footprint
+                if (pipeX >= startX && dx <= 2 && dz <= 2) {
+                    long hash = (long) pipeX * 0x9E3779B97F4A7C15L ^ GameConfig.seed;
+                    hash = (hash ^ (hash >>> 30)) * 0xBF58476D1CE4E5B9L;
+                    int gapCenterY = 218 + (int)(Math.abs(hash) % 24);
+                    int gapHalfHeight = 6;
+
+                    int bottomLipY = gapCenterY - gapHalfHeight - 1;
+                    int topLipY    = gapCenterY + gapHalfHeight + 1;
+
+                    for (int ly = floorY + 1; ly < ceilY; ly++) {
+                        boolean isGap = (ly >= gapCenterY - gapHalfHeight) && (ly <= gapCenterY + gapHalfHeight);
+                        if (!isGap) {
+                            int maxDist = (ly == bottomLipY || ly == topLipY) ? 2 : 1;
+                            if (dx <= maxDist && dz <= maxDist) {
+                                solid[ly] = true;
+                            }
+                        }
+                    }
+                }
+
+                // Paint blocks
+                for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
+                    if (!solid[ly]) {
+                        chunk.setBlock(lx, ly, lz, Block.AIR);
+                    } else {
+                        if (ly <= floorY) {
+                            chunk.setBlock(lx, ly, lz, Block.LAVA); // FLOOR IS LAVA!
+                        } else if (ly >= ceilY) {
+                            chunk.setBlock(lx, ly, lz, Block.STONE);      // Gray ceiling
+                        } else if (ly <= 229 && wx >= 4980 && wx <= 5015 && wz >= 4994 && wz <= 5006) {
+                            // Safe starting platform block
+                            chunk.setBlock(lx, ly, lz, Block.MESA_STONE);
+                        } else {
+                            // Pipe coloring
+                            int dxFromWall = (wx - startX) % interval;
+                            int wallBaseX = wx - dxFromWall;
+                            long hash = (long) wallBaseX * 0x9E3779B97F4A7C15L ^ GameConfig.seed;
+                            hash = (hash ^ (hash >>> 30)) * 0xBF58476D1CE4E5B9L;
+                            int gapCenterY = 218 + (int)(Math.abs(hash) % 24);
+                            int gapHalfHeight = 6;
+
+                            boolean isLip = (ly == gapCenterY - gapHalfHeight - 1) || (ly == gapCenterY + gapHalfHeight + 1);
+                            chunk.setBlock(lx, ly, lz, isLip ? Block.PIPE_LIP : Block.PIPE_BODY);
+                        }
+                    }
+                }
+
+                // Bedrock base
+                chunk.setBlock(lx, 0, lz, Block.STONE);
+                chunk.setBlock(lx, 1, lz, Block.STONE);
+            }
+        }
     }
 }

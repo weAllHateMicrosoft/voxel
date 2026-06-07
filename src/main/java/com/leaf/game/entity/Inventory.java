@@ -14,6 +14,7 @@ public class Inventory {
     // relies on these for cover/barricades during waves — start them generously.
     public Inventory() {
         items.put(Block.TELESCOPE, 1);
+        items.put(Block.GRAPPLING_HOOK, 1);
         items.put(Block.CRYSTAL_AMETHYST, 256);
         items.put(Block.MEGALITH,  256);
         items.put(Block.ANCIENT_MARROW, 256);
