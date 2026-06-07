@@ -3224,6 +3224,12 @@ public class Window {
                 shader.setUniform("sunStrength",     orbBlack ? 0f : dayNight.lightStrength);
                 shader.setUniform("ambientStrength", orbBlack ? 0f : dayNight.ambientStrength);
                 shader.setUniform("sunColor",     dayNight.lightColor);
+                // Send the live sky colors and fog distance to the terrain shader
+                shader.setUniform("skyHorizonCol", dayNight.skyHorizon);
+                shader.setUniform("skyZenithCol",  dayNight.skyZenith);
+                shader.setUniform("sunsetFactor",  dayNight.sunsetFactor);
+                // Fog completely hides the square chunk loading edges
+                shader.setUniform("fogEnd",        GameConfig.renderDistance * 16.0f);
                 shader.setUniform("ambientColor", dayNight.ambientColor);
                 uploadTorchLights(shader, camera);   // placed torches + held hand-light
                 shader.setUniform("emissiveMode", 0);   // reset each frame (effects toggle it locally)

@@ -4,6 +4,10 @@ in vec3  vertexNormal;
 in float vWorldY;        // world-space Y of this fragment (from vertex shader)
 in vec2  vertexUV;       // texture coordinates (zero when not a ModelMesh)
 in vec3  vWorldPos;      // full world-space position (orbital scan)
+uniform vec3  skyHorizonCol;
+uniform vec3  skyZenithCol;
+uniform float sunsetFactor;
+uniform float fogEnd;
 
 uniform vec3  sunDirection;
 uniform float sunStrength;
@@ -367,10 +371,41 @@ void main() {
         gammaCorrected += vec3(0.90, 0.65, 0.18) * facing * inside * 0.18;
 
         // Strike flash: white-gold pulse searing through the entire scene
-        if (depStrike > 0.001) {
-            gammaCorrected += vec3(2.5, 1.9, 0.6) * depStrike * 0.38;
-        }
-    }
+                 if (depStrike > 0.001) {
+                     gammaCorrected += vec3(2.5, 1.9, 0.6) * depStrike * 0.38;
+                 }
+             }
 
-    FragColor = vec4(gammaCorrected, baseColor.a * alphaMultiplier);
-}
+             // ── DISTANCE FOG (Seamless horizon blending) ──────────────────────────────
+             // Do not apply fog to emissive volumetric effects (like the orbital laser)
+             if (emissiveMode == 0 && domeMode == 0) {
+                 float distToCam = length(vWorldPos - camPos);
+
+                 // Start fading at 55% of the render distance, completely hidden at 100%
+                 float fogStart = fogEnd * 0.85;
+                 float fogFactor = smoothstep(fogStart, fogEnd, distToCam);
+
+                 if (fogFactor > 0.001) {
+                     vec3 ray = normalize(vWorldPos - camPos);
+
+                     // Reconstruct the exact sky background color behind this pixel
+                     float t = smoothstep(0.0, 0.55, ray.y);
+                     vec3 skyCol = mix(skyHorizonCol, skyZenithCol, t);
+
+                     // Add the warm sunset band if looking toward the sun
+                     float band = exp(-abs(ray.y) * 5.5) * sunsetFactor;
+                     skyCol = mix(skyCol, vec3(1.0, 0.48, 0.26), band * 0.75);
+
+                     // Deep underground fix: if the player or terrain is deep down,
+                     // fade the fog to pitch-black abyss color instead of blue sky!
+                     float depthFactor = smoothstep(190.0, 130.0, min(vWorldPos.y, camPos.y));
+                     vec3 abyssFogCol = vec3(0.012, 0.006, 0.022);
+                     skyCol = mix(skyCol, abyssFogCol, depthFactor);
+
+                     // Apply the atmospheric fade
+                     gammaCorrected = mix(gammaCorrected, skyCol, fogFactor);
+                 }
+             }
+
+             FragColor = vec4(gammaCorrected, baseColor.a * alphaMultiplier);
+         }

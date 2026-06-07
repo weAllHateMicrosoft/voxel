@@ -171,8 +171,8 @@ public class MeteorSystem {
     // ─────────────────────────────────────────────────────────────────────────
 
     private float computeRate(DayNight dn) {
-        // Background sporadic rate: ~10 per hour visible in dark skies
-        float rate = 10f;
+        // Background sporadic rate: ~1 per hour visible in dark skies
+        float rate = 100f;
 
         Shower s = getActiveShower(dn);
         if (s != null) {
