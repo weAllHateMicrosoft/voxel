@@ -19,7 +19,7 @@ The game features a seamless, built-in tutorial to get you started! Just run the
 
 ---
 
-### 📝 Teacher Notes & Grading Guide
+### 📝 Summary
 *This game features a custom 3D engine built using LWJGL and OpenGL, extending far beyond standard 2D frameworks.*
 
 To help you grade the project quickly without having to grind through all 10 waves of enemies, we have included a suite of **Developer Cheat Codes**.
@@ -29,13 +29,13 @@ To help you grade the project quickly without having to grind through all 10 wav
 * `F9` - **Wave Skip:** Instantly kills all enemies and clears the current wave so you can quickly unlock the next ability and see the between-wave UI.
 * `P` - Instantly spawn a test enemy at your crosshair.
 * `0` (Zero) - Spawn a boss-level Guardian Golem.
+* Gatling Gun (`[Hotbar Slot 5]`)** - Select slot 5 and hold Left-Click to rapidly shred through enemies and vaporize terrain.
 
-**SAbilities :**
-We implemented several highly complex "Ultimate" abilities for extra technical demonstration. You can trigger these at any time:
+**Abilities :**
+We implemented several "Ultimate" abilities for extra visual demonstration. You can trigger these at any time:
 * `F7` - **Orbital Annihilation:** Aim at a block and press F7 to trigger a massive 3D cinematic volumetric laser strike.
 * `F8` - **The World (Time Stop):** Freezes all enemies, inverts screen colors, and halts time physics.
 * `F10` - **Radar Sweep:** Projects a 3D radar scope onto the world geometry to scan for enemies through walls.
-* `.` (Period) - **Chocolate Disco:** Spawns a 9x9 interactive hologram grid. Use Left-Click to mark squares, and press `.` again to detonate them.
 * `'` (Apostrophe) - **Deprivation Domain:** Locks the player in place and creates a golden hemisphere. Any enemy that enters is instantly auto-slashed.
 * `,` (Comma) - **Quantum Bullet:** Fires a projectile that ripples the screen space and phases through solid walls.
 * 
