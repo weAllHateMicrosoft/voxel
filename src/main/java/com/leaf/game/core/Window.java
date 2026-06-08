@@ -58,6 +58,10 @@ public class Window {
     private int starVao = 0;
     private int starVbo = 0;
 
+    // ── UI & COMMANDS ────────────────────────────────────────────────────────
+    public final CommandHandler commandHandler = new CommandHandler(this);
+    public final BackpackUI backpackUI = new BackpackUI(this);
+
     // ── MULTIPLAYER COMBAT (PvP + summonable troops) ───────────────────────────
     /** Troops WE spawned (simulated locally, charge the opponent, streamed to peer). */
     final java.util.List<com.leaf.game.entity.Summon> mySummons = new java.util.ArrayList<>();
@@ -721,6 +725,11 @@ public class Window {
                 }
                 return;
             }
+            // ── EVENT-DRIVEN BACKPACK TOGGLE ──
+            if (key == GLFW_KEY_LEFT_ALT && action == GLFW_PRESS && !showChat && !showHelp) {
+                backpackUI.toggle();
+            }
+            
             if (holdingTelescope) {
                 if (key == GLFW_KEY_L && action == GLFW_PRESS) telescope.showLabels = !telescope.showLabels;
                 if (key == GLFW_KEY_C && action == GLFW_PRESS) telescope.showConstLines = !telescope.showConstLines;
@@ -907,8 +916,7 @@ public class Window {
         });
 
         glfwSetMouseButtonCallback(window, (win, button, action, mods) -> {
-
-            if (!networkInitialized || isPreloading || showChat || showNoiseViewer || isPaused || showHelp || showDiscoUI) return;
+            if (!networkInitialized || isPreloading || showChat || showNoiseViewer || isPaused || showHelp || showDiscoUI || backpackUI.isOpen) return;
 
             if (button == GLFW_MOUSE_BUTTON_LEFT) {
                 // Chocolate Disco: LMB marks/unmarks the hovered grid cell.
@@ -976,7 +984,7 @@ public class Window {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
         glfwSetCursorPosCallback(window, (win, xpos, ypos) -> {
-            if (!networkInitialized || isPreloading || showDebug || showChat || showNoiseViewer || isPaused || showHelp)
+            if (!networkInitialized || isPreloading || showDebug || showChat || showNoiseViewer || isPaused || showHelp || backpackUI.isOpen)
                 return;
             if (firstMouse[0]) {
                 lastMouseX[0] = xpos; lastMouseY[0] = ypos; firstMouse[0] = false; return;

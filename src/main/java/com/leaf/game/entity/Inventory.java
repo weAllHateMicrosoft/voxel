@@ -71,4 +71,10 @@ public class Inventory {
         }
         return sb.toString();
     }
+
+    /** Add a specific quantity of a block to the inventory. */
+    public void addBlockAmount(Block block, int amount) {
+        if (block == Block.AIR || amount <= 0) return;
+        items.merge(block, amount, Integer::sum);
+    }
 }

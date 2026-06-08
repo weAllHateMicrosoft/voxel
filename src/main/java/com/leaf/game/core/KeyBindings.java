@@ -105,6 +105,7 @@ public final class KeyBindings {
         register(GLFW_KEY_F9, "Debug: skip wave");
         register(GLFW_KEY_F10, "Radar Sweep");
         register(FLAPPY_MODE, "Debug: Toggle Flappy Bird Mode");
+        register(GLFW_KEY_LEFT_ALT, "Open Backpack Menu");
     }
 
     /** Print the binding table once at startup, and shout if anything clashed. */

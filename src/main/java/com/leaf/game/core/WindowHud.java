@@ -480,8 +480,15 @@ class WindowHud {
                     imgui.flag.ImGuiInputTextFlags.EnterReturnsTrue)) {
                 String msg = win.chatInput.get().trim();
                 if (!msg.isEmpty()) {
-                    win.chatHistory.add("[You]: " + msg);
-                    if (win.network != null && win.network.connected) win.network.sendChat(msg);
+
+                    // Route commands to the new decoupled handler
+                    if (msg.startsWith("/")) {
+                        win.commandHandler.execute(msg);
+                    } else {
+                        win.chatHistory.add("[You]: " + msg);
+                        if (win.network != null && win.network.connected) win.network.sendChat(msg);
+                    }
+
                     win.chatInput.set("");
                 }
                 win.showChat = false;
@@ -1691,6 +1698,8 @@ class WindowHud {
                 draw.addText(font, font.getFontSize() * 1.5f, cx - sw / 2f, screenH * 0.28f, ImGui.colorConvertFloat4ToU32(1f, 1.0f, 1.0f, pa), startPrompt);
             }
         }
+        // ── RENDER BACKPACK OVERLAY ──
+        win.backpackUI.render(screenW, screenH);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
