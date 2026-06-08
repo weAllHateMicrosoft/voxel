@@ -39,36 +39,42 @@ We implemented several highly complex "Ultimate" abilities for extra technical d
 * `'` (Apostrophe) - **Deprivation Domain:** Locks the player in place and creates a golden hemisphere. Any enemy that enters is instantly auto-slashed.
 * `,` (Comma) - **Quantum Bullet:** Fires a projectile that ripples the screen space and phases through solid walls.
 * 
-  ⚔️ Combat & Attacks
-  Void Shard (Snipe) [C] – Hold to charge and fire an explosive crystal bolt.
-  Runic Cleave (Slash) [F] – A wide melee swing that shatters terrain and damages enemies in a cone.
-  Gatling Gun [Hotbar] – Hold Left-Click to rapidly shred through enemies and terrain.
-  Lightning [U] – Call down a lightning strike. Double-tap for an AoE blast. Automatically chains between enemies standing in water.
-  Stone Canon [I] – Absorb surrounding stone blocks to form a massive boulder, then launch it.
-  Grab & Slam [O] – Grab an enemy, hoist them over your head, and slam them into the ground to create a crater.
-  Knife Combo [;] – Three rapid, high-damage melee slashes (does not destroy terrain).
-  🏃 Movement & Parkour
-  Flight [Double Space] – Take to the skies. Press [V] to cycle between Skim (terrain-hugging), Soar (free 3D flight), and Grapple.
-  Dash [Q] – Instant horizontal burst that leaves a fading ghost trail.
-  Blink [E] – Instantly teleport to exactly where you are looking (up to 22 blocks).
-  Cannonball [Hold G] – Charge up, aim your trajectory arc, and launch yourself as a living explosive.
-  Stone Pillar [K] – Summon an earth spire beneath your feet to launch yourself high into the air.
-  Ground Smash [Shift in air] – Plummet to the earth, creating a massive crater and shockwave on impact.
-  🌀 Tactical & Spatial
-  Position Swap (Todo's Technique) [J] – Instantly swap places with the nearest enemy.
-  Minato's Seal [H, B, N] – Press H to throw a teleport marker, B to instantly warp to it, and N to reclaim it.
-  Kamui [Z] – Phase into another dimension to become invincible. Hold Left-Click to suck enemies into the void.
-  Paper Substitute [Hold V] – Negate an incoming hit, teleport backward, and leave behind an exploding paper decoy.
-  Quagmire [M] – Send a wave of mud along the ground that permanently converts terrain and traps enemies.
-  Heal [Hold L] – Channel your mana into health regeneration.
-  🤖 Manhattan Transfer (Stand/Drone)
-  Deploy Drone [X] – Summon a floating combat drone above you.
-  Pilot Drone [TAB] – Transfer your consciousness to pilot the drone manually.
-  Redirect Shot [Aim at Drone + C] – Fire a Void Shard at the drone; it will perfectly ricochet to hit enemies around corners.
-  ⏳ Time Manipulation
-  Time Dilation [Hold R / Y] – Hold R for slow-motion, or hold Y to fast-forward time.
-  Made in Heaven [Hold [] – Drastically accelerate the day/night cycle.
-  State Rewind [Auto/Internal] – (System constantly tracks the last 5 seconds of your position/health).
+# DESCENT - Complete Ability Guide
+
+A breakdown of every ability currently implemented in **DESCENT**, mapped to their default keybindings.
+
+---
+
+## ⚔️ Combat & Offensive
+
+* **Void Shard (Snipe) (`[C]`)** - Hold to charge and fire an explosive crystal bolt. Longer hold increases damage and blast radius.
+* **Runic Cleave (Slash) (`[F]`)** - A wide melee swing that shatters blocks in a 3D crescent and knocks back enemies.
+* **Gatling Gun (`[Hotbar]`)** - Hold Left-Click to rapidly shred through enemies and vaporize terrain.
+* **Lightning (`[U]`)** - Call down a lightning strike on your target. Double-tap `[U]` for an AoE blast. Automatically chains between enemies standing in water.
+* **Stone Canon (`[I]`)** - Stand near stone and hold to absorb blocks into a massive boulder, then launch it.
+* **Grab & Slam (`[O]`)** - Grab a nearby enemy, hoist them overhead, and slam them into the ground to create an impact crater.
+* **Knife Combo (`[;]`)** - Three rapid, high-damage melee slashes (does not destroy terrain).
+
+---
+
+## 🏃 Movement & Mobility
+
+* **Flight (`[Double Space]`)** - Take to the skies. Press `[V]` to cycle between Skim (low-altitude glide), Soar (3D free-flight), and Grapple (hook-and-swing).
+* **Dash (`[Q]`)** - Instant horizontal burst in your movement direction, leaving a trail of fading ghost duplicates.
+* **Blink (`[E]`)** - Teleport along a straight, fast-travel path directly to your crosshair (up to 22 blocks).
+* **Cannonball (`[Hold G]`)** - Charge up, view your ballistic trajectory, and launch yourself as a highly destructive projectile.
+* **Stone Pillar (`[K]`)** - Erupt a stone spire beneath your feet, launching yourself high into the air.
+* **Ground Smash (`[Shift in air]`)** - Slam down to the earth, creating a massive crater and shockwave scaled by your fall height.
+
+---
+
+## 🌀 Tactical & Utility
+
+* **Position Swap (`[J]`)** - Instantly swap places with the nearest visible enemy.
+* **Minato's Seal (`[H] / [B] / [N]`)** - Press `[H]` to throw an anchor seal, `[B]` to warp to it, and `[N]` to reclaim it to your inventory.
+* **Kamui (`[Z]`)** - Phase into another dimension to become completely invincible. Hold Left-Click to charge a vortex and suck enemies into the void.
+* **Paper Substitute (`[Hold V]`)** - Hold to prime. The next hit you take is negated, blinking you backward and leaving behind an exploding decoy.
+* **Quagmire (`[M]`)** - Fire a wave of mud along the ground that traps enemies and stamps out
 
 ### 🏆 Features Included from Rubric
 * **Title/End Screens:** Implemented via ImGui overlays (`WindowHud.java` and `CutsceneManager.java`).
