@@ -502,36 +502,34 @@ public class WorldGen {
                 int wx = worldX + lx;
                 int wz = worldZ + lz;
 
+                // Flat floor and ceiling boundaries
                 int floorY = 200;
                 int ceilY = 260;
 
+                // Initialize floor and ceiling structures
                 boolean[] solid = new boolean[Chunk.HEIGHT];
                 for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
                     solid[ly] = (ly <= floorY) || (ly >= ceilY);
                 }
 
-                // ── SAFE STARTING PLATFORM ──
-                // Shifted backward: X is now 4960 to 4995. You spawn at 4980.
-                if (wx >= 4960 && wx <= 4995 && wz >= 4994 && wz <= 5006) {
-                    for (int ly = floorY + 1; ly <= 229; ly++) {
-                        solid[ly] = true;
-                    }
-                }
-
-                // Pipes start after the platform
+                // Locate the nearest pipe center along X
                 int startX = 5020;
                 int interval = 20;
 
+                // Find nearest pipe X coordinate
                 int pipeX = startX + Math.round((float)(wx - startX) / interval) * interval;
                 int dx = Math.abs(wx - pipeX);
-                int dz = Math.abs(wz - 5000);
+                int dz = Math.abs(wz - 5000); // Centered at Z=5000
 
-                // Build square pipes only if we are past the starting platform footprint
-                if (pipeX >= startX && dx <= 2 && dz <= 2) {
+                // Precompute the gap properties ONCE per column to eliminate the CPU bottleneck
+                int gapCenterY = 218;
+                int gapHalfHeight = 4;
+                boolean isPipeColumn = (pipeX >= startX && dx <= 2 && dz <= 2);
+
+                if (isPipeColumn) {
                     long hash = (long) pipeX * 0x9E3779B97F4A7C15L ^ GameConfig.seed;
                     hash = (hash ^ (hash >>> 30)) * 0xBF58476D1CE4E5B9L;
-                    int gapCenterY = 218 + (int)(Math.abs(hash) % 24);
-                    int gapHalfHeight = 6;
+                    gapCenterY = 218 + (int)(Math.abs(hash) % 24);
 
                     int bottomLipY = gapCenterY - gapHalfHeight - 1;
                     int topLipY    = gapCenterY + gapHalfHeight + 1;
@@ -556,25 +554,18 @@ public class WorldGen {
                             chunk.setBlock(lx, ly, lz, Block.LAVA); // FLOOR IS LAVA!
                         } else if (ly >= ceilY) {
                             chunk.setBlock(lx, ly, lz, Block.STONE);      // Gray ceiling
-                        } else if (ly <= 229 && wx >= 4980 && wx <= 5015 && wz >= 4994 && wz <= 5006) {
+                        } else if (ly <= 229 && wx >= 4960 && wx <= 4995 && wz >= 4994 && wz <= 5006) {
                             // Safe starting platform block
                             chunk.setBlock(lx, ly, lz, Block.MESA_STONE);
                         } else {
-                            // Pipe coloring
-                            int dxFromWall = (wx - startX) % interval;
-                            int wallBaseX = wx - dxFromWall;
-                            long hash = (long) wallBaseX * 0x9E3779B97F4A7C15L ^ GameConfig.seed;
-                            hash = (hash ^ (hash >>> 30)) * 0xBF58476D1CE4E5B9L;
-                            int gapCenterY = 218 + (int)(Math.abs(hash) % 24);
-                            int gapHalfHeight = 6;
-
+                            // Pipe coloring (Uses the precomputed gapCenterY — no redundant math!)
                             boolean isLip = (ly == gapCenterY - gapHalfHeight - 1) || (ly == gapCenterY + gapHalfHeight + 1);
                             chunk.setBlock(lx, ly, lz, isLip ? Block.PIPE_LIP : Block.PIPE_BODY);
                         }
                     }
                 }
 
-                // Bedrock base
+                // Indestructible bedrock base
                 chunk.setBlock(lx, 0, lz, Block.STONE);
                 chunk.setBlock(lx, 1, lz, Block.STONE);
             }

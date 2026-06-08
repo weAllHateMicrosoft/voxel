@@ -817,34 +817,55 @@ public class Window {
                 hintTimer = 3f;
             }
 
-            // ── FLAPPY BIRD MODE (Tilde key `) ──
+            // ── FLAPPY BIRD MODE (Tilde key ` - Dynamic Toggle) ──
             if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS && !showChat) {
-                // Save current world position & parameters before we enter Flappy Mode
-                flappyPrevX = player.position.x;
-                flappyPrevY = player.position.y;
-                flappyPrevZ = player.position.z;
-                flappyPrevWaves = enemyManager.wavesEnabled;
+                if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY) {
+                    // Already in Flappy Mode -> EXIT and return to standard world
+                    player.useTestMovement = false;
+                    player.testMovement.state = TestMovementController.State.AIRBORNE;
+                    player.health = player.maxHealth; // Ensure health is full
 
-                player.useTestMovement = true;
-                player.testMovement.state = TestMovementController.State.FLAPPY;
+                    // Restore your exact pre-flappy position and camera angles
+                    player.position.set(flappyPrevX, flappyPrevY, flappyPrevZ);
+                    player.setVelocityY(0f);
 
-                // HEAL TO FULL ON START
-                player.health = player.maxHealth;
+                    if (enemyManager != null) {
+                        enemyManager.wavesEnabled = flappyPrevWaves;
+                    }
 
-                // Initialize starting Flappy states
-                player.testMovement.flappyScore = 0;
-                player.testMovement.lastPassedPipeX = 5010;
-                player.testMovement.flappyWaitingToStart = true;
+                    // Clear the pipe chunks from memory so the normal terrain regenerates
+                    world.clearAllChunks();
 
-                player.position.set(4980f, 230f, 5000f);
-                player.testMovement.velocity.set(0f, 0f, 0f);
+                    hintText = "Returned to standard world";
+                    hintTimer = 3f;
+                } else {
+                    // Enter Flappy Mode -> Save current world position & parameters
+                    flappyPrevX = player.position.x;
+                    flappyPrevY = player.position.y;
+                    flappyPrevZ = player.position.z;
+                    flappyPrevWaves = enemyManager.wavesEnabled;
 
-                world.clearAllChunks();
+                    player.useTestMovement = true;
+                    player.testMovement.state = TestMovementController.State.FLAPPY;
 
-                hintText = "FLAPPY BIRD 3D - SPACE to flap, steer with WASD, don't touch the pipes!";
-                hintTimer = 5f;
+                    // Heal to full on start
+                    player.health = player.maxHealth;
+
+                    // Initialize starting Flappy states
+                    player.testMovement.flappyScore = 0;
+                    player.testMovement.lastPassedPipeX = 5010;
+                    player.testMovement.flappyWaitingToStart = true;
+
+                    player.position.set(4980f, 230f, 5000f);
+                    player.testMovement.velocity.set(0f, 0f, 0f);
+
+                    // Clear survival chunks so the Flappy corridor loads
+                    world.clearAllChunks();
+
+                    hintText = "FLAPPY BIRD 3D - SPACE to flap, steer with WASD, don't touch the pipes!";
+                    hintTimer = 5f;
+                }
             }
-
             // ── DEVELOPER CHEAT KEY (Backspace) ──
             if (key == GLFW_KEY_BACKSPACE && action == GLFW_PRESS && !showChat) {
                 // 1. Skip onboarding tutorial
@@ -970,12 +991,11 @@ public class Window {
                 return;
             }
 
-            // Smashing/Rewinding: camera auto-driven, block mouse entirely.
-            // Charging: camera locked to aim direction — the system needs this
-            //   window to preload exactly the chunks the player will see.
-            // Flying (isCannonballing): full 360° free look, no pitch clamp.
+            // Lock camera mouse look during 2D Flappy side-scrolling!
+            boolean isFlappySide = player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY && player.testMovement.flappySideView;
+
             if (!player.isSmashing() && !player.abilities.isCharging()
-                    && !isChargingStoneCanon) {
+                    && !isChargingStoneCanon && !isFlappySide) {
                 camera.yaw   += dx * GameConfig.mouseSensitivity;
                 camera.pitch -= dy * GameConfig.mouseSensitivity;
                 if (!player.abilities.isCannonballing) {
@@ -4245,6 +4265,10 @@ public class Window {
                 if (network != null && network.connected) {
                     remotePlayer.render(shader, projection, view);
                     renderSummons(shader, projection, view);   // cyan = yours, red = theirs
+                }
+                // 8b. Render 3D Flappy Bird Player (Only when in 2D Side-View!)
+                if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY && player.testMovement.flappySideView) {
+                    renderYellowBird(shader, projection, view);
                 }
 
                 // 9. Render Ability Ghost Trails
@@ -7583,5 +7607,69 @@ public class Window {
                 0,1,2, 0,2,3,  4,6,5, 4,7,6,  0,4,5, 0,5,1,
                 3,2,6, 3,6,7,  1,5,6, 1,6,2,  0,3,7, 0,7,4 };
         return new com.leaf.game.render.Mesh(v, idx);
+    }
+    /** Renders a large, full-bright 3D yellow bird with flapping wings. */
+    private void renderYellowBird(Shader shader, Matrix4f projection, Matrix4f view) {
+        Matrix4f pv = new Matrix4f(projection).mul(view);
+        float t = (float) glfwGetTime();
+
+        // Wings flap aggressively when flying up, and glide slower when falling down
+        float flapSpeed = (player.testMovement.velocity.y > 0) ? 35.0f : 12.0f;
+        float wingFlap  = (float) Math.sin(t * flapSpeed) * 0.45f;
+        Vector3f pos    = player.position;
+
+        // Enable unlit emissive rendering so the bird glows vividly in the dark
+        shader.setUniform("emissiveMode", 1);
+        shader.setUniform("emissiveTint", new Vector3f(1.6f, 1.6f, 1.6f));
+
+        // 1. Massive Yellow Body (Scale boosted to clear the 0.24f mesh limit)
+        Matrix4f body = new Matrix4f()
+                .translate(pos.x, pos.y + 0.9f, pos.z)
+                .scale(5.40f);
+        shader.setUniform("mvp", new Matrix4f(pv).mul(body));
+        getItemMesh(Block.CRYSTAL_CITRINE).render();
+
+        // 2. Large Orange Beak (facing forward along +X)
+        Matrix4f beak = new Matrix4f()
+                .translate(pos.x + 0.72f, pos.y + 0.82f, pos.z)
+                .scale(1.70f, 1.30f, 2.10f);
+        shader.setUniform("mvp", new Matrix4f(pv).mul(beak));
+        getItemMesh(Block.RED_SAND).render();
+
+        // 3. Flapping White Wings
+        // Left wing (Z = -0.75)
+        Matrix4f wingL = new Matrix4f()
+                .translate(pos.x - 0.10f, pos.y + 0.9f, pos.z - 0.75f)
+                .rotateX(wingFlap)
+                .scale(1.60f, 2.40f, 0.70f);
+        shader.setUniform("mvp", new Matrix4f(pv).mul(wingL));
+        getItemMesh(Block.SNOW).render();
+
+        // Right wing (Z = +0.75)
+        Matrix4f wingR = new Matrix4f()
+                .translate(pos.x - 0.10f, pos.y + 0.9f, pos.z + 0.75f)
+                .rotateX(-wingFlap)
+                .scale(1.60f, 2.40f, 0.70f);
+        shader.setUniform("mvp", new Matrix4f(pv).mul(wingR));
+        getItemMesh(Block.SNOW).render();
+
+        // 4. White/Black Eyes
+        // Left eye
+        Matrix4f eyeL = new Matrix4f()
+                .translate(pos.x + 0.42f, pos.y + 1.25f, pos.z - 0.52f)
+                .scale(0.70f, 0.70f, 0.70f);
+        shader.setUniform("mvp", new Matrix4f(pv).mul(eyeL));
+        getItemMesh(Block.CRYSTAL_QUARTZ).render();
+
+        // Right eye
+        Matrix4f eyeR = new Matrix4f()
+                .translate(pos.x + 0.42f, pos.y + 1.25f, pos.z + 0.52f)
+                .scale(0.70f, 0.70f, 0.70f);
+        shader.setUniform("mvp", new Matrix4f(pv).mul(eyeR));
+        getItemMesh(Block.CRYSTAL_QUARTZ).render();
+
+        // Restore normal lighting for subsequent render passes
+        shader.setUniform("emissiveMode", 0);
+        shader.setUniform("emissiveTint", new Vector3f(1.0f, 1.0f, 1.0f));
     }
 }

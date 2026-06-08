@@ -545,6 +545,10 @@ public class Player {
 
     /** Place the camera at eye height along the current up axis. */
     private void syncEye(Camera camera) {
+        // If 2D side-view is active in Flappy Mode, let the movement controller position the camera
+        if (useTestMovement && testMovement.state == TestMovementController.State.FLAPPY && testMovement.flappySideView) {
+            return;
+        }
         camera.position.set(position.x + upDir.x * EYE_HEIGHT,
                 position.y + upDir.y * EYE_HEIGHT + cameraYOffset,
                 position.z + upDir.z * EYE_HEIGHT);

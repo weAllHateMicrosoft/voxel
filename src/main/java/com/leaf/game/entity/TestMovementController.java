@@ -17,8 +17,15 @@ public class TestMovementController {
     public int flappyScore = 0;
     public int lastPassedPipeX = 5010; // Initialize to 5010 to prevent ghost scores on the platform
     private static final int FLAPPY_START_X = 5020;
-    private static final int FLAPPY_INTERVAL = 35; // Matches WorldGen spacing
+    private static final int FLAPPY_INTERVAL = 20; // Matches WorldGen spacing
     public boolean flappyWaitingToStart = true;
+    // Custom 2D Side-View variables
+    public boolean flappySideView = false; // Toggled by TAB in-game
+    private boolean lastTab = false;
+
+    // ─── TUNABLE FORWARD SPEED ───
+    // Edit this number to speed up or slow down the game! (e.g. 12.0f is fast, 6.0f is slow)
+    public float FLAPPY_FORWARD_SPEED = 10.5f;
 
     public State state = State.AIRBORNE;
 
@@ -266,39 +273,52 @@ public class TestMovementController {
                 player.position.z = 5000f; // Force lock on Z=5000
                 velocity.z = 0f;
 
-                if (flappyWaitingToStart) {
-                    // FIX (Bug 2): Re-ordered so jumpPressed sets velocity BEFORE
-                    // the blanket velocity.set(0,0,0), which was always stomping it.
-                    // Now: check jump first, then zero velocity only if not jumping.
-                    if (jumpPressed) {
-                        flappyWaitingToStart = false;
-                        // FIX (Bug 1): Spawn y was 230f, which placed the player's
-                        // feet exactly at y=230 — the interior of the platform block
-                        // whose top face sits at y=230. checkCollision() swept that
-                        // block and immediately resolved a floor collision, zeroing
-                        // velocity.y and snapping position back every frame.
-                        // Raising to 230.05f places the player cleanly above the surface.
-                        player.position.x = 4980f;
-                        player.position.y = 230.05f;
-                        player.position.z = 5000f;
-                        camera.yaw   = 0f;
+                // Toggle Side-View Camera with TAB
+                boolean tabPressed = glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS;
+                if (tabPressed && !lastTab) {
+                    flappySideView = !flappySideView;
+                    if (flappySideView) {
+                        // Snap camera yaw to -90 degrees (facing -Z) to look from +Z
+                        camera.yaw   = (float) Math.toRadians(-90.0f);
                         camera.pitch = 0f;
-                        velocity.set(0f, JUMP_FORCE * 1.5f, 0f); // Clean launch, no leftover Z
-                        com.leaf.game.core.AudioManager.play("swoosh", 0.6f, 1.25f);
                     } else {
-                        // Not started yet — hold static
-                        velocity.set(0f, 0f, 0f);
-                        player.position.x = 4980f;
-                        player.position.y = 230.05f; // FIX: same correction here
-                        player.position.z = 5000f;
+                        // RESET camera direction back to straight first-person down the track!
                         camera.yaw   = 0f;
                         camera.pitch = 0f;
+                    }
+                }
+                lastTab = tabPressed;
+
+                // ── CAMERA OVERRIDE ──
+                if (flappySideView) {
+                    // Position camera 18 blocks back along +Z (further away), centered on player X/Y
+                    camera.position.set(player.position.x, player.position.y + 0.4f, 5000f + 18.0f);
+                    camera.yaw   = (float) Math.toRadians(-90.0f); // Looking towards -Z (Left to Right movement)
+                    camera.pitch = 0f;
+                }
+
+                if (flappyWaitingToStart) {
+                    // Hold statically on the starting platform until Space is pressed
+                    velocity.set(0f, 0f, 0f);
+                    player.position.x = 4980f;
+                    player.position.y = 230.05f;
+
+                    // LOCK camera view directly down the track!
+                    if (!flappySideView) {
+                        camera.yaw   = 0f;
+                        camera.pitch = 0f;
+                    }
+
+                    if (jumpPressed) {
+                        flappyWaitingToStart = false; // Start!
+                        velocity.set(0f, JUMP_FORCE * 1.5f, 0f); // Clean launch
+                        com.leaf.game.core.AudioManager.play("swoosh", 0.6f, 1.25f);
                     }
                     break;
                 }
 
-                // Constant, automatic forward motion along +X
-                velocity.x = 8.5f;
+                // Constant, automatic forward motion along +X (Driven by customizable speed)
+                velocity.x = FLAPPY_FORWARD_SPEED;
 
                 // Heavy Flappy Gravity
                 velocity.y = Math.max(-MAX_FALL_SPEED, velocity.y - GRAVITY * dt);
