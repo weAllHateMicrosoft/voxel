@@ -6266,7 +6266,7 @@ public class Window {
         float fxDim = 0.38f + 0.62f * dayNight.dayFactor;
 
         float range = GameConfig.gatlingRange;
-        Vector3f hit;
+        Vector3f hit = null;
         com.leaf.game.entity.Enemy target =
                 (enemyManager != null) ? enemyManager.findMostAligned(world, eye, dir, range) : null;
         if (target != null) {
@@ -6276,10 +6276,91 @@ public class Window {
             hit = target.getCentre();
             fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.9f, 0.16f, 2.8f*fxDim, 1.3f*fxDim, 0.45f*fxDim);  // blood/spark
         } else {
-            hit = rayHitPoint(eye, dir, range);
-            fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.55f, 0.12f, 2.4f*fxDim, 1.7f*fxDim, 0.8f*fxDim);   // wall spark
-        }
+            // We need to raycast block-by-block to find exactly which voxel we hit
+            float step = 0.2f, d = 0f;
+            float rx = eye.x, ry = eye.y, rz = eye.z;
+            boolean hitBlock = false;
 
+            while (d < range) {
+                rx += dir.x * step; ry += dir.y * step; rz += dir.z * step; d += step;
+                int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
+
+                if (by < 0 || by >= com.leaf.game.world.Chunk.HEIGHT) break;
+
+                Block b = world.getBlock(bx, by, bz);
+                if (b.isSolid()) {
+                    hit = new Vector3f(rx, ry, rz);
+                    fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.55f, 0.12f, 2.4f*fxDim, 1.7f*fxDim, 0.8f*fxDim);
+
+                    // ── TUNABLE GATLING POWER ──
+                    int radius = 1; // 1 = tight punch, 2 = massive blast
+
+                    java.util.Set<com.leaf.game.world.Chunk> dirtyChunks = new java.util.HashSet<>();
+
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        for (int dy = -radius; dy <= radius; dy++) {
+                            for (int dz = -radius; dz <= radius; dz++) {
+                                // Spherical mask constraint
+                                if (dx*dx + dy*dy + dz*dz > radius*radius + 0.5f) continue;
+
+                                int targetX = bx + dx;
+                                int targetY = by + dy;
+                                int targetZ = bz + dz;
+
+                                if (targetY <= 1 || targetY >= com.leaf.game.world.Chunk.HEIGHT) continue;
+
+                                Block targetBlock = world.getBlock(targetX, targetY, targetZ);
+                                if (targetBlock.isSolid() && targetBlock != Block.STAR_IRON && targetBlock != Block.MEGALITH && targetBlock != Block.MEGALITH_CARVED) {
+                                    world.setBlock(targetX, targetY, targetZ, Block.AIR);
+
+                                    // Collect chunk coordinate for a single batched rebuild
+                                    int cx = Math.floorDiv(targetX, Chunk.SIZE);
+                                    int cy = Math.floorDiv(targetY, Chunk.HEIGHT);
+                                    int cz = Math.floorDiv(targetZ, Chunk.SIZE);
+                                    com.leaf.game.world.Chunk c = world.getChunk(cx, cy, cz);
+                                    if (c != null) dirtyChunks.add(c);
+
+                                    // Handle chunk boundary neighbor dirtying
+                                    int lx = Math.floorMod(targetX, Chunk.SIZE);
+                                    int lz = Math.floorMod(targetZ, Chunk.SIZE);
+                                    if (lx == 0)             { com.leaf.game.world.Chunk n = world.getChunk(cx - 1, cy, cz); if (n != null) dirtyChunks.add(n); }
+                                    if (lx == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(cx + 1, cy, cz); if (n != null) dirtyChunks.add(n); }
+                                    if (lz == 0)             { com.leaf.game.world.Chunk n = world.getChunk(cx, cy, cz - 1); if (n != null) dirtyChunks.add(n); }
+                                    if (lz == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(cx, cy, cz + 1); if (n != null) dirtyChunks.add(n); }
+
+                                    // DEBRIS SWARM REMOVED TO PREVENT TRYPOPHOBIA & CLUTTER
+                                }
+                            }
+                        }
+                    }
+
+                    // Rebuild every modified chunk EXACTLY once
+                    for (com.leaf.game.world.Chunk c : dirtyChunks) {
+                        world.buildChunkMeshes(c);
+                    }
+
+                    // Spawn exactly ONE clean dropped item at the center of the impact (if we destroyed a solid block)
+                    if (b != Block.AIR && b.isSolid()) {
+                        Vector3f ejectVel = new Vector3f(
+                                (float)(Math.random() - 0.5) * 2f,
+                                3f,
+                                (float)(Math.random() - 0.5) * 2f
+                        );
+                        droppedItems.add(new DroppedItem(bx, by, bz, b, ejectVel));
+                    }
+
+                    // Play break sound at impact center
+                    String breakSnd = blockBreakSound(b);
+                    if (breakSnd != null) AudioManager.playVaried(breakSnd, 0.6f, 0.1f);
+
+                    hitBlock = true;
+                    break;
+                }
+            }
+            if (!hitBlock) {
+                hit = new Vector3f(eye).fma(range, dir);
+            }
+        }
         // tracer: a thin, bright streak from the muzzle to the hit point
         Vector3f td = new Vector3f(hit).sub(muzzle);
         float len = td.length();
