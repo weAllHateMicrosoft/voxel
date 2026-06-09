@@ -31,8 +31,8 @@ public class Gait {
     public boolean legScanAlternativeGround = true;
     public float legScanHeightBias = 0.5f;
 
-    public float tridentKnockBack = 0.3f;
-    public float tridentRotationalKnockBack = 0.3f / 4f;
+    public float tridentKnockBack = 0.1f;
+    public float tridentRotationalKnockBack = 0.1f / 4f;
     public float legLookAheadFraction = 0.6f;
     public float groundDragCoefficient = 0.2f;
 

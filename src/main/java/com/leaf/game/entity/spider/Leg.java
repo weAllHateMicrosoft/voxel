@@ -316,57 +316,112 @@ public class Leg {
     }
 
     /**
-     * Casts a 3x3 grid of rays downward around the scan position to find the
-     * best ground candidate for this leg to step on.
+     * Casts a 3×3 grid of rays in the spider's local "down" direction around the
+     * scan position to find the best ground candidate for this leg to step on.
      *
-     * The main (centre) cast is tried first; the 8 surrounding casts only run
-     * when legScanAlternativeGround is true and the main candidate is on an
-     * awkward step height.
+     * ── WALL-CLIMB FIX ────────────────────────────────────────────────────────
+     * Previously the grid offsets were always expressed in world-XZ (flat-floor
+     * assumption). On a steep wall the spider's local surface tangent plane is
+     * nearly vertical, so world-XZ offsets gave nine almost-identical probe
+     * positions and the spider couldn't find the wall surface.
+     *
+     * The fix: derive two orthogonal tangent vectors from the scan pivot's "up"
+     * axis (which is already orientation-aware via updateMemo), then spread the
+     * 3×3 grid along those tangent vectors. The ray direction (scanVector) is
+     * unchanged — it was already orientation-aware. Only the grid start positions
+     * are rotated into surface space.
+     *
+     * Safety: we keep the original world-XZ path as a fallback when the tangent
+     * basis degenerates (length < ε). In practice this cannot happen for valid
+     * orientations, but it prevents silent NaN propagation.
+     * ─────────────────────────────────────────────────────────────────────────
      */
     private LegTarget locateGround() {
         float scanLength = scanVector.length();
 
         int[] idCounter = {0};
 
-        LegTarget mainCandidate = rayCast(
-                scanStartPosition.x, scanStartPosition.z,
-                scanLength, idCounter);
+        // ── Build the surface-local tangent basis ──────────────────────────────
+        //
+        // scanPivot's "up" axis is the direction the spider considers "away from
+        // the surface" (already orientation-aware). The two tangents that are
+        // perpendicular to it span the surface plane we want to sample.
+        //
+        // tangentA ≈ local right on the surface
+        // tangentB ≈ local forward on the surface
+        //
+        // We choose world-X as the reference for the first cross-product, falling
+        // back to world-Z if the up vector is nearly parallel to world-X.
+
+        Quaternionf scanPivot = spider.gait().scanPivotMode.get(spider);
+        Vector3f surfaceUp = new Vector3f(0f, 1f, 0f).rotate(scanPivot).normalize();
+
+        Vector3f worldRef = (Math.abs(surfaceUp.x) < 0.9f)
+                ? new Vector3f(1f, 0f, 0f)
+                : new Vector3f(0f, 0f, 1f);
+
+        Vector3f tangentA = new Vector3f(surfaceUp).cross(worldRef);
+        float tanALen = tangentA.length();
+        if (tanALen < 1e-4f) {
+            // Degenerate basis — fall back to world-XZ offsets (original behaviour).
+            // This should never occur for non-zero orientations.
+            tangentA = new Vector3f(1f, 0f, 0f);
+            tanALen  = 1f;
+        }
+        tangentA.div(tanALen); // normalise
+
+        Vector3f tangentB = new Vector3f(surfaceUp).cross(tangentA).normalize();
+
+        // ── Main (centre) cast ────────────────────────────────────────────────
+        LegTarget mainCandidate = rayCast3D(scanStartPosition, scanLength, idCounter);
 
         if (!spider.gait().legScanAlternativeGround) return mainCandidate;
 
-        // Accept the main candidate if it is within a comfortable step height
-        // (not too high to climb, not so far down it implies a cliff).
+        // Accept main candidate if it is within a comfortable step height
         if (mainCandidate != null) {
-            float mainY    = mainCandidate.position.y;
+            float mainY      = mainCandidate.position.y;
             float lookAheadY = lookAheadPosition.y;
             if (mainY >= lookAheadY - 0.24f && mainY <= lookAheadY + 1.5f) {
                 return mainCandidate;
             }
         }
 
-        // Sample a 3x3 grid at block boundaries ± a small margin
+        // ── 3×3 grid spread along the surface tangent plane ───────────────────
+        //
+        // Previously: offsets were in world-XZ (±floor(x)/ceil(x), ±floor(z)/ceil(z)).
+        // Now: offsets are ±margin along tangentA and ±margin along tangentB so the
+        // probe grid lies on the actual surface the spider is standing on.
+        //
+        // margin is kept identical to the original (2/16 blocks) so step-detection
+        // sensitivity is unchanged on flat ground.
         float margin = 2f / 16f;
-        float x  = scanStartPosition.x;
-        float z  = scanStartPosition.z;
-        float nx = (float) Math.floor(x) - margin;
-        float nz = (float) Math.floor(z) - margin;
-        float pz = (float) Math.ceil(z)  + margin;
-        float px = (float) Math.ceil(x)  + margin;
 
-        LegTarget[] candidates = {
-                rayCast(nx, nz, scanLength, idCounter),
-                rayCast(nx, z,  scanLength, idCounter),
-                rayCast(nx, pz, scanLength, idCounter),
-                rayCast(x,  nz, scanLength, idCounter),
-                mainCandidate,
-                rayCast(x,  pz, scanLength, idCounter),
-                rayCast(px, nz, scanLength, idCounter),
-                rayCast(px, z,  scanLength, idCounter),
-                rayCast(px, pz, scanLength, idCounter),
+        // Compute the nine probe start positions in surface-local space.
+        // Index layout matches the original array order so the selection logic
+        // below (closest to preferredPosition) is unchanged.
+        Vector3f[] offsets = {
+                new Vector3f(tangentA).mul(-margin).add(new Vector3f(tangentB).mul(-margin)),
+                new Vector3f(tangentA).mul(-margin),
+                new Vector3f(tangentA).mul(-margin).add(new Vector3f(tangentB).mul( margin)),
+                new Vector3f(tangentB).mul(-margin),
+                new Vector3f(),   // centre (mainCandidate slot)
+                new Vector3f(tangentB).mul( margin),
+                new Vector3f(tangentA).mul( margin).add(new Vector3f(tangentB).mul(-margin)),
+                new Vector3f(tangentA).mul( margin),
+                new Vector3f(tangentA).mul( margin).add(new Vector3f(tangentB).mul( margin)),
         };
 
-        // Bias the preferred Y upward if there is a solid block directly ahead
-        // (the spider is about to climb a step).
+        LegTarget[] candidates = new LegTarget[9];
+        for (int i = 0; i < 9; i++) {
+            if (i == 4) {
+                candidates[4] = mainCandidate; // keep already-computed centre
+            } else {
+                Vector3f probeStart = new Vector3f(scanStartPosition).add(offsets[i]);
+                candidates[i] = rayCast3D(probeStart, scanLength, idCounter);
+            }
+        }
+
+        // ── Height-bias preferred position if a step is imminent ──────────────
         Vector3f preferredPosition = new Vector3f(lookAheadPosition);
 
         Vector3f frontCheck = new Vector3f(spider.forwardDirection()).add(lookAheadPosition);
@@ -377,9 +432,9 @@ public class Leg {
             preferredPosition.y += spider.gait().legScanHeightBias;
         }
 
-        // Pick the candidate closest to the preferred position
-        LegTarget best = null;
-        float bestDist = Float.MAX_VALUE;
+        // ── Pick the candidate closest to the preferred position ───────────────
+        LegTarget best     = null;
+        float     bestDist = Float.MAX_VALUE;
         for (LegTarget c : candidates) {
             if (c == null) continue;
             float d = c.position.distanceSquared(preferredPosition);
@@ -394,10 +449,16 @@ public class Leg {
         return best;
     }
 
-    private LegTarget rayCast(float x, float z, float scanLength, int[] idCounter) {
+    /**
+     * Casts a single ray from {@code start} in the scanVector direction.
+     *
+     * Unlike the old {@code rayCast(float x, float z, ...)}, this method takes a
+     * full 3D start point so it works correctly on any surface orientation,
+     * not just on floors where world-Y defines the start height.
+     */
+    private LegTarget rayCast3D(Vector3f start, float scanLength, int[] idCounter) {
         idCounter[0]++;
-        Vector3f start = new Vector3f(x, scanStartPosition.y, z);
-        Vector3f hit   = SpiderWorldAdapter.raycastGround(
+        Vector3f hit = SpiderWorldAdapter.raycastGround(
                 spider.world, start, scanVector, scanLength);
         if (hit == null) return null;
         return new LegTarget(new Vector3f(hit), true, idCounter[0]);

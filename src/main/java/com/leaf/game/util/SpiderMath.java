@@ -164,6 +164,32 @@ public final class SpiderMath {
         return out.mul(1f / list.size());
     }
 
+    // ── Surface Projection ──────────────────────────────────────────────────
+
+    /**
+     * Projects {@code v} onto the plane whose normal is {@code surfaceNormal}.
+     *
+     * Result = v - (v · n̂) * n̂
+     *
+     * Used to redirect gravity/velocity so they slide along the terrain surface
+     * rather than pulling the spider away from a wall it is currently climbing.
+     *
+     * Returns a NEW vector; neither input is modified.
+     * If {@code surfaceNormal} has near-zero length the original vector is returned
+     * unchanged, so the caller degrades gracefully back to world-space behaviour.
+     */
+    public static Vector3f projectOntoPlane(Vector3f v, Vector3f surfaceNormal) {
+        float lenSq = surfaceNormal.lengthSquared();
+        if (lenSq < 1e-6f) return new Vector3f(v);
+        // normalise inline to avoid allocating a separate normalised copy
+        float invLen = 1f / (float) Math.sqrt(lenSq);
+        float nx = surfaceNormal.x * invLen;
+        float ny = surfaceNormal.y * invLen;
+        float nz = surfaceNormal.z * invLen;
+        float dot = v.x * nx + v.y * ny + v.z * nz;
+        return new Vector3f(v.x - dot * nx, v.y - dot * ny, v.z - dot * nz);
+    }
+
     // ── Nested Classes (SplitDistance, SplitDistanceZone, Rect) ─────────────
 
     public static class SplitDistance {
