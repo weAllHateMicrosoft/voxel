@@ -9,15 +9,37 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import java.util.List;
 
+import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
+import static org.lwjgl.opengl.GL13.glActiveTexture;
+
 public class SpiderRenderer {
 
-    public static void render(SpiderEnemy spider, Shader shader, Matrix4f projection, Matrix4f view) {
+    // Give the spider its own model shader so it doesn't get darkened by the Abyss terrain fog!
+    private static Shader spiderShader = null;
+
+    public static void render(SpiderEnemy spider, Shader fallbackShader, Matrix4f projection, Matrix4f view) {
+        if (spiderShader == null) {
+            spiderShader = new Shader(
+                    "src/main/resources/shaders/model_vertex.glsl",
+                    "src/main/resources/shaders/model_fragment.glsl");
+        }
+
         SpiderBody body = spider.getBody();
         Matrix4f pv = new Matrix4f(projection).mul(view);
 
+        spiderShader.bind();
+        spiderShader.setUniform("lightDir", new Vector3f(0.6f, 1f, 0.4f).normalize());
+        spiderShader.setUniform("ambient", 0.35f);
+        spiderShader.setUniform("tintColor", new Vector3f(0f, 0f, 0f));
+        spiderShader.setUniform("tintAmt", 0f);
+        spiderShader.setUniform("glow", 1.0f);
+        spiderShader.setUniform("cutActive", 0);
+        spiderShader.setUniform("clipPose", new Matrix4f());
+        spiderShader.setUniform("tex", 0); // Read from texture unit 0
+
         // 1. Render Torso Structure
         Matrix4f torsoTransform = new Matrix4f().translate(body.position).rotate(body.orientation);
-        renderModel(shader, pv, body.bodyPlan.bodyModel, torsoTransform);
+        renderModel(spiderShader, pv, body.bodyPlan.bodyModel, torsoTransform);
 
         // 2. Render Leg Segments
         Quaternionf pivot = body.gait().legChainPivotMode.get(body);
@@ -32,47 +54,67 @@ public class SpiderRenderer {
                 Quaternionf rot = rotations.get(i);
 
                 Matrix4f segmentTransform = new Matrix4f().translate(startPos).rotate(rot);
-                renderModel(shader, pv, segmentPlan.model, segmentTransform);
+                renderModel(spiderShader, pv, segmentPlan.model, segmentTransform);
             }
         }
+
+        spiderShader.unbind();
     }
 
     private static void renderModel(Shader shader, Matrix4f pv, DisplayModel model, Matrix4f transformation) {
         for (BlockDisplayModelPiece piece : model.pieces) {
             Matrix4f pieceTransform = new Matrix4f(transformation).mul(piece.transform);
             Matrix4f mvp = new Matrix4f(pv).mul(pieceTransform);
-            shader.setUniform("mvp", mvp);
 
-            // Handle emissive elements (Glowing cyan eyes and structural blinking lights)
+            // Calculate normal matrix so 3D lighting hits the faces correctly
+            Matrix4f normalMat = new Matrix4f(pieceTransform).invert().transpose();
+
+            shader.setUniform("mvp", mvp);
+            shader.setUniform("normalMat", normalMat);
+
+            // Emissive tags
             if (piece.tags.contains("eye")) {
-                shader.setUniform("emissiveMode", 1);
-                shader.setUniform("emissiveTint", new Vector3f(0.0f, 2.5f, 2.5f)); // Searing cyan
+                shader.setUniform("tintColor", new Vector3f(0.0f, 2.5f, 2.5f));
+                shader.setUniform("tintAmt", 1.0f);
+                shader.setUniform("glow", 2.0f);
             } else if (piece.tags.contains("blinking_lights")) {
-                shader.setUniform("emissiveMode", 1);
-                shader.setUniform("emissiveTint", new Vector3f(0.4f, 2.0f, 0.6f)); // Glowing green
+                shader.setUniform("tintColor", new Vector3f(0.4f, 2.0f, 0.6f));
+                shader.setUniform("tintAmt", 1.0f);
+                shader.setUniform("glow", 1.5f);
+            } else {
+                shader.setUniform("tintAmt", 0f);
+                shader.setUniform("glow", 1.0f);
             }
+
+            // ── TEXTURE MAPPING EXACTLY TO YOUR SCREENSHOTS ──
+            String texName = piece.blockName;
+            if (texName.equals("cyan_shulker_box")) texName = "shulker_cyan";
+            if (texName.equals("gray_shulker_box")) texName = "shulker_gray";
+            if (texName.equals("black_shulker_box")) texName = "shulker_black";
+            if (texName.equals("polished_deepslate_slab")) texName = "polished_deepslate";
 
             shader.setUniform("useTexture", 1);
 
-            // Bind the correct texture map
-            Texture tex = AssetManager.get().getTexture(piece.blockName);
+            Texture tex = AssetManager.get().getTexture(texName);
             if (tex != null) {
+                glActiveTexture(GL_TEXTURE0);
                 tex.bind();
+            } else {
+                shader.setUniform("useTexture", 0);
             }
 
-            // Draw the block geometry
+            // Draw the geometry (If OBJ is missing, AssetManager naturally falls back to the default cube!)
             ModelMesh mesh = AssetManager.get().getModel(piece.blockName);
             if (mesh != null) {
                 mesh.render();
             }
-
-            shader.setUniform("useTexture", 0);
-            shader.setUniform("emissiveMode", 0);
-            shader.setUniform("emissiveTint", new Vector3f(1.0f, 1.0f, 1.0f));
         }
     }
 
     public static void cleanup() {
-        // GPU cleanups are resolved natively via AssetManager.get().cleanup() on shutdown
+        if (spiderShader != null) {
+            spiderShader.cleanup();
+            spiderShader = null;
+        }
     }
 }

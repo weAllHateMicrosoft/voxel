@@ -38,7 +38,7 @@ public class SpiderWorldAdapter {
      * Checks if a specific point is resting on the ground.
      */
     public static boolean isOnGround(World world, Vector3f position, Vector3f downVector) {
-        Vector3f hit = raycastGround(world, position, downVector, 0.15f);  // was 0.15
+        Vector3f hit = raycastGround(world, position, downVector, 0.15f);
         return hit != null;
     }
 

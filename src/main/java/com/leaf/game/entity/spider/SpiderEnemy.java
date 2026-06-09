@@ -18,6 +18,9 @@ public class SpiderEnemy extends Enemy {
     private boolean initialized = false;
     private float attackCooldown = 0f;
 
+    // NEW: Accumulator to track time between frames
+    private float tickAccumulator = 0f;
+
     public SpiderEnemy(float x, float y, float z) {
         super(x, y, z, Type.SPIDER);
     }
@@ -28,7 +31,7 @@ public class SpiderEnemy extends Enemy {
 
     @Override
     public void update(float dt, World world, Vector3f playerPos, List<Enemy> allEnemies) {
-        // Standard state resets
+        // Standard state resets (Runs every frame)
         framePlayerDamage = 0f;
         wantsToThrow = false;
         pendingGrabImpact = false;
@@ -55,74 +58,91 @@ public class SpiderEnemy extends Enemy {
             this.initialized = true;
         }
 
-        if (this.knockbackVelX != 0f || this.knockbackVelZ != 0f) {
-            body.velocity.x += this.knockbackVelX;
-            body.velocity.z += this.knockbackVelZ;
-            this.knockbackVelX = 0f;
-            this.knockbackVelZ = 0f;
+        // ── 20 TPS FIXED TIMESTEP LOOP ──
+        // This ensures the physics and AI only run exactly 20 times per second
+        // regardless of your monitor's framerate, fixing the shaking!
+
+        tickAccumulator += dt;
+        float tickRate = 1.0f / 20.0f; // 0.05 seconds per tick
+
+        while (tickAccumulator >= tickRate) {
+
+            if (this.knockbackVelX != 0f || this.knockbackVelZ != 0f) {
+                body.velocity.x += this.knockbackVelX;
+                body.velocity.z += this.knockbackVelZ;
+                this.knockbackVelX = 0f;
+                this.knockbackVelZ = 0f;
+            }
+
+            // Note: Use tickRate here instead of dt since we are in the fixed loop
+            if (attackCooldown > 0f) attackCooldown -= tickRate;
+
+            // ── BEHAVIOR SWITCH ──
+            if (mode == BehaviorMode.HOSTILE) {
+                body.gallop = false;
+                Vector3f direction = new Vector3f(playerPos).sub(body.position);
+                direction.y = 0;
+                float dist = direction.length();
+                if (dist > 0.001f) direction.normalize();
+
+                body.rotateTowards(direction);
+
+                float currentSpeed = SpiderMath.horizontalLength(body.velocity);
+                float decelerateDist = (currentSpeed * currentSpeed) / (2f * body.gait().moveAcceleration);
+                float stopDist = 2.5f;
+
+                if (dist > stopDist + decelerateDist) {
+                    body.walkAt(new Vector3f(direction).mul(body.gait().maxSpeed));
+                } else {
+                    body.walkAt(new Vector3f(0f, 0f, 0f));
+                }
+
+                if (dist <= stopDist * 1.2f && attackCooldown <= 0f) {
+                    framePlayerDamage = 25f;
+                    attackCooldown = 1.2f;
+                    com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f)null, 30f);
+                }
+
+            } else if (mode == BehaviorMode.IDLE) {
+                body.gallop = false;
+                body.walkAt(new Vector3f(0f, 0f, 0f));
+
+            } else if (mode == BehaviorMode.FOLLOW_TARGET) {
+                body.gallop = true; // Use the fast gait to chase the laser!
+                Vector3f direction = new Vector3f(laserTarget).sub(body.position);
+                direction.y = 0;
+                float dist = direction.length();
+                if (dist > 0.001f) direction.normalize();
+
+                body.rotateTowards(direction);
+
+                float currentSpeed = SpiderMath.horizontalLength(body.velocity);
+                float decelerateDist = (currentSpeed * currentSpeed) / (2f * body.gait().moveAcceleration);
+
+                if (dist > 1.5f + decelerateDist) {
+                    body.walkAt(new Vector3f(direction).mul(body.gait().maxSpeed));
+                } else {
+                    body.walkAt(new Vector3f(0f, 0f, 0f));
+                }
+
+            } else if (mode == BehaviorMode.RIDDEN) {
+                body.gallop = true; // Sprint while riding
+                if (rideInput.lengthSquared() > 0.001f) {
+                    body.rotateTowards(rideInput);
+                    body.walkAt(new Vector3f(rideInput).mul(body.gait().maxSpeed));
+                } else {
+                    body.walkAt(new Vector3f(0f, 0f, 0f));
+                }
+            }
+
+            // Run the main IK and physics logic once per tick
+            body.update();
+
+            // Subtract the time we just consumed
+            tickAccumulator -= tickRate;
         }
 
-        if (attackCooldown > 0f) attackCooldown -= dt;
-
-        // ── BEHAVIOR SWITCH ──
-        if (mode == BehaviorMode.HOSTILE) {
-            body.gallop = false;
-            Vector3f direction = new Vector3f(playerPos).sub(body.position);
-            direction.y = 0;
-            float dist = direction.length();
-            if (dist > 0.001f) direction.normalize();
-
-            body.rotateTowards(direction);
-
-            float currentSpeed = SpiderMath.horizontalLength(body.velocity);
-            float decelerateDist = (currentSpeed * currentSpeed) / (2f * body.gait().moveAcceleration);
-            float stopDist = 2.5f;
-
-            if (dist > stopDist + decelerateDist) {
-                body.walkAt(new Vector3f(direction).mul(body.gait().maxSpeed));
-            } else {
-                body.walkAt(new Vector3f(0f, 0f, 0f));
-            }
-
-            if (dist <= stopDist * 1.2f && attackCooldown <= 0f) {
-                framePlayerDamage = 25f;
-                attackCooldown = 1.2f;
-                com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f)null, 30f);
-            }
-
-        } else if (mode == BehaviorMode.IDLE) {
-            body.gallop = false;
-            body.walkAt(new Vector3f(0f, 0f, 0f));
-
-        } else if (mode == BehaviorMode.FOLLOW_TARGET) {
-            body.gallop = true; // Use the fast gait to chase the laser!
-            Vector3f direction = new Vector3f(laserTarget).sub(body.position);
-            direction.y = 0;
-            float dist = direction.length();
-            if (dist > 0.001f) direction.normalize();
-
-            body.rotateTowards(direction);
-
-            float currentSpeed = SpiderMath.horizontalLength(body.velocity);
-            float decelerateDist = (currentSpeed * currentSpeed) / (2f * body.gait().moveAcceleration);
-
-            if (dist > 1.5f + decelerateDist) {
-                body.walkAt(new Vector3f(direction).mul(body.gait().maxSpeed));
-            } else {
-                body.walkAt(new Vector3f(0f, 0f, 0f));
-            }
-
-        } else if (mode == BehaviorMode.RIDDEN) {
-            body.gallop = true; // Sprint while riding
-            if (rideInput.lengthSquared() > 0.001f) {
-                body.rotateTowards(rideInput);
-                body.walkAt(new Vector3f(rideInput).mul(body.gait().maxSpeed));
-            } else {
-                body.walkAt(new Vector3f(0f, 0f, 0f));
-            }
-        }
-
-        body.update();
+        // Apply final smooth position to render entity
         this.position.set(body.position);
     }
 }
