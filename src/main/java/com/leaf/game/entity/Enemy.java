@@ -36,7 +36,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY }
+    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY, SPIDER }
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -209,6 +209,12 @@ public class Enemy {
                 health_ = 999f; speed_ = 0f; dps_ = 0f; aggro_ = 0f;
                 atk_    = 0f;   atkI_  = 999f;
                 cr = 0.5f; hh = 1.0f;
+            }
+            case SPIDER -> {
+                health_ = 180f; speed_ = 8.0f;
+                dps_    = 25f;  aggro_ = 45f;
+                atk_    = 2.5f; atkI_  = 1.2f;
+                cr = 1.2f; hh = 0.8f; // Wide, squat hitbox
             }
             default -> {
                 health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
@@ -1115,6 +1121,7 @@ public class Enemy {
             case ZOMBIE   -> new float[]{ 0.75f, 0.88f, 0.75f };
             case SLIME    -> new float[]{ 0.85f, 0.85f, 0.85f };
             case GUARDIAN -> new float[]{ 1.0f,  1.0f,  1.0f  };
+            case SPIDER   -> new float[]{ 1.0f,  1.0f,  1.0f  };
             case DUMMY    -> new float[]{ 0.75f, 0.88f, 0.75f };
         };
     }

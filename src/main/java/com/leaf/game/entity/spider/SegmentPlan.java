@@ -12,6 +12,6 @@ public class SegmentPlan {
     }
 
     public SegmentPlan clone() {
-        return new SegmentPlan(length, initDirection);
+        return new SegmentPlan(length, new Vector3f(initDirection));
     }
 }

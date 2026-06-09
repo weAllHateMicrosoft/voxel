@@ -110,6 +110,63 @@ public class CommandHandler {
                     }
                 }
                 break;
+            case "spider":
+                if (parts.length < 2) {
+                    win.chatHistory.add("[System]: Usage: /spider [spawn|laser|ride]");
+                    break;
+                }
+                if (parts[1].equals("spawn")) {
+                    Enemy e = win.enemyManager.spawnAt(win.player.position.x + 3, win.player.position.y + 1, win.player.position.z, Enemy.Type.SPIDER);
+                    if (e instanceof com.leaf.game.entity.spider.SpiderEnemy) {
+                        ((com.leaf.game.entity.spider.SpiderEnemy) e).mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.IDLE;
+                        win.chatHistory.add("[System]: Spawned a friendly sandbox spider.");
+                    }
+                } else if (parts[1].equals("laser")) {
+                    win.spiderLaserActive = !win.spiderLaserActive;
+                    // Switch all friendly spiders to/from FOLLOW mode
+                    for (Enemy e : win.enemyManager.getEnemies()) {
+                        if (e instanceof com.leaf.game.entity.spider.SpiderEnemy) {
+                            com.leaf.game.entity.spider.SpiderEnemy se = (com.leaf.game.entity.spider.SpiderEnemy) e;
+                            if (se.mode != com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.HOSTILE) {
+                                se.mode = win.spiderLaserActive ?
+                                        com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.FOLLOW_TARGET :
+                                        com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.IDLE;
+                            }
+                        }
+                    }
+                    win.chatHistory.add("[System]: Spider laser pointer " + (win.spiderLaserActive ? "ON" : "OFF"));
+                } else if (parts[1].equals("ride")) {
+                    if (win.riddenSpider != null) {
+                        win.riddenSpider.mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.IDLE;
+                        win.riddenSpider = null;
+                        win.chatHistory.add("[System]: Dismounted spider.");
+                    } else {
+                        // Find closest friendly spider
+                        com.leaf.game.entity.spider.SpiderEnemy best = null;
+                        float bestDist = 10f;
+                        for (Enemy e : win.enemyManager.getEnemies()) {
+                            if (e instanceof com.leaf.game.entity.spider.SpiderEnemy && e.alive) {
+                                com.leaf.game.entity.spider.SpiderEnemy se = (com.leaf.game.entity.spider.SpiderEnemy) e;
+                                if (se.mode != com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.HOSTILE) {
+                                    float d = se.position.distance(win.player.position);
+                                    if (d < bestDist) {
+                                        bestDist = d;
+                                        best = se;
+                                    }
+                                }
+                            }
+                        }
+                        if (best != null) {
+                            win.riddenSpider = best;
+                            best.mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.RIDDEN;
+                            win.spiderLaserActive = false; // Turn off laser if riding
+                            win.chatHistory.add("[System]: Mounted spider! Use WASD to steer.");
+                        } else {
+                            win.chatHistory.add("[System]: No friendly spider nearby to mount.");
+                        }
+                    }
+                }
+                break;
 
             default:
                 win.chatHistory.add("[System]: Unknown command. Type '/help' for options.");

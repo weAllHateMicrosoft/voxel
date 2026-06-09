@@ -28,8 +28,7 @@ public class SpiderWorldAdapter {
 
             // Check if the current block is solid
             if (world.getBlock(bx, by, bz).isSolid()) {
-                // Return the position, but snap Y to the top surface of the block
-                return new Vector3f(pos.x, by + 1.0f, pos.z);
+                return new Vector3f(pos.x - step.x, by + 1.0f, pos.z - step.z); // step back one
             }
         }
         return null;

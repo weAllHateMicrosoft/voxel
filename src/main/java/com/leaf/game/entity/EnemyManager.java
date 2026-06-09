@@ -142,7 +142,12 @@ public class EnemyManager {
 
     /** Spawn a typed enemy at the given world position. */
     public Enemy spawnAt(float x, float y, float z, Enemy.Type type) {
-        Enemy e = new Enemy(x, y, z, type);
+        Enemy e;
+        if (type == Enemy.Type.SPIDER) {
+            e = new com.leaf.game.entity.spider.SpiderEnemy(x, y, z);
+        } else {
+            e = new Enemy(x, y, z, type);
+        }
         enemies.add(e);
         return e;
     }
@@ -365,8 +370,10 @@ public class EnemyManager {
         } else if (waveNumber <= 6) {
             if (r < 0.08f)      return Enemy.Type.GOLEM;
             else if (r < 0.40f) return Enemy.Type.SLIME;
+            else if (r < 0.55f) return Enemy.Type.SPIDER;
             else if (r < 0.70f) return Enemy.Type.ZOMBIE;
             else                return Enemy.Type.THROWER;
+
         } else {
             float golemChance = Math.min(0.35f, 0.10f + (waveNumber - 7) * 0.025f);
             if (r < golemChance)             return Enemy.Type.GOLEM;

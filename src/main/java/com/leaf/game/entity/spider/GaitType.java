@@ -26,7 +26,12 @@ public enum GaitType {
     public boolean canMoveLeg(Leg leg, SpiderBody spider) {
         int index = spider.legs.indexOf(leg);
 
-        if (this == GALLOP && spider.isWalking) { // Gallop gait logic
+        if (this == GALLOP) {
+            // Fixed: fall back to walking checks when stationary while in gallop mode
+            if (!spider.isWalking) {
+                return walkCanMove(leg, spider, index);
+            }
+
             if (!leg.target.isGrounded) return true;
 
             boolean onGround = spider.onGround;
@@ -41,43 +46,47 @@ public enum GaitType {
             if (leg.isPrimary) {
                 Leg front = getOrNull(spider.legs, LegLookUp.diagonalFront(index));
 
-                if (front != null && leg.target.isGrounded && front.timeSinceBeginMove < spider.gait.crossPairCooldown) {
+                if (front != null && leg.target.isGrounded && front.timeSinceBeginMove < spider.gait().crossPairCooldown) {
                     return false;
                 }
                 return leg.isOutsideTriggerZone() || !leg.touchingGround;
             } else {
-                boolean hasCooldown = pair.target.isGrounded && (pair.timeSinceBeginMove < spider.gait.samePairCooldown);
+                boolean hasCooldown = pair.target.isGrounded && (pair.timeSinceBeginMove < spider.gait().samePairCooldown);
                 return pair.isMoving && !hasCooldown;
             }
         }
-        else { // Walk gait logic
-            if (!leg.target.isGrounded) return true;
-
-            leg.isPrimary = true;
-            List<Leg> crossPair = unIndexLeg(spider, LegLookUp.adjacent(index));
-            for (Leg l : crossPair) {
-                if (!l.isGrounded() && !l.isDisabled && l.target.isGrounded) return false;
-            }
-
-            for (Leg l : crossPair) {
-                if (l.target.isGrounded && l.timeSinceStopMove < spider.gait.crossPairCooldown) return false;
-            }
-
-            List<Leg> samePair = unIndexLeg(spider, LegLookUp.diagonal(index));
-            for (Leg l : samePair) {
-                if (l.target.isGrounded && l.timeSinceBeginMove < spider.gait.samePairCooldown) return false;
-            }
-
-            boolean wantsToMove = leg.isOutsideTriggerZone() || !leg.touchingGround;
-            boolean alreadyAtTarget = leg.endEffector.distanceSquared(leg.target.position) < 0.01f;
-
-            boolean onGround = spider.onGround;
-            for (Leg l : spider.legs) {
-                if (l.isGrounded()) { onGround = true; break; }
-            }
-
-            return wantsToMove && !alreadyAtTarget && onGround;
+        else {
+            return walkCanMove(leg, spider, index);
         }
+    }
+
+    private boolean walkCanMove(Leg leg, SpiderBody spider, int index) {
+        if (!leg.target.isGrounded) return true;
+
+        leg.isPrimary = true;
+        List<Leg> crossPair = unIndexLeg(spider, LegLookUp.adjacent(index));
+        for (Leg l : crossPair) {
+            if (!l.isGrounded() && !l.isDisabled && l.target.isGrounded) return false;
+        }
+
+        for (Leg l : crossPair) {
+            if (l.target.isGrounded && l.timeSinceStopMove < spider.gait().crossPairCooldown) return false;
+        }
+
+        List<Leg> samePair = unIndexLeg(spider, LegLookUp.diagonal(index));
+        for (Leg l : samePair) {
+            if (l.target.isGrounded && l.timeSinceBeginMove < spider.gait().samePairCooldown) return false;
+        }
+
+        boolean wantsToMove = leg.isOutsideTriggerZone() || !leg.touchingGround;
+        boolean alreadyAtTarget = leg.endEffector.distanceSquared(leg.target.position) < 0.01f;
+
+        boolean onGround = spider.onGround;
+        for (Leg l : spider.legs) {
+            if (l.isGrounded()) { onGround = true; break; }
+        }
+
+        return wantsToMove && !alreadyAtTarget && onGround;
     }
 
     private List<Leg> unIndexLeg(SpiderBody spider, List<Integer> indices) {
