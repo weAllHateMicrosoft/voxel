@@ -4,6 +4,10 @@ public class LegModelApplier {
 
     public static void applyMechanicalLegModel(BodyPlan bodyPlan) {
         for (LegPlan leg : bodyPlan.legs) {
+            // Right legs are placed on the negative X side.
+            // We use this to detect and perfectly mirror them!
+            boolean isRightLeg = leg.attachmentPosition.x < 0f;
+
             for (int i = 0; i < leg.segments.size(); i++) {
                 SegmentPlan segment = leg.segments.get(i);
                 DisplayModel model;
@@ -20,9 +24,11 @@ public class LegModelApplier {
                     model = SpiderLegModel.FEMUR;
                 }
 
-                // Clone and dynamically scale segment transformations to fit physical plan lengths
                 segment.model = model.clone();
-                segment.model.scale(1.0f, 1.0f, segment.length);
+
+                // Mirror X by -1.0f if it's a right leg, achieving perfect symmetry!
+                float mirrorX = isRightLeg ? -1.0f : 1.0f;
+                segment.model.scale(mirrorX, 1.0f, segment.length);
             }
         }
     }

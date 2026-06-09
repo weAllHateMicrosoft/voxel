@@ -9,6 +9,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import java.util.List;
 
+import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
 import static org.lwjgl.opengl.GL13.glActiveTexture;
 
@@ -36,6 +37,9 @@ public class SpiderRenderer {
         spiderShader.setUniform("clipPose", new Matrix4f());
         spiderShader.setUniform("tex", 0);
 
+        // Disabling cull face so the -1.0x scaled (mirrored) right legs don't turn invisible!
+        glDisable(GL_CULL_FACE);
+
         // 1. Render Torso Structure
         Matrix4f torsoTransform = new Matrix4f().translate(body.position).rotate(body.orientation);
         renderModel(spiderShader, pv, body.bodyPlan.bodyModel, torsoTransform);
@@ -62,9 +66,16 @@ public class SpiderRenderer {
 
     private static void renderModel(Shader shader, Matrix4f pv, DisplayModel model, Matrix4f transformation) {
         for (BlockDisplayModelPiece piece : model.pieces) {
-            Matrix4f pieceTransform = new Matrix4f(transformation).mul(piece.transform);
-            Matrix4f mvp = new Matrix4f(pv).mul(pieceTransform);
 
+            // ── CRITICAL FIX: PIVOT & TRANSLATION ──
+            // Shifts the cube to 0..1 to match Minecraft's corner-pivot math,
+            // then applies the matrix, then applies the entity offset!
+            Matrix4f pieceTransform = new Matrix4f(transformation)
+                    .translate(-0.5f, 0f, -0.5f)
+                    .mul(piece.transform)
+                    .translate(0.5f, 0.5f, 0.5f);
+
+            Matrix4f mvp = new Matrix4f(pv).mul(pieceTransform);
             Matrix4f normalMat = new Matrix4f(pieceTransform).invert().transpose();
 
             shader.setUniform("mvp", mvp);
@@ -99,7 +110,6 @@ public class SpiderRenderer {
                 shader.setUniform("useTexture", 0);
             }
 
-            // Renders the fallback 1x1x1 cube, squashing it perfectly into the matrices!
             ModelMesh mesh = AssetManager.get().getModel(piece.blockName);
             if (mesh != null) {
                 mesh.render();

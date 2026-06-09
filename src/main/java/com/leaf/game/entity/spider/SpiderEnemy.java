@@ -18,7 +18,6 @@ public class SpiderEnemy extends Enemy {
     private boolean initialized = false;
     private float attackCooldown = 0f;
 
-    // NEW: Accumulator to track time between frames
     private float tickAccumulator = 0f;
 
     public SpiderEnemy(float x, float y, float z) {
@@ -29,9 +28,23 @@ public class SpiderEnemy extends Enemy {
         return body;
     }
 
+    private void scaleGaitFor60TPS(Gait g, float t) {
+        g.maxSpeed *= t;
+        g.moveAcceleration *= t * t;
+        g.rotateAcceleration *= t * t;
+        g.legMoveSpeed *= t;
+        g.gravityAcceleration *= t * t;
+        g.bodyHeightCorrectionAcceleration *= t * t;
+        g.tridentRotationalKnockBack *= t * t;
+        g.airDragCoefficient *= t;
+        g.groundDragCoefficient *= t;
+        g.rotationalDragCoefficient *= t;
+        g.samePairCooldown *= 3;
+        g.crossPairCooldown *= 3;
+    }
+
     @Override
     public void update(float dt, World world, Vector3f playerPos, List<Enemy> allEnemies) {
-        // Standard state resets (Runs every frame)
         framePlayerDamage = 0f;
         wantsToThrow = false;
         pendingGrabImpact = false;
@@ -47,6 +60,13 @@ public class SpiderEnemy extends Enemy {
         if (!initialized) {
             SpiderOptions options = SpiderPresets.hexBot(4, 1.0f);
 
+            // ── TUNE PHYSICS TO 60 TPS SMOOTHNESS ──
+            // The original was built for Minecraft's 20 TPS. We scale the forces
+            // perfectly so it runs at 60 FPS without moving 3x faster!
+            float t = 1.0f / 3.0f;
+            scaleGaitFor60TPS(options.walkGait, t);
+            scaleGaitFor60TPS(options.gallopGait, t);
+
             this.body = SpiderBody.fromPosition(world, this.position, 0f,
                     options.bodyPlan, options.walkGait, options.gallopGait);
 
@@ -58,12 +78,9 @@ public class SpiderEnemy extends Enemy {
             this.initialized = true;
         }
 
-        // ── 20 TPS FIXED TIMESTEP LOOP ──
-        // This ensures the physics and AI only run exactly 20 times per second
-        // regardless of your monitor's framerate, fixing the shaking!
-
+        // ── 60 TPS FIXED TIMESTEP LOOP ──
         tickAccumulator += dt;
-        float tickRate = 1.0f / 20.0f; // 0.05 seconds per tick
+        float tickRate = 1.0f / 60.0f;
 
         while (tickAccumulator >= tickRate) {
 
@@ -74,10 +91,8 @@ public class SpiderEnemy extends Enemy {
                 this.knockbackVelZ = 0f;
             }
 
-            // Note: Use tickRate here instead of dt since we are in the fixed loop
             if (attackCooldown > 0f) attackCooldown -= tickRate;
 
-            // ── BEHAVIOR SWITCH ──
             if (mode == BehaviorMode.HOSTILE) {
                 body.gallop = false;
                 Vector3f direction = new Vector3f(playerPos).sub(body.position);
@@ -108,7 +123,7 @@ public class SpiderEnemy extends Enemy {
                 body.walkAt(new Vector3f(0f, 0f, 0f));
 
             } else if (mode == BehaviorMode.FOLLOW_TARGET) {
-                body.gallop = true; // Use the fast gait to chase the laser!
+                body.gallop = true;
                 Vector3f direction = new Vector3f(laserTarget).sub(body.position);
                 direction.y = 0;
                 float dist = direction.length();
@@ -126,7 +141,7 @@ public class SpiderEnemy extends Enemy {
                 }
 
             } else if (mode == BehaviorMode.RIDDEN) {
-                body.gallop = true; // Sprint while riding
+                body.gallop = true;
                 if (rideInput.lengthSquared() > 0.001f) {
                     body.rotateTowards(rideInput);
                     body.walkAt(new Vector3f(rideInput).mul(body.gait().maxSpeed));
@@ -135,14 +150,10 @@ public class SpiderEnemy extends Enemy {
                 }
             }
 
-            // Run the main IK and physics logic once per tick
             body.update();
-
-            // Subtract the time we just consumed
             tickAccumulator -= tickRate;
         }
 
-        // Apply final smooth position to render entity
         this.position.set(body.position);
     }
 }
