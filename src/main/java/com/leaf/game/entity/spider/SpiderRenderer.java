@@ -37,11 +37,14 @@ public class SpiderRenderer {
         spiderShader.setUniform("clipPose", new Matrix4f());
         spiderShader.setUniform("tex", 0);
 
-        // Disabling cull face so the -1.0x scaled (mirrored) right legs don't turn invisible!
+        // Keep culling disabled so mirrored right-side legs don't vanish
         glDisable(GL_CULL_FACE);
 
         // 1. Render Torso Structure
-        Matrix4f torsoTransform = new Matrix4f().translate(body.position).rotate(body.orientation);
+        Matrix4f torsoTransform = new Matrix4f()
+                .translate(body.position)
+                .rotate(body.orientation)
+                .scale(body.bodyPlan.scale);
         renderModel(spiderShader, pv, body.bodyPlan.bodyModel, torsoTransform);
 
         // 2. Render Leg Segments
@@ -51,27 +54,40 @@ public class SpiderRenderer {
             KinematicChain chain = leg.chain;
             List<Quaternionf> rotations = chain.getRotations(pivot);
 
+            boolean isRightLeg = leg.legPlan.attachmentPosition.x < 0f;
+            float mirrorX = isRightLeg ? -1.0f : 1.0f;
+
             for (int i = 0; i < chain.segments.size(); i++) {
                 SegmentPlan segmentPlan = body.bodyPlan.legs.get(legIdx).segments.get(i);
                 Vector3f startPos = (i == 0) ? chain.root : chain.segments.get(i - 1).position;
                 Quaternionf rot = rotations.get(i);
 
-                Matrix4f segmentTransform = new Matrix4f().translate(startPos).rotate(rot);
+                Matrix4f segmentTransform = new Matrix4f()
+                        .translate(startPos)
+                        .rotate(rot)
+                        .scale(mirrorX * body.bodyPlan.scale, body.bodyPlan.scale, segmentPlan.length);
+
                 renderModel(spiderShader, pv, segmentPlan.model, segmentTransform);
             }
         }
 
+        glEnable(GL_CULL_FACE);
         spiderShader.unbind();
+
+        // ── FIX FOR THE SHADER BREAKING BUG ──
+        // Restore the terrain shader so the rest of the game renders properly!
+        fallbackShader.bind();
     }
 
     private static void renderModel(Shader shader, Matrix4f pv, DisplayModel model, Matrix4f transformation) {
         for (BlockDisplayModelPiece piece : model.pieces) {
 
-            // ── CRITICAL FIX: PIVOT & TRANSLATION ──
-            // Shifts the cube to 0..1 to match Minecraft's corner-pivot math,
-            // then applies the matrix, then applies the entity offset!
+            // ── MATHEMATICALLY PERFECT ALIGNMENT ──
+            // piece.transform from Minecraft expects a cube drawn from 0.0 to 1.0.
+            // Our default engine cube draws from -0.5 to 0.5.
+            // By pushing our cube +0.5 at the end, it maps perfectly into Minecraft's matrix.
+            // This centers BOTH the body AND the legs seamlessly on their physical IK joints!
             Matrix4f pieceTransform = new Matrix4f(transformation)
-                    .translate(-0.5f, 0f, -0.5f)
                     .mul(piece.transform)
                     .translate(0.5f, 0.5f, 0.5f);
 
@@ -94,7 +110,6 @@ public class SpiderRenderer {
                 shader.setUniform("glow", 1.0f);
             }
 
-            // Route textures perfectly to your macOS folder files
             String texName = piece.blockName;
             if (texName.equals("cyan_shulker_box")) texName = "shulker_cyan";
             if (texName.equals("gray_shulker_box")) texName = "shulker_gray";
@@ -111,9 +126,7 @@ public class SpiderRenderer {
             }
 
             ModelMesh mesh = AssetManager.get().getModel(piece.blockName);
-            if (mesh != null) {
-                mesh.render();
-            }
+            if (mesh != null) mesh.render();
         }
     }
 
