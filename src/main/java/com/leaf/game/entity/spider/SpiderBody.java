@@ -163,40 +163,19 @@ public class SpiderBody {
 
         Gait g = gait();
 
-        // ── SURFACE-PROJECTED GRAVITY ──────────────────────────────────────────
-        //
-        // Previously gravity was always subtracted from velocity.y, which pulled
-        // the spider away from any surface that isn't a horizontal floor.  On a
-        // steep wall that means the spider accelerates sideways into thin air and
-        // the AABB check zero'd the walk velocity, blocking forward movement.
-        //
-        // Fix: use the surface normal from the *previous* tick (this.normal, already
-        // computed and stored) to project the gravity vector onto the terrain.  The
-        // projected gravity then pulls the spider *along* the surface instead of
-        // straight down through it.
-        //
-        // Safety conditions that revert to vanilla -Y gravity:
-        //   • this.normal is null  (spider is airborne / no grounded legs)
-        //   • The surface is mostly flat (normal.y >= cos(30°) ≈ 0.866) — on shallow
-        //     slopes the projection is nearly identical to -Y anyway, and there is no
-        //     reason to pay the extra complexity.
-        //   • The projected gravity vector has near-zero length (degenerate surface).
-        //
-        // The magnitude of gravity is always g.gravityAcceleration regardless of the
-        // projection direction, so physics tuning constants remain valid.
+        // ── SURFACE-PROJECTED GRAVITY ──
         {
             Vector3f gravDir;
             boolean useProjected = false;
 
             if (this.normal != null && this.normal.normal != null) {
                 Vector3f n = this.normal.normal;
-                // Only project on genuinely steep surfaces (normal tilted >30° from world-up)
                 if (n.y < 0.866f) {
                     Vector3f rawGrav = new Vector3f(0f, -1f, 0f);
                     Vector3f projected = SpiderMath.projectOntoPlane(rawGrav, n);
                     float projLen = projected.length();
                     if (projLen > 1e-4f) {
-                        gravDir      = projected.div(projLen); // normalise to unit
+                        gravDir      = projected.div(projLen);
                         useProjected = true;
                         velocity.add(new Vector3f(gravDir).mul(g.gravityAcceleration));
                     }
@@ -204,7 +183,6 @@ public class SpiderBody {
             }
 
             if (!useProjected) {
-                // Vanilla flat-floor gravity
                 velocity.y -= g.gravityAcceleration;
             }
 
@@ -224,6 +202,13 @@ public class SpiderBody {
         float rotDrag = 1f - g.rotationalDragCoefficient * fractionGrounded;
         rotationalVelocity.mul(rotDrag);
 
+        // ── FIX: CLAMP ROTATIONAL VELOCITY (Anti-Flip) ──
+        // Cap the pitch and roll momentum so external impulses (hits) or strange
+        // terrain geometry cannot send the spider tumbling completely out of control.
+        float maxRot = 0.08f;
+        rotationalVelocity.x = Math.max(-maxRot, Math.min(maxRot, rotationalVelocity.x));
+        rotationalVelocity.z = Math.max(-maxRot, Math.min(maxRot, rotationalVelocity.z));
+
         if (onGround) {
             velocity.x      *= 0.5f;
             velocity.z      *= 0.5f;
@@ -236,8 +221,6 @@ public class SpiderBody {
         normalAcceleration.set(0f, 0f, 0f);
         if (normalInfo != null) {
             float preferredY    = calcPreferredY();
-
-            // ── FIX: SCALE POSITION ERROR BY TIMESTEP ──
             float t = walkGait.maxSpeed / 0.15f;
             float preferredYAcc = Math.max(0f, (preferredY - position.y) * t - velocity.y);
 
@@ -252,25 +235,7 @@ public class SpiderBody {
             velocity.add(normalAcceleration);
         }
 
-        // ── WALL COLLISION — skip when actively climbing a steep surface ───────
-        //
-        // The AABB check previously zeroed velocity.x / velocity.z the moment the
-        // spider touched a wall, even if it was supposed to be climbing that wall.
-        //
-        // Fix: compute how "steep" the current surface is.  If the support normal
-        // has a significant horizontal component (i.e. the spider is on a wall or
-        // near-vertical ramp) we skip the per-axis zero-out for the velocity
-        // component that points *into* that wall, so the spider can push through
-        // onto the climbing surface.
-        //
-        // The threshold (normal.y < 0.5, i.e. surface tilted > 60° from horizontal)
-        // is deliberately conservative: on a gentle ramp the check still fires
-        // normally; only on genuinely wall-like surfaces is it bypassed.
-        //
-        // For surfaces in between (30°–60°) both gravity projection AND the wall
-        // check are active, which gives the spider time to build up enough
-        // normalAcceleration to grip the surface before the collision stops it.
-
+        // ── ROBUST WALL COLLISION CHECK ──
         boolean onSteepSurface = (this.normal != null
                 && this.normal.normal != null
                 && this.normal.normal.y < 0.5f);
@@ -280,7 +245,7 @@ public class SpiderBody {
         int cy2 = (int) Math.floor(position.y + 1.5f);
 
         if (!onSteepSurface) {
-            // Original flat-terrain AABB wall check — unchanged behaviour
+            // Original flat-terrain AABB wall check
             if (Math.abs(velocity.x) > 0.001f) {
                 int cx = (int) Math.floor(position.x + velocity.x + Math.signum(velocity.x) * r);
                 int cz = (int) Math.floor(position.z);
@@ -295,9 +260,18 @@ public class SpiderBody {
                     velocity.z = 0f;
                 }
             }
+        } else if (this.normal != null && this.normal.normal != null) {
+            // ── FIX: WALL ANTI-CLIPPING ──
+            // If climbing a steep wall, strip out any velocity pointing INTO the wall
+            // so the spider slides smoothly up/across instead of clipping through it.
+            Vector3f n = this.normal.normal;
+            float velIntoWall = velocity.x * n.x + velocity.z * n.z;
+
+            if (velIntoWall < 0f) { // Negative dot product means moving into the wall
+                velocity.x -= velIntoWall * n.x;
+                velocity.z -= velIntoWall * n.z;
+            }
         }
-        // When onSteepSurface==true the spider is allowed to pass through the AABB
-        // check. The normalAcceleration will press it against the wall next tick.
 
         position.add(velocity);
 
@@ -335,27 +309,6 @@ public class SpiderBody {
         }
     }
 
-    /**
-     * Derives preferredPitch and preferredRoll from the average plane of the
-     * grounded foot positions, then smoothly lerps toward them.
-     *
-     * ── EULER FLIP FIX ────────────────────────────────────────────────────────
-     * SpiderMath.pitch() returns values in [-π/2, +π/2].  On steep slopes the
-     * "forward" vector derived from the leg positions can briefly flip sign
-     * (e.g. when front legs are momentarily below rear legs mid-step), which
-     * causes pitch() to jump by ≈ ±π — a visible 180° snap.
-     *
-     * Fix: after computing newPitch, clamp the *delta* from the current
-     * preferredPitch to at most π/2 per tick.  This is well above any physically
-     * reasonable change rate (the spider can't tilt 90° in one 120 Hz tick) but
-     * strictly below the ±π jump that causes the snap.  The lerp fraction already
-     * smooths out genuine slope changes; this guard only fires on the pathological
-     * flip case.
-     *
-     * The same guard is applied to newRoll for consistency, though roll flips are
-     * less common in practice.
-     * ─────────────────────────────────────────────────────────────────────────
-     */
     private void updatePreferredAngles() {
         Vector3f currentEuler = orientation.getEulerAnglesYXZ(new Vector3f());
 
@@ -388,20 +341,11 @@ public class SpiderBody {
         }
 
         Gait g = gait();
-
-        // ── FIX: SCALE ANGLE LERPS BY TIMESTEP ──
         float t = walkGait.maxSpeed / 0.15f;
         float rawPitch = SpiderMath.pitch(forward);
         float rawRoll  = SpiderMath.pitch(sideways);
 
-        // ── PITCH/ROLL FLIP GUARD ──────────────────────────────────────────────
-        // Clamp the delta between the incoming raw angle and the current preferred
-        // angle to π/2.  This prevents the ~π jump that occurs when the "forward"
-        // or "sideways" leg-plane vector flips sign during steep ascents.
-        //
-        // We use a half-π ceiling rather than a smaller value so that fast but
-        // legitimate re-orientations (e.g. the spider going over a sharp ridge)
-        // are not artificially slowed down — the lerp fraction handles smoothing.
+        // ── PITCH/ROLL FLIP GUARD ──
         final float MAX_ANGLE_DELTA = (float)(Math.PI / 2.0);
 
         float pitchDelta = rawPitch - preferredPitch;
@@ -448,7 +392,6 @@ public class SpiderBody {
         Vector3f upOffset  = new Vector3f(0f, 1f, 0f).rotate(pivot).mul(g.maxBodyDistanceFromGround);
         float targetY      = Math.max(averageY, groundY + upOffset.y);
 
-        // ── FIX: SCALE HEIGHT LERP BY TIMESTEP ──
         float t = walkGait.maxSpeed / 0.15f;
         return SpiderMath.lerp(position.y, targetY, g.bodyHeightCorrectionFactor * t);
     }
@@ -539,7 +482,6 @@ public class SpiderBody {
         Vector3f stabTarget = new Vector3f(info.origin);
         stabTarget.y = info.centreOfMass.y;
 
-        // ── FIX: SCALE STABILIZATION LERP BY TIMESTEP ──
         float t = walkGait.maxSpeed / 0.15f;
         info.centreOfMass.lerp(stabTarget, gait().stabilizationFactor * t);
 

@@ -31,44 +31,73 @@ public class SpiderEnemy extends Enemy {
         return body;
     }
 
-    // ── EXISTING FEATURE CALL: ACCELERATE ROTATION ON HIT ──
+    // ── HIT REACTION ──────────────────────────────────────────────────────────
     @Override
     public boolean applyDamage(float amount) {
-        // Since it's a friendly sandbox spider, we don't let it die.
-        // Instead, we apply a satisfying rotational impulse using the built-in physics!
         if (body != null) {
-            // Spin primarily around the vertical Y axis with slight diagonal variance for a organic look
+            // Spin primarily around the vertical Y axis with slight diagonal variance.
+            //
+            // FIX — KNOCKBACK SCALE:
+            // The original spinForce = amount * 0.05f was designed for a ~20 Hz game
+            // loop.  At 120 TPS the same quaternion impulse is applied per-tick rather
+            // than per-frame, making it 6× more powerful than intended (the rotational
+            // drag only cancels it gradually).  Scale by (1/6) to restore the felt
+            // magnitude, matching how tridentRotationalKnockBack is already scaled in
+            // scaleGaitFor120TPS (t * t ≈ 1/36 for angular acceleration; for an
+            // instantaneous velocity impulse the correct scale is t = 1/6).
+            //
+            // Additionally the X/Z components of the spin axis (±0.1 range) allowed
+            // strong pitch/roll impulses that could flip the body entirely.  Halving
+            // those components to ±0.05 keeps the organic wobble feel while staying
+            // safely within the pitch/roll clamp added in updatePreferredAngles().
+            final float TPS_SCALE = 1.0f / 6.0f;   // matches scaleGaitFor120TPS t
             Vector3f spinAxis = new Vector3f(
-                    (float) (Math.random() - 0.5) * 0.2f,
+                    (float)(Math.random() - 0.5) * 0.1f,   // was 0.2f — halved to limit pitch/roll
                     1.0f,
-                    (float) (Math.random() - 0.5) * 0.2f
+                    (float)(Math.random() - 0.5) * 0.1f
             ).normalize();
 
-            // Rotational force scales with the hit damage (e.g. 25 damage = ~1.25 radians of spin)
-            float spinForce = amount * 0.05f;
+            float spinForce = amount * 0.05f * TPS_SCALE;
             body.accelerateRotation(spinAxis, spinForce);
         }
 
-        // Trigger flash and hit sound
         hitFlashTimer = 0.18f;
         com.leaf.game.core.AudioManager.playAt("seal_hit", position, (Vector3f) null, 35f);
 
-        return false; // Never dies in sandbox mode
+        return false;
     }
 
     private void scaleGaitFor120TPS(Gait g, float t) {
-        g.maxSpeed *= t;
-        g.moveAcceleration *= t * t;
-        g.rotateAcceleration *= t * t;
-        g.legMoveSpeed *= t;
-        g.gravityAcceleration *= t * t;
+        g.maxSpeed                       *= t;
+        g.moveAcceleration               *= t * t;
+        g.rotateAcceleration             *= t * t;
+        g.legMoveSpeed                   *= t;
+        g.gravityAcceleration            *= t * t;
         g.bodyHeightCorrectionAcceleration *= t * t;
-        g.tridentRotationalKnockBack *= t * t;
-        g.airDragCoefficient *= t;
-        g.groundDragCoefficient *= t;
-        g.rotationalDragCoefficient *= t;
-        g.samePairCooldown *= 6;
-        g.crossPairCooldown *= 6;
+        g.tridentRotationalKnockBack     *= t * t;
+        g.airDragCoefficient             *= t;
+        g.groundDragCoefficient          *= t;
+        g.rotationalDragCoefficient      *= t;
+        g.samePairCooldown               *= 6;
+        g.crossPairCooldown              *= 6;
+
+        // FIX — LEG LIFT HEIGHT TIMESTEP SCALE:
+        // legLiftHeight is the per-tick vertical step added to the foot arc peak.
+        // It has the same dimension as legMoveSpeed (blocks per tick) so it must
+        // scale by t, not t².  The original code omitted this, leaving legLiftHeight
+        // at its design value (~0.35 blocks) regardless of tick rate.  At 120 TPS
+        // that means the foot arc advances only 0.35/tick * legMoveSpeed ticks in Y,
+        // which is fine for the arc shape — BUT legLiftHeight is also compared
+        // directly to the step height inside Leg.updateMovement to decide when to
+        // stop lifting.  Without scaling it is effectively 6× too large in world-
+        // space terms relative to the body correction and move speeds, so the foot
+        // hangs in the air far too long on tall steps instead of planting quickly.
+        // Scaling by t aligns it with legMoveSpeed.
+        g.legLiftHeight                  *= t;
+
+        // legDropDistance governs when the foot stops arcing and starts descending.
+        // Same dimension as legLiftHeight — must scale by t for the same reason.
+        g.legDropDistance                *= t;
     }
 
     @Override
@@ -86,19 +115,16 @@ public class SpiderEnemy extends Enemy {
         if (isThrown) { isThrown = false; }
 
         if (!initialized) {
-            // Apply custom legs based on command input (defaults to 6-legged hexBot)
             SpiderOptions options;
             if (customLegCount == 4)       options = SpiderPresets.quadBot(4, customScale);
             else if (customLegCount == 8)  options = SpiderPresets.octoBot(4, customScale);
             else                           options = SpiderPresets.hexBot(4, customScale);
 
-            // Scale the gait hover heights & stride limits to fit the physical size
             if (customScale != 1.0f) {
                 options.walkGait.scale(customScale);
                 options.gallopGait.scale(customScale);
             }
 
-            // Scale physics to 120 TPS
             float t = 1.0f / 6.0f;
             scaleGaitFor120TPS(options.walkGait, t);
             scaleGaitFor120TPS(options.gallopGait, t);
