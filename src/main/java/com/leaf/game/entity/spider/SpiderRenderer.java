@@ -25,6 +25,7 @@ public class SpiderRenderer {
         }
 
         SpiderBody body = spider.getBody();
+        if (body == null) return;
         Matrix4f pv = new Matrix4f(projection).mul(view);
 
         spiderShader.bind();

@@ -17,8 +17,11 @@ public class SpiderEnemy extends Enemy {
     private SpiderBody body;
     private boolean initialized = false;
     private float attackCooldown = 0f;
-
     private float tickAccumulator = 0f;
+
+    // ── CUSTOMIZATION FIELDS FOR THE COMMAND ──
+    public int customLegCount = 6;
+    public float customScale = 1.0f;
 
     public SpiderEnemy(float x, float y, float z) {
         super(x, y, z, Type.SPIDER);
@@ -28,7 +31,32 @@ public class SpiderEnemy extends Enemy {
         return body;
     }
 
-    private void scaleGaitFor60TPS(Gait g, float t) {
+    // ── EXISTING FEATURE CALL: ACCELERATE ROTATION ON HIT ──
+    @Override
+    public boolean applyDamage(float amount) {
+        // Since it's a friendly sandbox spider, we don't let it die.
+        // Instead, we apply a satisfying rotational impulse using the built-in physics!
+        if (body != null) {
+            // Spin primarily around the vertical Y axis with slight diagonal variance for a organic look
+            Vector3f spinAxis = new Vector3f(
+                    (float) (Math.random() - 0.5) * 0.2f,
+                    1.0f,
+                    (float) (Math.random() - 0.5) * 0.2f
+            ).normalize();
+
+            // Rotational force scales with the hit damage (e.g. 25 damage = ~1.25 radians of spin)
+            float spinForce = amount * 0.05f;
+            body.accelerateRotation(spinAxis, spinForce);
+        }
+
+        // Trigger flash and hit sound
+        hitFlashTimer = 0.18f;
+        com.leaf.game.core.AudioManager.playAt("seal_hit", position, (Vector3f) null, 35f);
+
+        return false; // Never dies in sandbox mode
+    }
+
+    private void scaleGaitFor120TPS(Gait g, float t) {
         g.maxSpeed *= t;
         g.moveAcceleration *= t * t;
         g.rotateAcceleration *= t * t;
@@ -39,8 +67,8 @@ public class SpiderEnemy extends Enemy {
         g.airDragCoefficient *= t;
         g.groundDragCoefficient *= t;
         g.rotationalDragCoefficient *= t;
-        g.samePairCooldown *= 3;
-        g.crossPairCooldown *= 3;
+        g.samePairCooldown *= 6;
+        g.crossPairCooldown *= 6;
     }
 
     @Override
@@ -58,14 +86,22 @@ public class SpiderEnemy extends Enemy {
         if (isThrown) { isThrown = false; }
 
         if (!initialized) {
-            SpiderOptions options = SpiderPresets.hexBot(4, 1.0f);
+            // Apply custom legs based on command input (defaults to 6-legged hexBot)
+            SpiderOptions options;
+            if (customLegCount == 4)       options = SpiderPresets.quadBot(4, customScale);
+            else if (customLegCount == 8)  options = SpiderPresets.octoBot(4, customScale);
+            else                           options = SpiderPresets.hexBot(4, customScale);
 
-            // ── TUNE PHYSICS TO 60 TPS SMOOTHNESS ──
-            // The original was built for Minecraft's 20 TPS. We scale the forces
-            // perfectly so it runs at 60 FPS without moving 3x faster!
-            float t = 1.0f / 3.0f;
-            scaleGaitFor60TPS(options.walkGait, t);
-            scaleGaitFor60TPS(options.gallopGait, t);
+            // Scale the gait hover heights & stride limits to fit the physical size
+            if (customScale != 1.0f) {
+                options.walkGait.scale(customScale);
+                options.gallopGait.scale(customScale);
+            }
+
+            // Scale physics to 120 TPS
+            float t = 1.0f / 6.0f;
+            scaleGaitFor120TPS(options.walkGait, t);
+            scaleGaitFor120TPS(options.gallopGait, t);
 
             this.body = SpiderBody.fromPosition(world, this.position, 0f,
                     options.bodyPlan, options.walkGait, options.gallopGait);
@@ -78,9 +114,9 @@ public class SpiderEnemy extends Enemy {
             this.initialized = true;
         }
 
-        // ── 60 TPS FIXED TIMESTEP LOOP ──
+        // ── 120 TPS FIXED TIMESTEP LOOP ──
         tickAccumulator += dt;
-        float tickRate = 1.0f / 60.0f;
+        float tickRate = 1.0f / 120.0f;
 
         while (tickAccumulator >= tickRate) {
 
@@ -104,15 +140,14 @@ public class SpiderEnemy extends Enemy {
 
                 float currentSpeed = SpiderMath.horizontalLength(body.velocity);
                 float decelerateDist = (currentSpeed * currentSpeed) / (2f * body.gait().moveAcceleration);
-                float stopDist = 2.5f;
 
-                if (dist > stopDist + decelerateDist) {
+                if (dist > 2.5f + decelerateDist) {
                     body.walkAt(new Vector3f(direction).mul(body.gait().maxSpeed));
                 } else {
                     body.walkAt(new Vector3f(0f, 0f, 0f));
                 }
 
-                if (dist <= stopDist * 1.2f && attackCooldown <= 0f) {
+                if (dist <= 2.5f * 1.2f && attackCooldown <= 0f) {
                     framePlayerDamage = 25f;
                     attackCooldown = 1.2f;
                     com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f)null, 30f);
@@ -130,7 +165,6 @@ public class SpiderEnemy extends Enemy {
                 if (dist > 0.001f) direction.normalize();
 
                 body.rotateTowards(direction);
-
                 float currentSpeed = SpiderMath.horizontalLength(body.velocity);
                 float decelerateDist = (currentSpeed * currentSpeed) / (2f * body.gait().moveAcceleration);
 

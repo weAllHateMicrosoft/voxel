@@ -190,7 +190,13 @@ public class SpiderBody {
         normalAcceleration.set(0f, 0f, 0f);
         if (normalInfo != null) {
             float preferredY    = calcPreferredY();
-            float preferredYAcc = Math.max(0f, preferredY - position.y - velocity.y);
+
+            // ── FIX: SCALE POSITION ERROR BY TIMESTEP ──
+            // Computes the dynamic timescale factor (1/6 at 120hz) and scales the
+            // position error so the normal force doesn't launch the spider into orbit.
+            float t = walkGait.maxSpeed / 0.15f;
+            float preferredYAcc = Math.max(0f, (preferredY - position.y) * t - velocity.y);
+
             float capableAcc    = g.bodyHeightCorrectionAcceleration * fractionGrounded;
             float accMag        = Math.min(preferredYAcc, capableAcc);
 
@@ -290,8 +296,11 @@ public class SpiderBody {
         }
 
         Gait g = gait();
-        float newPitch = SpiderMath.lerp(SpiderMath.pitch(forward),   preferredPitch, g.preferredRotationLerpFraction);
-        float newRoll  = SpiderMath.lerp(SpiderMath.pitch(sideways),  preferredRoll,  g.preferredRotationLerpFraction);
+
+        // ── FIX: SCALE ANGLE LERPS BY TIMESTEP ──
+        float t = walkGait.maxSpeed / 0.15f;
+        float newPitch = SpiderMath.lerp(SpiderMath.pitch(forward),   preferredPitch, g.preferredRotationLerpFraction * t);
+        float newRoll  = SpiderMath.lerp(SpiderMath.pitch(sideways),  preferredRoll,  g.preferredRotationLerpFraction * t);
 
         if (newPitch < g.preferLevelBreakpoint) newPitch *= (1f - g.preferLevelBias);
         if (newRoll  < g.preferLevelBreakpoint) newRoll  *= (1f - g.preferLevelBias);
@@ -311,7 +320,6 @@ public class SpiderBody {
         Gait g = gait();
         LerpGait lg = lerpedGait();
 
-        // ── FIX: Increased raycast distance (+2.0f) to stop vertical jerking ──
         Vector3f lookAhead = new Vector3f(position).add(velocity);
         Vector3f downDir   = new Vector3f(0f, -1f, 0f).rotate(preferredOrientation);
         Vector3f groundHit = SpiderWorldAdapter.raycastGround(world, lookAhead, downDir, lg.bodyHeight + 2.0f);
@@ -325,7 +333,9 @@ public class SpiderBody {
         Vector3f upOffset  = new Vector3f(0f, 1f, 0f).rotate(pivot).mul(g.maxBodyDistanceFromGround);
         float targetY      = Math.max(averageY, groundY + upOffset.y);
 
-        return SpiderMath.lerp(position.y, targetY, g.bodyHeightCorrectionFactor);
+        // ── FIX: SCALE HEIGHT LERP BY TIMESTEP ──
+        float t = walkGait.maxSpeed / 0.15f;
+        return SpiderMath.lerp(position.y, targetY, g.bodyHeightCorrectionFactor * t);
     }
 
     private List<Integer> legsInPolygonalOrder() {
@@ -413,7 +423,11 @@ public class SpiderBody {
         }
         Vector3f stabTarget = new Vector3f(info.origin);
         stabTarget.y = info.centreOfMass.y;
-        info.centreOfMass.lerp(stabTarget, gait().stabilizationFactor);
+
+        // ── FIX: SCALE STABILIZATION LERP BY TIMESTEP ──
+        float t = walkGait.maxSpeed / 0.15f;
+        info.centreOfMass.lerp(stabTarget, gait().stabilizationFactor * t);
+
         info.normal.set(info.centreOfMass).sub(info.origin).normalize();
     }
 

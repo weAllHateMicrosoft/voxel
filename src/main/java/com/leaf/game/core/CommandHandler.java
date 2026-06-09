@@ -113,17 +113,43 @@ public class CommandHandler {
             case "spider":
                 if (parts.length < 2) {
                     win.chatHistory.add("[System]: Usage: /spider [spawn|laser|ride]");
+                    win.chatHistory.add("          /spider spawn [legs: 4|6|8] [scale: float]");
                     break;
                 }
                 if (parts[1].equals("spawn")) {
+                    int legs = 6;      // Default to 6 legs
+                    float scale = 1.0f; // Default to 1.0 scale
+
+                    if (parts.length >= 3) {
+                        try {
+                            legs = Integer.parseInt(parts[2]);
+                            if (legs != 4 && legs != 6 && legs != 8) {
+                                win.chatHistory.add("[System]: Leg options are only 4, 6, or 8. Defaulting to 6.");
+                                legs = 6;
+                            }
+                        } catch (NumberFormatException e) {
+                            win.chatHistory.add("[System]: Invalid legs format. Defaulting to 6.");
+                        }
+                    }
+                    if (parts.length >= 4) {
+                        try {
+                            scale = Float.parseFloat(parts[3]);
+                            scale = Math.max(0.3f, Math.min(4.0f, scale)); // Safe limits (0.3x to 4.0x)
+                        } catch (NumberFormatException e) {
+                            win.chatHistory.add("[System]: Invalid scale format. Defaulting to 1.0.");
+                        }
+                    }
+
                     Enemy e = win.enemyManager.spawnAt(win.player.position.x + 3, win.player.position.y + 1, win.player.position.z, Enemy.Type.SPIDER);
                     if (e instanceof com.leaf.game.entity.spider.SpiderEnemy) {
-                        ((com.leaf.game.entity.spider.SpiderEnemy) e).mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.IDLE;
-                        win.chatHistory.add("[System]: Spawned a friendly sandbox spider.");
+                        com.leaf.game.entity.spider.SpiderEnemy se = (com.leaf.game.entity.spider.SpiderEnemy) e;
+                        se.customLegCount = legs;
+                        se.customScale = scale;
+                        se.mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.IDLE;
+                        win.chatHistory.add("[System]: Spawned a friendly spider (Legs: " + legs + ", Scale: " + scale + "x).");
                     }
                 } else if (parts[1].equals("laser")) {
                     win.spiderLaserActive = !win.spiderLaserActive;
-                    // Switch all friendly spiders to/from FOLLOW mode
                     for (Enemy e : win.enemyManager.getEnemies()) {
                         if (e instanceof com.leaf.game.entity.spider.SpiderEnemy) {
                             com.leaf.game.entity.spider.SpiderEnemy se = (com.leaf.game.entity.spider.SpiderEnemy) e;
@@ -141,7 +167,6 @@ public class CommandHandler {
                         win.riddenSpider = null;
                         win.chatHistory.add("[System]: Dismounted spider.");
                     } else {
-                        // Find closest friendly spider
                         com.leaf.game.entity.spider.SpiderEnemy best = null;
                         float bestDist = 10f;
                         for (Enemy e : win.enemyManager.getEnemies()) {
@@ -159,7 +184,7 @@ public class CommandHandler {
                         if (best != null) {
                             win.riddenSpider = best;
                             best.mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.RIDDEN;
-                            win.spiderLaserActive = false; // Turn off laser if riding
+                            win.spiderLaserActive = false;
                             win.chatHistory.add("[System]: Mounted spider! Use WASD to steer.");
                         } else {
                             win.chatHistory.add("[System]: No friendly spider nearby to mount.");
