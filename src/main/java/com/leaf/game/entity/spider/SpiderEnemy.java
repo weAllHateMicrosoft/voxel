@@ -44,16 +44,6 @@ public class SpiderEnemy extends Enemy {
         if (!initialized) {
             SpiderOptions options = SpiderPresets.hexBot(4, 1.0f);
 
-            // Standard Walk Gait
-            options.walkGait.maxSpeed = 8.0f;
-            options.walkGait.moveAcceleration = 20.0f;
-            options.walkGait.legMoveSpeed = 26.0f;
-
-            // Fast Gallop Gait (Used for Laser Chasing & Riding)
-            options.gallopGait.maxSpeed = 16.0f;
-            options.gallopGait.moveAcceleration = 35.0f;
-            options.gallopGait.legMoveSpeed = 45.0f;
-
             this.body = SpiderBody.fromPosition(world, this.position, 0f,
                     options.bodyPlan, options.walkGait, options.gallopGait);
 

@@ -38,8 +38,7 @@ public class SpiderWorldAdapter {
      * Checks if a specific point is resting on the ground.
      */
     public static boolean isOnGround(World world, Vector3f position, Vector3f downVector) {
-        // Cast a very short ray downward (0.15 blocks) to check for a floor
-        Vector3f hit = raycastGround(world, position, downVector, 0.15);
+        Vector3f hit = raycastGround(world, position, downVector, 0.001f);  // was 0.15
         return hit != null;
     }
 
@@ -60,18 +59,37 @@ public class SpiderWorldAdapter {
      * Resolves body-to-floor collision.
      * If the spider's core sinks into a block, this calculates how far up it needs to be pushed.
      */
-    public static CollisionResult resolveCollision(World world, Vector3f position, Vector3f velocityDirection) {
-        int bx = (int) Math.floor(position.x);
-        int by = (int) Math.floor(position.y);
-        int bz = (int) Math.floor(position.z);
+    public static CollisionResult resolveCollision(World world, Vector3f position, Vector3f velocityDir) {
+        // Mirror Kotlin exactly: start from position - direction, trace in direction for direction.length()
+        // With velocityDir = (0, min(-1, -|vy|), 0), this starts 1 unit above and traces down.
+        float len = velocityDir.length();
+        if (len < 1e-6f) return null;
 
-        if (world.getBlock(bx, by, bz).isSolid()) {
-            // The body is inside a block. Push it up to the surface.
-            Vector3f correctedPosition = new Vector3f(position.x, by + 1.0f, position.z);
-            Vector3f offset = new Vector3f(correctedPosition).sub(position);
-            return new CollisionResult(correctedPosition, offset);
+        // Start point: position minus the velocity direction vector
+        Vector3f start = new Vector3f(position).sub(velocityDir);
+
+        // Step along direction in small increments
+        Vector3f normalizedDir = new Vector3f(velocityDir).normalize();
+        float stepSize = 0.05f;
+        float travelled = 0f;
+        Vector3f pos = new Vector3f(start);
+
+        while (travelled <= len) {
+            int bx = (int) Math.floor(pos.x);
+            int by = (int) Math.floor(pos.y);
+            int bz = (int) Math.floor(pos.z);
+
+            if (world.getBlock(bx, by, bz).isSolid()) {
+                // Surface is the top of this block
+                Vector3f hitPos = new Vector3f(position.x, by + 1.0f, position.z);
+                Vector3f offset = new Vector3f(hitPos).sub(position);
+                return new CollisionResult(hitPos, offset);
+            }
+
+            pos.add(new Vector3f(normalizedDir).mul(stepSize));
+            travelled += stepSize;
         }
-        return null; // No collision
+        return null;
     }
 
     /**

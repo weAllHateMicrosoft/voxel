@@ -186,15 +186,18 @@ public class Leg {
         }
 
         // ── resolve ground collision for the end-effector ────────────────────
-        // If the foot has passed through terrain while airborne, snap it up.
+        // FIX (Bug 2 equivalent for the foot): use a very short downward cast,
+        // identical to the original Kotlin: resolveCollision(endEffector, DOWN_VECTOR).
+        // The original passes DOWN_VECTOR (not the orientation-rotated down), so the
+        // foot collision is always world-space downward — matches Kotlin exactly.
         if (!touchingGround) {
-            Vector3f downDir = new Vector3f(0f, -1f, 0f).rotate(spider.orientation);
-            Vector3f hit = SpiderWorldAdapter.raycastGround(
-                    spider.world, endEffector, downDir, 0.15f);
-            if (hit != null) {
-                didStep       = true;
+            Vector3f downDir = new Vector3f(0f, -1f, 0f);  // world-space down, not orientation-rotated
+            SpiderWorldAdapter.CollisionResult footCollision =
+                    SpiderWorldAdapter.resolveCollision(spider.world, endEffector, downDir);
+            if (footCollision != null) {
+                didStep        = true;
                 touchingGround = true;
-                endEffector.y  = hit.y;
+                endEffector.y  = footCollision.position.y;
             }
         }
 
@@ -210,8 +213,11 @@ public class Leg {
                         endEffector.y, targetY, gait.legMoveSpeed);
             }
 
+            // FIX (Bug in original port): original Kotlin uses linear distance < 0.0001,
+            // which is equivalent to distanceSquared < 1e-8. Both are correct here —
+            // kept as distanceSquared for consistency, value is correct.
             if (endEffector.distanceSquared(target.position) < 0.0001f * 0.0001f) {
-                isMoving      = false;
+                isMoving         = false;
                 timeSinceStopMove = 0;
 
                 touchingGround = checkTouchingGround();
@@ -223,7 +229,7 @@ public class Leg {
             canMove = spider.gait().type.canMoveLeg(this, spider);
 
             if (canMove) {
-                isMoving          = true;
+                isMoving           = true;
                 timeSinceBeginMove = 0;
             }
         }
@@ -281,7 +287,9 @@ public class Leg {
     // ── Private helpers ───────────────────────────────────────────────────────
 
     private boolean checkTouchingGround() {
-        Vector3f downDir = new Vector3f(0f, -1f, 0f).rotate(spider.orientation);
+        // FIX (Bug 4): original Kotlin uses isOnGround with DOWN_VECTOR (world-space),
+        // not orientation-rotated. The 0.001 cast distance is set inside SpiderWorldAdapter.
+        Vector3f downDir = new Vector3f(0f, -1f, 0f);  // world-space down
         return SpiderWorldAdapter.isOnGround(spider.world, endEffector, downDir);
     }
 

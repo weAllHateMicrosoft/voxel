@@ -219,11 +219,11 @@ public class SpiderBody {
             target.y = velocity.y;
             target.mul(g.uncomfortableSpeedMultiplier);
             SpiderMath.moveTowards(velocity, target, g.moveAcceleration);
-            isWalking = targetVelocity.x != 0f || targetVelocity.z != 0f;
+            isWalking = targetVelocity.x != 0f && targetVelocity.z != 0f;  // ← && and targetVelocity
         } else {
-            target.y = velocity.y;   // preserve vertical velocity
+            target.y = velocity.y;
             SpiderMath.moveTowards(velocity, target, g.moveAcceleration);
-            isWalking = velocity.x != 0f || velocity.z != 0f;
+            isWalking = targetVelocity.x != 0f && targetVelocity.z != 0f;  // ← && and targetVelocity
         }
     }
 
