@@ -352,7 +352,7 @@ public final class AssetManager {
     // ─────────────────────────────────────────────────────────────────────────
     private static ModelMesh buildDefaultCube() {
         // 6 faces × 4 vertices × 12 floats
-        float r = 1f, g = 0.4f, b = 0.8f, a = 1f; // hot-pink so it's obvious
+        float r = 1f, g = 1f, b = 1f, a = 1f;//white
         float H = 0.5f;
         // Positions for a unit cube centred at origin
         float[][] pos = {

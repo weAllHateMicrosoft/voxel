@@ -14,7 +14,6 @@ import static org.lwjgl.opengl.GL13.glActiveTexture;
 
 public class SpiderRenderer {
 
-    // Give the spider its own model shader so it doesn't get darkened by the Abyss terrain fog!
     private static Shader spiderShader = null;
 
     public static void render(SpiderEnemy spider, Shader fallbackShader, Matrix4f projection, Matrix4f view) {
@@ -29,13 +28,13 @@ public class SpiderRenderer {
 
         spiderShader.bind();
         spiderShader.setUniform("lightDir", new Vector3f(0.6f, 1f, 0.4f).normalize());
-        spiderShader.setUniform("ambient", 0.35f);
+        spiderShader.setUniform("ambient", 0.45f);
         spiderShader.setUniform("tintColor", new Vector3f(0f, 0f, 0f));
         spiderShader.setUniform("tintAmt", 0f);
         spiderShader.setUniform("glow", 1.0f);
         spiderShader.setUniform("cutActive", 0);
         spiderShader.setUniform("clipPose", new Matrix4f());
-        spiderShader.setUniform("tex", 0); // Read from texture unit 0
+        spiderShader.setUniform("tex", 0);
 
         // 1. Render Torso Structure
         Matrix4f torsoTransform = new Matrix4f().translate(body.position).rotate(body.orientation);
@@ -66,13 +65,11 @@ public class SpiderRenderer {
             Matrix4f pieceTransform = new Matrix4f(transformation).mul(piece.transform);
             Matrix4f mvp = new Matrix4f(pv).mul(pieceTransform);
 
-            // Calculate normal matrix so 3D lighting hits the faces correctly
             Matrix4f normalMat = new Matrix4f(pieceTransform).invert().transpose();
 
             shader.setUniform("mvp", mvp);
             shader.setUniform("normalMat", normalMat);
 
-            // Emissive tags
             if (piece.tags.contains("eye")) {
                 shader.setUniform("tintColor", new Vector3f(0.0f, 2.5f, 2.5f));
                 shader.setUniform("tintAmt", 1.0f);
@@ -86,7 +83,7 @@ public class SpiderRenderer {
                 shader.setUniform("glow", 1.0f);
             }
 
-            // ── TEXTURE MAPPING EXACTLY TO YOUR SCREENSHOTS ──
+            // Route textures perfectly to your macOS folder files
             String texName = piece.blockName;
             if (texName.equals("cyan_shulker_box")) texName = "shulker_cyan";
             if (texName.equals("gray_shulker_box")) texName = "shulker_gray";
@@ -94,7 +91,6 @@ public class SpiderRenderer {
             if (texName.equals("polished_deepslate_slab")) texName = "polished_deepslate";
 
             shader.setUniform("useTexture", 1);
-
             Texture tex = AssetManager.get().getTexture(texName);
             if (tex != null) {
                 glActiveTexture(GL_TEXTURE0);
@@ -103,7 +99,7 @@ public class SpiderRenderer {
                 shader.setUniform("useTexture", 0);
             }
 
-            // Draw the geometry (If OBJ is missing, AssetManager naturally falls back to the default cube!)
+            // Renders the fallback 1x1x1 cube, squashing it perfectly into the matrices!
             ModelMesh mesh = AssetManager.get().getModel(piece.blockName);
             if (mesh != null) {
                 mesh.render();
