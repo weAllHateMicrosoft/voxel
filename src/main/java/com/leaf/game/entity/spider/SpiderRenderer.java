@@ -72,7 +72,6 @@ public class SpiderRenderer {
             }
         }
 
-        glEnable(GL_CULL_FACE);
         spiderShader.unbind();
 
         // ── FIX FOR THE SHADER BREAKING BUG ──

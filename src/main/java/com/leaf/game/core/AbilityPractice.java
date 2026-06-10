@@ -602,8 +602,8 @@ public class AbilityPractice {
                        "Destroy the target  -  then press  [ Z ]  to return.")
                 .key("HOLD LMB")
                 .need(1)
-                .when(ctx -> !ctx.win.player.abilities.isKamui && ctx.aliveCount() == 0)
-                .win("Absorbed!")
+                    .when(ctx -> !ctx.win.player.abilities.isKamui && ctx.dummy() == null)
+                    .win("Absorbed!")
                 .tout(90f).build());
         }
 
