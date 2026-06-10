@@ -264,7 +264,8 @@ public class EnemyManager {
         refreshTowerMinionCounts();
 
         // ── Update every enemy ─────────────────────────────────────────────────
-        for (Enemy e : enemies) {
+        for (int i = 0; i < enemies.size(); i++) {
+            Enemy e = enemies.get(i);
             e.update(dt, world, playerPos, enemies);
 
             // Golem slam: framePlayerDamage is used as the slam signal; check range

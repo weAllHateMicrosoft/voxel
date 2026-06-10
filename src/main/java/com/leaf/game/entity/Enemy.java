@@ -280,6 +280,7 @@ public class Enemy {
     }
 
     public void applyKnockback(float kx, float ky, float kz) {
+        if (type == Type.INFERNO_TOWER) return; // Towers are rooted and ignore all knockback/forces
         float resist = (type == Type.GOLEM) ? 0.15f : 1.0f;
         knockbackVelX = kx * resist;
         knockbackVelZ = kz * resist;

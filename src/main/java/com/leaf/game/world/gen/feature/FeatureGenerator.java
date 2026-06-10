@@ -51,7 +51,7 @@ public class FeatureGenerator {
 
     // ── Inferno Tower siting (shared with EnemyManager's tower director) ───────
     /** World blocks per Inferno-Tower candidate region. */
-    public static final int TOWER_REGION = 256;
+    public static final int TOWER_REGION = 160;
     /** Max reach of a tower foundation from its site centre (for chunk overlap). */
     public static final int TOWER_MAX_R  = 9;
 
@@ -91,7 +91,7 @@ public class FeatureGenerator {
      */
     public static int[] infernoTowerSite(long seed, int rx, int rz) {
         long rng = regionHash(seed, rx, rz, FT_TOWER);
-        if ((rng & 0xFFL) > 115L) return null;   // ~45 % of regions host a candidate
+        if ((rng & 0xFFL) > 200L) return null;   // ~78 % of regions host a candidate
         rng = nextRng(rng);
         int x = rx * TOWER_REGION + (int)((rng >>> 1) % TOWER_REGION);
         rng = nextRng(rng);

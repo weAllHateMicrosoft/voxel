@@ -1874,7 +1874,7 @@ public class Window {
                             }
                             fxRing(ev[3], ev[4] + 0.15f, ev[5], 0.4f, 3.4f, 0.45f, 2.6f, 0.9f, 0.25f);
                             fxBurst(ev[3], ev[4] + 0.5f, ev[5], 0.3f, 1.7f, 0.30f, 2.8f, 1.1f, 0.3f);
-                            AudioManager.playAt("fall_smash",
+                            AudioManager.playAt("summon_slime",
                                     new Vector3f(ev[3], ev[4], ev[5]), (Vector3f) null, 60f);
                         }
                         enemyManager.pendingTowerErupts.clear();
