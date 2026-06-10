@@ -22,7 +22,6 @@ public class AnimClip {
     public AnimClip(String name) { this.name = name; }
 
     // ── Runtime helpers ──────────────────────────────────────────────────────
-
     /** Sample a single float channel for a part at time t. Returns null if no track or no keys. */
     public Float sampleFloat(String partId, FloatChannel ch, float t) {
         List<Keyframe> track = keyframes.get(partId);

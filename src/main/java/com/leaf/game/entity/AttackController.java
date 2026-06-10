@@ -109,7 +109,9 @@ public class AttackController {
     // ── Enemy Manager reference ───────────────────────────────────────────────
     private EnemyManager enemyManager = null;
     public void setEnemyManager(EnemyManager em) { this.enemyManager = em; }
-
+    public EnemyManager getEnemyManager() {
+        return this.enemyManager;
+    }
     // ── Fast Knife Combo (; key) ──────────────────────────────────────────────
     // Three rapid slashes: deals damage but never destroys terrain.
     private int     knifeComboStep   = 0;    // 0 = idle, 1-3 = combo in progress

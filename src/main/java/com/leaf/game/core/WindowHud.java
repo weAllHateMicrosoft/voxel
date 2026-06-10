@@ -38,8 +38,8 @@ class WindowHud {
     private static final boolean DEV_MENU = false;
 
     void renderConnectionMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 120.0f);
-        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 360.0f : 200.0f);
+        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 150.0f);
+        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 430.0f : 320.0f);
         ImGui.begin("Start Screen",
                 imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
 
@@ -58,6 +58,16 @@ class WindowHud {
             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
             win.startPreload();
         }
+        ImGui.spacing();
+
+        // ── MULTIPLAYER (host / join over LAN) — both players get the full kit ─
+        ImGui.separator(); ImGui.spacing();
+        ImGui.textDisabled("        Multiplayer  (all abilities)");
+        ImGui.spacing();
+        if (ImGui.button("Host Game", 320, 28)) startMultiplayer(true);
+        ImGui.spacing();
+        ImGui.inputText("Host IP", win.ipInput);
+        if (ImGui.button("Join Game", 320, 28)) startMultiplayer(false);
         ImGui.spacing();
 
         // ── Developer options (hidden unless DEV_MENU)  -  kept in code ─────────
@@ -103,6 +113,19 @@ class WindowHud {
         ImGui.end();
     }
 
+    /** Shared host/join setup: connect, unlock everything, and start the world. */
+    private void startMultiplayer(boolean host) {
+        win.network = host ? new NetworkSession(true, null)
+                           : new NetworkSession(false, win.ipInput.get().trim());
+        win.network.start();
+        win.remotePlayer     = new RemotePlayer();
+        win.playIntroOnSpawn = false;            // skip the intro cutscene in MP
+        win.gameEnded        = false;
+        win.player.progression.unlockAll();      // PvP: both players fully armed
+        RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
+        win.startPreload();
+    }
+
     void renderPreloadProgress(float w, float h) {
         ImGui.setNextWindowPos(w / 2.0f - 160.0f, h / 2.0f - 65.0f);
         ImGui.setNextWindowSize(320.0f, 130.0f);
@@ -117,30 +140,49 @@ class WindowHud {
         ImGui.end();
     }
 
+    // Slider value holders (imgui-java sliderFloat needs a float[1]); synced from AudioManager.
+    private final float[] volMaster = {1f}, volSfx = {1f}, volMob = {1f}, volMusic = {1f};
+
     void renderPauseMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 100.0f, h / 2.0f - 110.0f);
-        ImGui.setNextWindowSize(200.0f, 210.0f);
+        ImGui.setNextWindowPos(w / 2.0f - 130.0f, h / 2.0f - 175.0f);
+        ImGui.setNextWindowSize(260.0f, 350.0f);
         ImGui.begin("Paused",
                 imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
         ImGui.text("Game Paused");
         ImGui.separator();
         ImGui.spacing();
-        if (ImGui.button("Resume", 180, 30)) {
+        if (ImGui.button("Resume", 240, 28)) {
             win.isPaused = false;
             glfwSetInputMode(win.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         }
         ImGui.spacing();
-        if (ImGui.button("Controls  [F1]", 180, 30)) {
+        if (ImGui.button("Controls  [F1]", 240, 28)) {
             // Open help without closing pause  -  win.player can read then ESC back
             win.showHelp = true;
         }
         ImGui.spacing();
-        if (ImGui.button("Save Game", 180, 30)) SaveManager.saveGame(win.world, win.player, win.inventory);
+        if (ImGui.button("Save Game", 240, 28)) SaveManager.saveGame(win.world, win.player, win.inventory);
         ImGui.spacing();
-        if (ImGui.button("Save & Quit", 180, 30)) {
+        if (ImGui.button("Save & Quit", 240, 28)) {
             SaveManager.saveGame(win.world, win.player, win.inventory);
             glfwSetWindowShouldClose(win.window, true);
         }
+
+        // ── VOLUME MIXER ──────────────────────────────────────────────────────
+        ImGui.spacing();
+        ImGui.separator();
+        ImGui.text("Volume");
+        ImGui.pushItemWidth(150f);
+        volMaster[0] = AudioManager.getMasterVolume();
+        if (ImGui.sliderFloat("Master", volMaster, 0f, 1f)) AudioManager.setMasterVolume(volMaster[0]);
+        volSfx[0] = AudioManager.getSfxVolume();
+        if (ImGui.sliderFloat("Effects", volSfx, 0f, 1f)) AudioManager.setSfxVolume(volSfx[0]);
+        volMob[0] = AudioManager.getMobVolume();
+        if (ImGui.sliderFloat("Mobs", volMob, 0f, 1f)) AudioManager.setMobVolume(volMob[0]);
+        volMusic[0] = AudioManager.getMusicVolume();
+        if (ImGui.sliderFloat("Music", volMusic, 0f, 1f)) AudioManager.setMusicVolume(volMusic[0]);
+        ImGui.popItemWidth();
+
         ImGui.end();
     }
 
@@ -344,6 +386,46 @@ class WindowHud {
     // ─────────────────────────────────────────────────────────────────────────
     void renderDeathScreen(float w, float h) {
         imgui.ImDrawList draw = ImGui.getForegroundDrawList();
+
+        // ── FLAPPY MODE ARCADE DEATH OVERLAY ──
+        if (win.player.useTestMovement && win.player.testMovement.state == TestMovementController.State.FLAPPY) {
+            // Dark retro violet backdrop
+            draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.04f, 0.85f));
+
+            float cy = h * 0.5f - 110f;
+            ImFont font = ImGui.getFont();
+
+            // Big Red "GAME OVER"
+            String title = "GAME OVER";
+            float titleScale = 2.6f;
+            float sz = font.getFontSize() * titleScale;
+            float tw = ImGui.calcTextSize(title).x * titleScale;
+            draw.addText(font, sz, (w - tw) / 2f + 2f, cy + 2f, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), title);
+            draw.addText(font, sz, (w - tw) / 2f,      cy,      ImGui.colorConvertFloat4ToU32(0.95f, 0.2f, 0.15f, 1f), title);
+
+            cy += 70f;
+
+            // Score summary
+            String scoreLine = "FINAL SCORE: " + win.player.testMovement.flappyScore;
+            float sw = ImGui.calcTextSize(scoreLine).x * 1.5f;
+            draw.addText(font, font.getFontSize() * 1.5f, (w - sw) / 2f, cy, ImGui.colorConvertFloat4ToU32(1f, 1f, 0.9f, 1f), scoreLine);
+
+            cy += 50f;
+
+            // Arcade Prompt Options (Play Again or Exit)
+            String opt1 = "[ ENTER ]  Play Again";
+            String opt2 = "[ X ]  Exit to Normal World";
+            float pw1 = ImGui.calcTextSize(opt1).x * 1.2f;
+            float pw2 = ImGui.calcTextSize(opt2).x * 1.2f;
+
+            float pa = 0.5f + 0.5f * (float) Math.abs(Math.sin(glfwGetTime() * 3.5f));
+            draw.addText(font, font.getFontSize() * 1.2f, (w - pw1) / 2f, cy, ImGui.colorConvertFloat4ToU32(0.2f, 0.85f, 0.4f, pa), opt1);
+            draw.addText(font, font.getFontSize() * 1.2f, (w - pw2) / 2f, cy + 28f, ImGui.colorConvertFloat4ToU32(0.85f, 0.85f, 0.9f, 0.75f), opt2);
+            return; // Completely bypass the standard survival death screen
+        }
+
+        // Heavy dark overlay  -  the world is barely visible (Normal death screen continues below)
+        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
         // Heavy dark overlay  -  the world is barely visible
         draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
 
@@ -398,8 +480,15 @@ class WindowHud {
                     imgui.flag.ImGuiInputTextFlags.EnterReturnsTrue)) {
                 String msg = win.chatInput.get().trim();
                 if (!msg.isEmpty()) {
-                    win.chatHistory.add("[You]: " + msg);
-                    if (win.network != null && win.network.connected) win.network.sendChat(msg);
+
+                    // Route commands to the new decoupled handler
+                    if (msg.startsWith("/")) {
+                        win.commandHandler.execute(msg);
+                    } else {
+                        win.chatHistory.add("[You]: " + msg);
+                        if (win.network != null && win.network.connected) win.network.sendChat(msg);
+                    }
+
                     win.chatInput.set("");
                 }
                 win.showChat = false;
@@ -452,9 +541,85 @@ class WindowHud {
         }
     }
 
+    /** Simple gatling-gun glyph for the hotbar (body + barrel cluster + grip). */
+    private void drawGunIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        int metal = ImGui.colorConvertFloat4ToU32(0.34f, 0.34f, 0.40f, 1f);
+        int dark  = ImGui.colorConvertFloat4ToU32(0.12f, 0.12f, 0.16f, 1f);
+        draw.addRectFilled(x0 + w*0.04f, y0 + h*0.40f, x0 + w*0.62f, y0 + h*0.72f, metal, 2f);  // body
+        draw.addRectFilled(x0 + w*0.14f, y0 + h*0.66f, x0 + w*0.30f, y1,            dark, 1.5f); // grip
+        for (int k = 0; k < 3; k++) {                                                            // barrels
+            float yy = y0 + h * (0.46f + 0.10f * k);
+            draw.addLine(x0 + w*0.55f, yy, x1, yy, dark, 2.4f);
+        }
+    }
+
+    /** Simple torch glyph for the hotbar (wooden stick + glowing flame). */
+    private void drawTorchIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0, cx = (x0 + x1) * 0.5f;
+        int wood    = ImGui.colorConvertFloat4ToU32(0.45f, 0.30f, 0.14f, 1f);
+        int flameO  = ImGui.colorConvertFloat4ToU32(1.0f, 0.50f, 0.10f, 1f);
+        int flameY  = ImGui.colorConvertFloat4ToU32(1.0f, 0.90f, 0.45f, 1f);
+        draw.addRectFilled(cx - w*0.08f, y0 + h*0.42f, cx + w*0.08f, y1, wood, 1.5f);  // stick
+        draw.addCircleFilled(cx, y0 + h*0.36f, w*0.24f, flameO);                       // flame
+        draw.addCircleFilled(cx, y0 + h*0.32f, w*0.13f, flameY);                       // hot core
+    }
+    private void drawTelescopeIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        int brass = ImGui.colorConvertFloat4ToU32(0.8f, 0.6f, 0.2f, 1f);
+        int glass = ImGui.colorConvertFloat4ToU32(0.4f, 0.8f, 1.0f, 1f);
+        draw.addLine(x0 + w * 0.2f, y1 - h * 0.2f, x1 - w * 0.2f, y0 + h * 0.2f, brass, 4f);
+        draw.addCircleFilled(x1 - w * 0.2f, y0 + h * 0.2f, 4f, glass, 8);
+    }
     void renderHUD(Camera camera, float screenW, float screenH) {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
+
+        // ── MULTIPLAYER STATUS — confirm sync at a glance ─────────────────────
+        // Shows the live link + the peer's synced HP (drops when you damage them) +
+        // troop counts, so it's obvious whether syncing actually works.
+        if (win.network != null) {
+            boolean up = win.network.connected;
+            int foeTroops = win.network.remoteSummons.length / 3;
+            String line = up
+                ? String.format("MP LINK OK   Foe HP %.0f/%.0f   You troops %d  Foe troops %d  ([ ] ] spawn)",
+                        win.remotePlayer != null ? win.remotePlayer.health : 0f,
+                        win.remotePlayer != null ? win.remotePlayer.maxHealth : 0f,
+                        win.mySummons.size(), foeTroops)
+                : "MP LINK DOWN — check Host IP / firewall, or a desync dropped it (see console)";
+            int col = up ? ImGui.colorConvertFloat4ToU32(0.4f, 1f, 0.5f, 0.95f)
+                         : ImGui.colorConvertFloat4ToU32(1f, 0.4f, 0.3f, 0.95f);
+            draw.addText(14f, 40f, col, line);
+
+            // ── KILL BANNER — big and clear when you eliminate the opponent ──
+            if (win.killBannerTimer > 0f) {
+                float a = Math.min(1f, win.killBannerTimer / 1.5f);
+                String txt = "ENEMY ELIMINATED";
+                ImFont font = ImGui.getFont();
+                float scale = 2.6f;
+                float sz = font.getFontSize() * scale;
+                float tw = ImGui.calcTextSize(txt).x * scale;
+                int gold = ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.25f, a);
+                int shad = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a * 0.7f);
+                draw.addText(font, sz, cx - tw / 2f + 2f, screenH * 0.26f + 2f, shad, txt);
+                draw.addText(font, sz, cx - tw / 2f,      screenH * 0.26f,      gold, txt);
+            }
+        }
+
+        // ── STARGAZING ─────────────────────────────────────────────────────────
+        if (win.showConstellations) {
+            int starC = ImGui.colorConvertFloat4ToU32(0.7f, 0.85f, 1.0f, 0.85f);
+            draw.addText(14f, screenH - 120f, starC,
+                    "Constellations ON  [F2] toggle   [=] snow toggle");
+        }
+        if (win.constellName != null) {
+            String txt = win.constellName;
+            int gold  = ImGui.colorConvertFloat4ToU32(1.0f, 0.92f, 0.60f, 0.95f);
+            int shad  = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.7f);
+            float tw  = ImGui.calcTextSize(txt).x;
+            draw.addText(cx - tw/2 + 1, screenH * 0.18f + 1, shad, txt);
+            draw.addText(cx - tw/2,     screenH * 0.18f,      gold, txt);
+        }
 
         // ── LIGHTNING BOLT RENDERING ──────────────────────────────────────────
         // Multiple parallel zigzag paths per bolt for a thick, impressive look.
@@ -929,6 +1094,7 @@ class WindowHud {
             draw.addText(hpX + hpWidth - 79f, mpY - 1.5f,
                     ImGui.colorConvertFloat4ToU32(0.55f, 0.75f, 1.0f, 0.9f), mpLabel);
 
+
             // Hotbar
             float slotSize = 40.0f, spacing = 5.0f;
             int numSlots = 9;
@@ -949,16 +1115,29 @@ class WindowHud {
                         (i == win.selectedSlot) ? 3.0f : 1.5f);
                 Block b = win.hotbar[i];
                 int count = win.inventory.getCount(b);
-                if (b != Block.AIR && count > 0) {
-                    float shrink = 8.0f;
-                    int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
-                    draw.addRectFilled(x + shrink, startY + shrink,
-                            x + slotSize - shrink, startY + slotSize - shrink, blockCol, 2.0f);
-                    draw.addRect(x + shrink, startY + shrink,
-                            x + slotSize - shrink, startY + slotSize - shrink, black, 2.0f, 0, 1.5f);
-                    String countStr = String.valueOf(count);
-                    draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
-                    draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
+
+                // NEW: Added Block.TELESCOPE as a tool (so it renders without needing a block count)
+                boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE);
+                if (b != Block.AIR && (tool || count > 0)) {
+                    float s = 8.0f;
+                    float ix0 = x + s, iy0 = startY + s, ix1 = x + slotSize - s, iy1 = startY + slotSize - s;
+                    if (b == Block.GATLING_GUN) {
+                        drawGunIcon(draw, ix0, iy0, ix1, iy1);
+                    } else if (b == Block.TORCH) {
+                        drawTorchIcon(draw, ix0, iy0, ix1, iy1);
+                    } else if (b == Block.TELESCOPE) {
+                        // NEW: Draws the telescope glyph when holding the item
+                        drawTelescopeIcon(draw, ix0, iy0, ix1, iy1);
+                    } else if (b == Block.GRAPPLING_HOOK) {
+                        drawGrappleIcon(draw, ix0, iy0, ix1, iy1); // Render hook icon
+                    } else {
+                        int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
+                        draw.addRectFilled(ix0, iy0, ix1, iy1, blockCol, 2.0f);
+                        draw.addRect(ix0, iy0, ix1, iy1, black, 2.0f, 0, 1.5f);
+                        String countStr = String.valueOf(count);
+                        draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
+                        draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
+                    }
                 }
             }
         } // end !isInStandPerspective (health bar + win.hotbar guard)
@@ -1341,6 +1520,7 @@ class WindowHud {
 
             for (Enemy enemy : win.enemyManager.getEnemies()) {
                 if (!enemy.alive) continue;
+                if (enemy == win.mpProxy) continue;   // invisible PvP hitbox — never show its 999 HP bar
 
                 Vector3f headPos = new Vector3f(
                         enemy.position.x,
@@ -1490,6 +1670,36 @@ class WindowHud {
             draw.addText(screenW - 80f, 12f, black, timeLabel);
             draw.addText(screenW - 81f, 11f, timeColor, timeLabel);
         }
+        if (win.holdingTelescope) {
+            win.telescope.render2D((int)screenW, (int)screenH, draw);
+
+            // Generate and draw contextual navigation hint
+            String navHint = CelestialNav.generateHint(win.dayNight);
+            float nw = ImGui.calcTextSize(navHint).x;
+            draw.addText(cx - nw / 2f, screenH - 60f, ImGui.colorConvertFloat4ToU32(0.8f, 0.9f, 1f, 0.8f), navHint);
+        }
+        // ── FLAPPY BIRD ARCADE SCORE ──
+        if (win.player.useTestMovement && win.player.testMovement.state == TestMovementController.State.FLAPPY) {
+            String scoreStr = "SCORE: " + win.player.testMovement.flappyScore;
+            ImFont font = ImGui.getFont();
+            float scale = 2.4f;
+            float sz = font.getFontSize() * scale;
+            float tw = ImGui.calcTextSize(scoreStr).x * scale;
+
+            // Render centered drop-shadow score
+            draw.addText(font, sz, cx - tw / 2f + 2f, screenH * 0.16f + 2f, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), scoreStr);
+            draw.addText(font, sz, cx - tw / 2f,      screenH * 0.16f,      ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.25f, 1f), scoreStr);
+
+            // Flashing start instruction
+            if (win.player.testMovement.flappyWaitingToStart) {
+                String startPrompt = "Press [ SPACE ] to Flap & Start";
+                float sw = ImGui.calcTextSize(startPrompt).x * 1.5f;
+                float pa = 0.5f + 0.5f * (float) Math.abs(Math.sin(glfwGetTime() * 4.5f));
+                draw.addText(font, font.getFontSize() * 1.5f, cx - sw / 2f, screenH * 0.28f, ImGui.colorConvertFloat4ToU32(1f, 1.0f, 1.0f, pa), startPrompt);
+            }
+        }
+        // ── RENDER BACKPACK OVERLAY ──
+        win.backpackUI.render(screenW, screenH);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1741,6 +1951,7 @@ class WindowHud {
         helpRow("GRAPPLE", "Swing on a grapple line attached to the block you're looking at.");
         ImGui.spacing();
 
+
         // ── COMBAT ────────────────────────────────────────────────────────────
         ImGui.textColored(1.0f, 0.35f, 0.2f, 1.0f, "COMBAT");
         ImGui.separator();
@@ -1808,13 +2019,8 @@ class WindowHud {
         helpRow("[ESC]", "Open the pause menu.");
         helpRow("[F1]", "This screen.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
-        helpRow("[']",  "'Deprivation Domain' — Water God Stance (testing). Tap ['] to lock yourself in place in a silent standoff. The world inside the " + (int)GameConfig.depRadius + "-block domain tints gold and hyper-real; outside turns cool and distant. The instant ANY enemy or projectile moves inside, a chaotic 'slash storm' of anime sword-crescents erupts around you in every direction (a 360° dome of light-speed swings) and the victim bursts apart into white-hot voxel chunks that char as they fall. Stand perfectly still and let the horde shred itself. Lasts " + (int)GameConfig.depDuration + " s; press ['] again to exit. Tune via GameConfig (dep*). Inspired by Mushoku Tensei's Deprivation Field + Soul Knight's AoE sweeps.");
-        helpRow("[K]",  "'Chocolate Disco' grid (testing). Aim at the ground and press K to spawn a 9×9 glowing geometry grid. LMB marks/unmarks a cell (the cell becomes a gold wireframe box). Press K again to DETONATE all marked cells — white-hot light sears from the wireframe edges, a column of light shoots skyward, and all blocks/enemies inside are destroyed. Press K with nothing marked to dismiss the grid. Grid is horizontal and always visible through terrain.");
-        helpRow("[F5]", "Warp to the 'Canyon' (testing). Teleports you to a warm mesa region (banded terracotta cliffs, arches, turquoise pools). Fly ~450 blocks north for the BLUE version (snow biome — blue-grey rock, white tops). Press [F5] again to return. Press [V] mid-flight to cycle SKIM → SOAR → GRAPPLE.");
-        helpRow("[F6]", "Non-Euclidean 'Layered Rooms' (testing). Teleports you into a 2x2 building with a central pillar. Walk CLOCKWISE around the pillar and you pass through endless distinct rooms (1,2,3,4,5,6...) instead of looping after four. Press [F6] again to leave.");
-        helpRow("[F10]", "'Radar Sweep' (testing). Your world becomes a 3D radar scope from where you stand — range rings + bearing spokes on the terrain, a rotating sweep arm with an opaque→transparent afterglow that pings the landscape, and a wireframe box around every enemy that flares as the arm passes it. One ~8s scan, then back to normal.");
-        helpRow("[F8]", "'The World' (testing). A sphere of photographic-negative reality bursts from your feet — everything inside inverts and shifts to electric blue, enemies and projectiles freeze in place while you keep moving, then the domain collapses back. DIO's time stop.");
-        helpRow("[F7]", "'Orbital Annihilation' (testing). Aim at a block and press F7 for a ~12s fully-3D cinematic: a spinning gyroscope of energy rings + pulsing core, accelerating implosion rings that detonate, a blackout with the terrain glowing as a wireframe scan + floating embers, a CARVED crater, then a volumetric orbital laser with helix beams, shockwave, and debris. Stand back.");
+        helpRow("[F5]", "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel  -  impossible geometry via FBO portal rendering.");
+        helpRow("[F6]", "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways  -  two are hidden portals that loop you back to the start.");
         ImGui.spacing();
 
         // ── MANA & COOLDOWNS ──────────────────────────────────────────────────
@@ -2189,134 +2395,5 @@ class WindowHud {
         float ey = Math.min(cy, h - cy) / margin;
         float t  = Math.min(1f, Math.min(ex, ey));
         return t * t * (3f - 2f * t); // smoothstep
-    }
-
-    void renderChocolateDiscoConsole() {
-        if (!win.showDiscoUI) return;
-
-        // Position on the left side of the screen
-        ImGui.setNextWindowPos(30, 100, imgui.flag.ImGuiCond.FirstUseEver);
-        ImGui.begin("Chocolate Disco Datapad", imgui.flag.ImGuiWindowFlags.AlwaysAutoResize | imgui.flag.ImGuiWindowFlags.NoCollapse);
-
-        ImGui.textColored(1.0f, 0.8f, 0.1f, 1.0f, "MODE: ANNIHILATE");
-        ImGui.separator();
-        ImGui.spacing();
-
-        // X-Axis Headers
-        ImGui.text("   "); ImGui.sameLine();
-        for (int c = 0; c < 9; c++) {
-            ImGui.text(" " + (c + 1) + " "); ImGui.sameLine();
-        }
-        ImGui.newLine();
-
-        // Reset hover state (updated only if hovered this frame)
-        win.cdHoverR = -1;
-        win.cdHoverC = -1;
-
-        // 9x9 Grid of ImGui Buttons
-        for (int r = 0; r < 9; r++) {
-            // Y-Axis Headers
-            ImGui.text("" + (char)('A' + r) + " "); ImGui.sameLine();
-
-            for (int c = 0; c < 9; c++) {
-                if (c > 0) ImGui.sameLine();
-                ImGui.pushID(r * 9 + c);
-
-                boolean marked = win.cdMarked[r][c];
-                boolean det    = win.cdDetT[r][c] > 0;
-
-                // Color the buttons based on their state
-                if (det) {
-                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.2f, 0.2f, 1.0f);
-                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.4f, 0.4f, 1.0f);
-                } else if (marked) {
-                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.7f, 0.1f, 1.0f);
-                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.85f, 0.3f, 1.0f);
-                } else {
-                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 0.15f, 0.15f, 0.2f, 1.0f);
-                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 0.2f, 0.8f, 0.9f, 1.0f);
-                }
-
-                if (ImGui.button("##cell", 28f, 28f)) {
-                    if (!det) {
-                        win.cdMarked[r][c] = !marked;
-                        win.cdMeshDirty = true;
-                    }
-                }
-
-                if (ImGui.isItemHovered()) {
-                    win.cdHoverR = r;
-                    win.cdHoverC = c;
-                    win.cdMeshDirty = true;
-                }
-
-                ImGui.popStyleColor(2);
-                ImGui.popID();
-            }
-            ImGui.newLine();
-        }
-
-        ImGui.spacing(); ImGui.separator(); ImGui.spacing();
-
-        if (ImGui.button("EXECUTE", 280f, 40f)) {
-            win.detonateDiscoGrid(win.world);
-        }
-        ImGui.spacing();
-        if (ImGui.button("DISMISS", 280f, 30f)) {
-            win.dismissDiscoGrid();
-        }
-
-        ImGui.end();
-    }
-    // ═══════════════════════════════════════════════════════════════════════════
-    //  CHOCOLATE DISCO: IMGUI WRIST-CONSOLE
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    enum DiscoMode { ANNIHILATE, DROP, REDIRECT }
-    DiscoMode currentDiscoMode = DiscoMode.ANNIHILATE;
-
-    private void handleDiscoClick(int r, int c) {
-        if (currentDiscoMode == DiscoMode.ANNIHILATE) {
-            // Mode 1: Toggle the Mark for Detonation
-            if (win.cdDetT[r][c] <= 0f) {
-                win.cdMarked[r][c] = !win.cdMarked[r][c];
-                win.cdMeshDirty = true;
-            }
-        }
-        else if (currentDiscoMode == DiscoMode.DROP) {
-            // Mode 2: Call down an orbital strike of your currently selected block!
-            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
-            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
-            float wy = win.cdGridY + 40f; // Drop from the sky
-
-            com.leaf.game.entity.DroppedItem item = new com.leaf.game.entity.DroppedItem(
-                    (int)wx, (int)wy, (int)wz, win.selectedBlock, new org.joml.Vector3f(0f, -40f, 0f) // Heavy downward slam velocity
-            );
-            win.droppedItems.add(item);
-            com.leaf.game.core.AudioManager.play("fall_hit", 0.8f);
-        }
-        else if (currentDiscoMode == DiscoMode.REDIRECT) {
-            // Mode 3: Instantly warp all active projectiles to this cell
-            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
-            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
-
-            boolean redirected = false;
-
-            // Redirect player Void Shards
-            for (com.leaf.game.entity.AttackController.ActiveBolt bolt : win.player.attacks.activeBolts) {
-                bolt.pos.set(wx, win.cdGridY + 1.5f, wz);
-                redirected = true;
-            }
-            // Redirect enemy boulders/projectiles
-            for (com.leaf.game.entity.EnemyManager.EnemyProjectile proj : win.enemyManager.projectiles) {
-                proj.pos.set(wx, win.cdGridY + 1.5f, wz);
-                redirected = true;
-            }
-
-            if (redirected) {
-                com.leaf.game.core.AudioManager.play("snipe_redirect", 1.0f);
-                com.leaf.game.core.ScreenEffectManager.INSTANCE.flash(0f, 0.8f, 1.0f, 0.4f, 0.1f);
-            }
-        }
     }
 }

@@ -6,6 +6,8 @@ import com.leaf.game.core.GameConfig;
 import com.leaf.game.core.Progression;
 import com.leaf.game.world.Block;
 import com.leaf.game.world.World;
+import com.leaf.game.world.Chunk;
+import com.leaf.game.core.AudioManager;
 import org.joml.Vector3f;
 
 import static org.lwjgl.glfw.GLFW.*;
@@ -19,13 +21,21 @@ public class Player {
     public final Progression progression = new Progression();
     /** Shorthand gate used at ability triggers. */
     public boolean can(Progression.Ability a) { return progression.isUnlocked(a); }
-
+    // ── NEW TESTING MOVEMENT CONTROLLER ───────────────────────────────────────
+    public boolean useTestMovement = false;
+    public final TestMovementController testMovement = new TestMovementController(this);
+    public float cameraYOffset = 0f; // Smoothes out instant coordinate teleports (Stairs/Step-Up)
+    private boolean wasInWaterTest = false; // Manages seamless land/water handoffs
+    public Block heldBlock = Block.AIR; // Synchronized held block from Window.java
+    // ── CENTRAL GRAPPLE HOOK TOOL STATE ───────────────────────────────────────
+    public boolean isGrappleHooked = false;
+    public Vector3f grappleHookPoint = new Vector3f();
+    public float grappleHookTime = 0f;
+    private boolean lastRMBGrapple = false;
     // ── HEALTH & FALL DAMAGE ──────────────────────────────────────────────────
-    public float   health      = 50.0f;
-    public float   maxHealth   = 50.0f;
-    public float   highestY    = -1000f;
-    /** Set true the frame the player falls below y=0 (the void). Window kills them. */
-    public boolean fellIntoVoid = false;
+    public float health    = 50.0f;
+    public float maxHealth = 50.0f;
+    public float highestY  = -1000f;
 
     // ── MANA ──────────────────────────────────────────────────────────────────
     // Consumed by abilities; regenerates passively over time.
@@ -33,10 +43,21 @@ public class Player {
     public float mana    = 100f;
     public float maxMana = 100f;
 
-    private float   velocityY  = 0.0f;
+    private float   velocityY  = 0.0f;        // velocity ALONG the up axis (not always world-Y)
     private boolean onGround   = false;
     private boolean wasInWater     = false;
     private boolean cameraSubmerged = false;  // true when the camera (eye level) is inside water
+
+    // ── GRAVITY DIRECTION (6-axis) ────────────────────────────────────────────
+    // Gravity can point along any world axis. gravAxis ∈ {0:X,1:Y,2:Z}; gravSign is
+    // the sign of "down" on that axis (default down = −Y). upDir = −gravity, cached.
+    // Flipping gravity lets the player stand and walk on walls / the ceiling.
+    public int      gravAxis = 1;
+    public float    gravSign = -1f;
+    public final Vector3f upDir = new Vector3f(0f, 1f, 0f);
+    private boolean lastGravityKey = false;
+    /** Set by death/respawn code so gravity snaps back to normal on the next update. */
+    public boolean  pendingGravityReset = false;
 
     private static final float WIDTH      = 0.6f;
     private static final float HEIGHT     = 1.8f;
@@ -88,6 +109,7 @@ public class Player {
     public int  smashImpactX = Integer.MIN_VALUE;
     public int  smashImpactY, smashImpactZ;
     public int  currentSmashRadius = GameConfig.smashCraterRadius; // Tracks the height-scaled radius
+
     // ─────────────────────────────────────────────────────────────────────────
     //  Constructor
     // ─────────────────────────────────────────────────────────────────────────
@@ -103,6 +125,22 @@ public class Player {
 
     public void update(long window, Camera camera, World world, float deltaTime) {
         double now = glfwGetTime();
+
+        // ── GRAVITY CHANGE (look + press key) ─────────────────────────────────
+        // A pending reset (from death/respawn) snaps gravity back to normal first.
+        if (pendingGravityReset) {
+            pendingGravityReset = false;
+            gravAxis = 1; gravSign = -1f; upDir.set(0f, 1f, 0f);
+            velocityY = 0f; onGround = false;
+            camera.snapGravityUp(upDir);
+            highestY = upHeight();
+        }
+        // Always animate the view toward the current gravity orientation, and on a
+        // fresh key press snap "down" to whatever axis the camera is looking along.
+        camera.tickGravity(deltaTime);
+        boolean gravKey = glfwGetKey(window, com.leaf.game.core.KeyBindings.GRAVITY_FLIP) == GLFW_PRESS;
+        if (gravKey && !lastGravityKey) setGravityFromLook(camera);
+        lastGravityKey = gravKey;
 
         // ── Clear per-frame smash signal ──────────────────────────────────────
         smashImpactX = Integer.MIN_VALUE;
@@ -153,8 +191,8 @@ public class Player {
         if (debugMode) {
             flightController.update(window, camera, world, deltaTime);
             wasFlying = true;
-            camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
-            highestY = position.y;
+            syncEye(camera);
+            highestY = upHeight();
             return;
         }
 
@@ -170,8 +208,11 @@ public class Player {
         if (stand.tick(window, camera, world, deltaTime)) {
             attacks.tick(window, stand.standCamera, world, deltaTime);
             // Gravity still applies to the player body while piloting the drone
-            boolean inWaterD = isBlockLiquid(world, position.x, position.y + 0.1f, position.z);
-            if (inWaterD && !wasInWater) highestY = position.y;
+            boolean inWaterD = isBlockLiquid(world, position.x + upDir.x * 0.1f,
+                    position.y + upDir.y * 0.1f,
+                    position.z + upDir.z * 0.1f);
+            float hD = upHeight();
+            if (inWaterD && !wasInWater) highestY = hD;
             wasInWater = inWaterD;
             if (inWaterD) {
                 velocityY *= (float) Math.pow(0.85f, deltaTime * 60f);
@@ -181,13 +222,13 @@ public class Player {
             }
             float dyD = velocityY * deltaTime;
             if (dyD != 0f) {
-                position.y += dyD;
-                if (resolveCollisionY(world, dyD)) { velocityY = 0f; onGround = true; }
-                else                                { onGround = false; }
+                onGround = false;
+                position.x += upDir.x * dyD; position.y += upDir.y * dyD; position.z += upDir.z * dyD;
+                resolveAxis(world, gravAxis, upDir.get(gravAxis) * dyD);  // sets onGround / zeroes velocityY
             }
             if (onGround) highestY = position.y;
             else if (position.y > highestY) highestY = position.y;
-            if (position.y < 0f) { fellIntoVoid = true; }   // void death — Window handles it
+            if (position.y < 1f) { position.y = 1f; velocityY = 0f; }
             return;
         }
 
@@ -195,7 +236,7 @@ public class Player {
         // Runs before physics. Returns true when ability has full positional
         // control (Rewind) — caller skips the physics block entirely.
         if (abilities.tick(window, camera, world, deltaTime)) {
-            camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
+            syncEye(camera);
             return;
         }
 
@@ -219,141 +260,245 @@ public class Player {
         // ── LIGHTNING TICK ─────────────────────────────────────────────────────
         lightning.tick(window, camera, world, deltaTime, (float) glfwGetTime());
 
-        float dx = 0f, dy = 0f, dz = 0f;
+        // ── LAVA TICK DAMAGE (Applies normally in all modes) ──
+        boolean inLava = isBlockLiquid(world, position.x, position.y + 0.1f, position.z)
+                && world.getBlock((int)Math.floor(position.x), (int)Math.floor(position.y), (int)Math.floor(position.z)) == Block.LAVA;
 
-        // ── GROUND SMASH — pre-empt normal input while smashing ───────────────
-        if (isSmashing) {
-            // Accelerate downward like real free-fall, capped at terminal smash speed
-            velocityY = Math.max(-GameConfig.smashDescentMaxSpeed,
-                                  velocityY - GameConfig.smashDescentAccel * deltaTime);
-            float targetPitch = -(float)(Math.PI * 0.305);
-            camera.pitch += (targetPitch - camera.pitch) * Math.min(1f, 4f * deltaTime);
-
-        } else if (abilities.isDashing) {
-            // ── DASH — override WASD with dash velocity ────────────────────────
-            // Vertical physics (gravity, jumping) still runs normally below.
-            dx = abilities.dashDirX * GameConfig.dashSpeed * deltaTime;
-            dz = abilities.dashDirZ * GameConfig.dashSpeed * deltaTime;
-
-        } else if (abilities.isCannonballing) {
-            // ── CANNONBALL — override horizontal movement ──────────────────────
-            // Vertical physics runs normally (gravity decelerates velocityY).
-            // Camera is NOT rotated — player can look around freely mid-flight.
-            dx = abilities.cannonVelX * deltaTime;
-            dz = abilities.cannonVelZ * deltaTime;
-
-        } else if (abilities.isPillaring || abilities.isHealing) {    
-            // Lock horizontal movement while performing stone pillar rise or channeling heal
-            dx = 0f;
-            dz = 0f;
-
-        }else {
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-                dx += forward.x * speed * deltaTime;
-                dz += forward.z * speed * deltaTime;
-                if (isCameraInWater) velocityY += forward.y * speed * 3.5f * deltaTime;
-            }
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-                dx -= forward.x * speed * deltaTime;
-                dz -= forward.z * speed * deltaTime;
-                if (isCameraInWater) velocityY -= forward.y * speed * 3.5f * deltaTime;
-            }
-            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) { dx += right.x * speed * deltaTime; dz += right.z * speed * deltaTime; }
-            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) { dx -= right.x * speed * deltaTime; dz -= right.z * speed * deltaTime; }
+        // Safe, clean lava damage that applies normally in all modes
+        if (inLava && !abilities.isKamui) {
+            health = Math.max(0f, health - 120f * deltaTime); // Rapidly burns down health
         }
+        // ── PHYSICAL MOVEMENT & COLLISION BRANCH ───────────────────────────────
+        boolean inWater = isBlockLiquid(world, position.x + upDir.x * 0.1f,
+                position.y + upDir.y * 0.1f,
+                position.z + upDir.z * 0.1f);
 
-        // ── SURVIVAL PHYSICS ──────────────────────────────────────────────────
-        boolean inWater   = isBlockLiquid(world, position.x, position.y + 0.1f,      position.z);
-        boolean submerged = isBlockLiquid(world, position.x, position.y + EYE_HEIGHT, position.z);
+        // ── UNIFIED GRAPPLE HOOK TOOL PHYSICS ──
+        boolean holdingGrapple = (heldBlock == Block.GRAPPLING_HOOK);
+        boolean rmbHeld = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
-        if (inWater && !wasInWater) highestY = position.y;
+        float zipX = 0f, zipY = 0f, zipZ = 0f;
 
-        if (inWater) {
-            velocityY -= 2.5f * deltaTime;
-            if (submerged) velocityY += 8.0f * deltaTime;
-
-            if (currentSpace) velocityY += 35f * deltaTime;
-            if (shiftHeld)    velocityY -= 35f * deltaTime;
-
-            velocityY *= (float)Math.pow(0.85f, deltaTime * 60f);
-            velocityY  = Math.max(-4.0f, Math.min(4.0f, velocityY));
-
-            if (isSprinting) { dx *= 0.90f; dz *= 0.90f; } else { dx *= 0.55f; dz *= 0.55f; }
-            highestY = position.y;
-            isSmashing = false;
-            abilities.cancelCannonball(); // water takes over, cannonball ends cleanly
-
-        } else if (!isSmashing) {
-            velocityY -= GameConfig.GRAVITY * deltaTime;
-
-            if (wasInWater && currentSpace) {
-                velocityY = GameConfig.JUMP_FORCE * 0.85f;
-            } else if (currentSpace && onGround) {
-                velocityY = GameConfig.JUMP_FORCE;
-                onGround  = false;
+        if (holdingGrapple && rmbHeld && !debugMode && !stand.isInStandPerspective()) {
+            if (!isGrappleHooked && !lastRMBGrapple) {
+                // Fire Hook
+                Vector3f target = getGrappleAimTarget(camera, world, 50.0f);
+                if (target != null) {
+                    grappleHookPoint.set(target);
+                    isGrappleHooked = true;
+                    grappleHookTime = 0f;
+                    velocityY = Math.max(velocityY, 14.0f); // Launch pop
+                    if (useTestMovement) testMovement.velocity.y = Math.max(testMovement.velocity.y, 14.0f);
+                    AudioManager.play("swoosh", 0.8f);
+                }
             }
 
-            boolean shiftJustPressed = shiftHeld && !lastShift;
-            if (!onGround
-                    && shiftJustPressed
-                    && velocityY < GameConfig.smashTriggerVelocity
-                    && (highestY - position.y) > GameConfig.smashMinHeight) {
-                isSmashing = true;
-                mana = Math.max(0f, mana - GameConfig.manaSmash);  // drain; never cancel mid-air
+            if (isGrappleHooked) {
+                grappleHookTime += deltaTime;
+                Vector3f toHook = new Vector3f(grappleHookPoint).sub(position);
+                float dist = toHook.length();
+
+                if (dist < 1.8f) {
+                    isGrappleHooked = false; // Reached target, auto-sever
+                } else {
+                    Vector3f pullDir = new Vector3f(toHook).normalize();
+
+                    // ── Original arcade zip-line logic ──
+                    if (grappleHookTime < 0.3f) {
+                        zipX = pullDir.x * 4.0f;
+                        zipZ = pullDir.z * 4.0f;
+                        zipY = Math.max(2.0f, velocityY - (GameConfig.GRAVITY * 0.4f) * deltaTime);
+                        setDirectVelocity(zipX, zipY, zipZ);
+                    } else {
+                        float t = Math.min(1.0f, (grappleHookTime - 0.3f) / 0.35f);
+                        float currentSpeed = 4.0f + (t * t * 75.0f); // Slingshot!
+                        zipX = pullDir.x * currentSpeed;
+                        zipY = pullDir.y * currentSpeed;
+                        zipZ = pullDir.z * currentSpeed;
+                        setDirectVelocity(zipX, zipY, zipZ);
+                    }
+                }
             }
+        } else {
+            isGrappleHooked = false;
         }
+        lastRMBGrapple = rmbHeld;
 
-        lastShift  = shiftHeld;
-        wasInWater = inWater;
-        dy = velocityY * deltaTime;
-
-        int substeps = (int)Math.ceil(
-                Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz))) * 10f);
-        substeps = Math.max(1, substeps);
-
-        float stepX = dx / substeps, stepY = dy / substeps, stepZ = dz / substeps;
-
-        boolean wasOnGround = onGround;
-        onGround = false;
-
-        for (int i = 0; i < substeps; i++) {
-            if (stepX != 0f) { position.x += stepX; if (resolveCollisionX(world, stepX)) { stepX = 0f; isSprinting = false; } }
-            if (stepY != 0f) { position.y += stepY; if (resolveCollisionY(world, stepY)) stepY = 0f; }
-            if (stepZ != 0f) { position.z += stepZ; if (resolveCollisionZ(world, stepZ)) { stepZ = 0f; isSprinting = false; } }
-        }
-
-        if (!wasOnGround && onGround) {
-            if (isSmashing) {
-                smashImpactX = (int)Math.floor(position.x);
-                smashImpactY = (int)Math.floor(position.y);
-                smashImpactZ = (int)Math.floor(position.z);
-
-                // Calculate dynamic smash radius based on how far we fell
-                float fallDist = highestY - position.y;
-                currentSmashRadius = GameConfig.smashCraterRadius
-                        + (int) Math.floor((fallDist - GameConfig.smashMinHeight) * 0.08f);
-
-                // Cap the radius at 12 blocks to keep performance stable during massive drops
-                currentSmashRadius = Math.max(GameConfig.smashCraterRadius, Math.min(12, currentSmashRadius));
-
-                isSmashing   = false;
-                velocityY    = 0f;
-                camera.pitch = (float)Math.toRadians(-30.0);
-            } else if (abilities.isCannonballing) {
-                // Cannonball landing: end ballistic flight, no fall damage
-                abilities.isCannonballing = false;
-                abilities.cannonVelX      = 0f;
-                abilities.cannonVelZ      = 0f;
-                velocityY = 0f;
-                // highestY already set to launch point so fallDist ≤ 0; no damage
+        // Run movement physics
+        if (isGrappleHooked) {
+            // Apply collision-safe zip displacement directly
+            float sx = zipX * deltaTime;
+            float sy = zipY * deltaTime;
+            float sz = zipZ * deltaTime;
+            if (useTestMovement) {
+                if (sx != 0f) { position.x += sx; if (testMovement.resolveAxisFluid(world, 0, sx)) sx = 0f; }
+                if (sy != 0f) { position.y += sy; if (testMovement.resolveAxisFluid(world, 1, sy)) sy = 0f; }
+                if (sz != 0f) { position.z += sz; if (testMovement.resolveAxisFluid(world, 2, sz)) sz = 0f; }
             } else {
-                float fallDist = highestY - position.y;
-                if (fallDist > 4.0f && !abilities.isKamui) {
-                    health -= (fallDist * 0.5f - 2.0f);
-                    if (health <= 0f) {
-                        System.out.println("You died!");
-                        position.set(1000, 255, 1000);
-                        health = maxHealth;
+                if (sx != 0f) { position.x += sx; if (resolveAxis(world, 0, sx)) sx = 0f; }
+                if (sy != 0f) { position.y += sy; if (resolveAxis(world, 1, sy)) sy = 0f; }
+                if (sz != 0f) { position.z += sz; if (resolveAxis(world, 2, sz)) sz = 0f; }
+            }
+            if (position.y < 0f) { fellIntoVoid = true; }
+            syncEye(camera);
+        } else if (useTestMovement && !inWater) {
+            // Capture Y coordinate before the movement tick
+            float prevY = position.y;
+
+            // Tick the custom physics engine
+            testMovement.setEnemyManager(attacks.getEnemyManager());
+            testMovement.tick(window, camera, world, deltaTime);
+
+            // Camera smoothing
+            float diffY = position.y - prevY;
+            float expectedMaxY = Math.max(0f, testMovement.velocity.y * deltaTime) + 0.01f;
+            if (diffY > expectedMaxY) {
+                cameraYOffset -= (diffY - expectedMaxY);
+            }
+            cameraYOffset += (0f - cameraYOffset) * Math.min(1f, 16f * deltaTime);
+
+            // Sync normal velocityY so if we hit water next frame, we carry our momentum
+            velocityY = testMovement.velocity.y;
+
+            if (position.y < 0f) { fellIntoVoid = true; }
+            syncEye(camera);
+            wasInWaterTest = false;
+        } else {
+            // Standard Minecraft-style survival movement, gravity, and collision
+            Vector3f wish = new Vector3f();
+            cameraYOffset = 0f; // Reset offset when outside test mode
+
+            // ── GROUND SMASH — pre-empt normal input while smashing ───────────
+            if (isSmashing) {
+                // Accelerate "downward" (toward gravity) like real free-fall.
+                velocityY = Math.max(-GameConfig.smashDescentMaxSpeed,
+                        velocityY - GameConfig.smashDescentAccel * deltaTime);
+                float targetPitch = -(float)(Math.PI * 0.305);
+                camera.pitch += (targetPitch - camera.pitch) * Math.min(1f, 4f * deltaTime);
+
+            } else if (abilities.isDashing) {
+                // ── DASH — override WASD with dash velocity ────────────────────
+                wish.x = abilities.dashDirX * GameConfig.dashSpeed * deltaTime;
+                wish.z = abilities.dashDirZ * GameConfig.dashSpeed * deltaTime;
+
+            } else if (abilities.isCannonballing) {
+                // ── CANNONBALL — override horizontal movement ──────────────────
+                wish.x = abilities.cannonVelX * deltaTime;
+                wish.z = abilities.cannonVelZ * deltaTime;
+
+            } else if (abilities.isPillaring || abilities.isHealing) {
+                // Lock horizontal movement while performing stone pillar rise or channeling heal
+
+            } else {
+                float sd = speed * deltaTime;
+                // Split forward into a horizontal (⊥ up) part for walking and an up part for
+                // swimming, so moving while looking up/down in water doesn't double-count the
+                // vertical (matches the old forward.x/z-walk + forward.y-swim behaviour).
+                float    fUp    = forward.dot(upDir);
+                Vector3f fHoriz = new Vector3f(forward).fma(-fUp, upDir);
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                    wish.fma(sd, fHoriz);
+                    if (isCameraInWater) velocityY += fUp * speed * 3.5f * deltaTime;
+                }
+                if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                    wish.fma(-sd, fHoriz);
+                    if (isCameraInWater) velocityY -= fUp * speed * 3.5f * deltaTime;
+                }
+                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) wish.fma(sd, right);
+                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) wish.fma(-sd, right);
+            }
+
+            // ── SURVIVAL PHYSICS ──────────────────────────────────────────────
+            // Water probes are taken at the feet and eye ALONG the up axis.
+            boolean submerged = isBlockLiquid(world, position.x + upDir.x * EYE_HEIGHT,
+                    position.y + upDir.y * EYE_HEIGHT,
+                    position.z + upDir.z * EYE_HEIGHT);
+
+            float h = upHeight();
+            if (inWater && !wasInWater) highestY = h;
+
+            if (inWater) {
+                velocityY -= 2.5f * deltaTime;
+                if (submerged) velocityY += 8.0f * deltaTime;
+
+                if (currentSpace) velocityY += 35f * deltaTime;
+                if (shiftHeld)    velocityY -= 35f * deltaTime;
+
+                velocityY *= (float)Math.pow(0.85f, deltaTime * 60f);
+                velocityY  = Math.max(-4.0f, Math.min(4.0f, velocityY));
+
+                wish.mul(isSprinting ? 0.90f : 0.55f);
+                highestY = h;
+                isSmashing = false;
+                abilities.cancelCannonball(); // water takes over, cannonball ends cleanly
+
+            } else if (!isSmashing) {
+                velocityY -= GameConfig.GRAVITY * deltaTime;
+
+                if (wasInWater && currentSpace) {
+                    velocityY = GameConfig.JUMP_FORCE * 0.85f;
+                } else if (currentSpace && onGround) {
+                    velocityY = GameConfig.JUMP_FORCE;
+                    onGround  = false;
+                }
+
+                boolean shiftJustPressed = shiftHeld && !lastShift;
+                if (!onGround
+                        && shiftJustPressed
+                        && velocityY < GameConfig.smashTriggerVelocity
+                        && (highestY - h) > GameConfig.smashMinHeight) {
+                    isSmashing = true;
+                    mana = Math.max(0f, mana - GameConfig.manaSmash);  // drain; never cancel mid-air
+                }
+            }
+
+            lastShift  = shiftHeld;
+            wasInWater = inWater;
+
+            // Total displacement: horizontal wish + vertical (velocity along up axis).
+            Vector3f delta = new Vector3f(wish).fma(velocityY * deltaTime, upDir);
+
+            int substeps = (int)Math.ceil(
+                    Math.max(Math.abs(delta.x), Math.max(Math.abs(delta.y), Math.abs(delta.z))) * 10f);
+            substeps = Math.max(1, substeps);
+
+            float stepX = delta.x / substeps, stepY = delta.y / substeps, stepZ = delta.z / substeps;
+
+            boolean wasOnGround = onGround;
+            onGround = false;
+
+            // Resolve each world axis independently
+            for (int i = 0; i < substeps; i++) {
+                if (stepX != 0f) { position.x += stepX; if (resolveAxis(world, 0, stepX)) { stepX = 0f; if (gravAxis != 0) isSprinting = false; } }
+                if (stepY != 0f) { position.y += stepY; if (resolveAxis(world, 1, stepY)) { stepY = 0f; if (gravAxis != 1) isSprinting = false; } }
+                if (stepZ != 0f) { position.z += stepZ; if (resolveAxis(world, 2, stepZ)) { stepZ = 0f; if (gravAxis != 2) isSprinting = false; } }
+            }
+
+            // Fall damage calculation
+            float hNow = upHeight();
+            if (!wasOnGround && onGround) {
+                if (isSmashing) {
+                    smashImpactX = (int)Math.floor(position.x);
+                    smashImpactY = (int)Math.floor(position.y);
+                    smashImpactZ = (int)Math.floor(position.z);
+
+                    currentSmashRadius = GameConfig.smashCraterRadius
+                            + (int) Math.floor((fallDist(hNow) - GameConfig.smashMinHeight) * 0.08f);
+                    currentSmashRadius = Math.max(GameConfig.smashCraterRadius, Math.min(12, currentSmashRadius));
+
+                    isSmashing   = false;
+                    velocityY    = 0f;
+                    camera.pitch = (float)Math.toRadians(-30.0);
+                } else if (abilities.isCannonballing) {
+                    abilities.isCannonballing = false;
+                    abilities.cannonVelX      = 0f;
+                    abilities.cannonVelZ      = 0f;
+                    velocityY = 0f;
+                } else {
+                    float fallDist = highestY - hNow;
+                    if (fallDist > 4.0f && !abilities.isKamui) {
+                        health -= (fallDist * 0.5f - 2.0f);
+                        if (health < 0f) health = 0f;
                     }
                 }
             }
@@ -365,9 +510,8 @@ public class Player {
             highestY = position.y;
         }
 
-        // Void — if the player falls below y=0 the void consumed them.
-        // We don't hard-clamp anymore; Window.java reads fellIntoVoid and kills them.
-        if (position.y < 0f) { fellIntoVoid = true; }
+        // Hard floor — never fall below the bedrock layer
+        if (position.y < 1f) { position.y = 1f; velocityY = 0f; }
         camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
     }
 
@@ -379,6 +523,52 @@ public class Player {
         return flightController.getFovBoost() + abilities.getCameraFovBoost() + attacks.getFovBoost();
     }
     public boolean isSmashing() { return isSmashing; }
+
+    // ── GRAVITY (6-axis) HELPERS ──────────────────────────────────────────────
+
+    /** Signed "height" measured along the current up axis (generalises position.y). */
+    private float upHeight() {
+        return position.x * upDir.x + position.y * upDir.y + position.z * upDir.z;
+    }
+
+    /** Place the camera at eye height along the current up axis. */
+    private void syncEye(Camera camera) {
+        // If 2D side-view is active in Flappy Mode, let the movement controller position the camera
+        if (useTestMovement && testMovement.state == TestMovementController.State.FLAPPY && testMovement.flappySideView) {
+            return;
+        }
+        camera.position.set(position.x + upDir.x * EYE_HEIGHT,
+                position.y + upDir.y * EYE_HEIGHT + cameraYOffset,
+                position.z + upDir.z * EYE_HEIGHT);
+    }
+
+    /**
+     * Snap gravity to the world axis the camera most points along — "down" becomes the
+     * direction you're looking (look at a wall → fall to it and stand on it; look up →
+     * fall to the ceiling). The camera then smoothly reorients to the new orientation.
+     */
+    public void setGravityFromLook(Camera camera) {
+        Vector3f look = camera.getLookDirection();
+        float ax = Math.abs(look.x), ay = Math.abs(look.y), az = Math.abs(look.z);
+        int axis; float sign;
+        if (ax >= ay && ax >= az) { axis = 0; sign = Math.signum(look.x); }
+        else if (ay >= az)        { axis = 1; sign = Math.signum(look.y); }
+        else                      { axis = 2; sign = Math.signum(look.z); }
+        if (sign == 0f) sign = -1f;
+        if (axis == gravAxis && sign == gravSign) return;     // already that way
+
+        gravAxis = axis;
+        gravSign = sign;
+        upDir.set(0f, 0f, 0f);
+        upDir.setComponent(axis, -sign);                      // up = −gravity
+        velocityY = 0f;                                       // don't carry old vertical momentum
+        onGround  = false;                                    // let them fall into the new frame
+        highestY  = upHeight();                               // reset fall reference for the new axis
+        camera.setGravityUp(upDir);                           // animate the view flip
+
+        // Ensure pitch is clamped during the rotation to prevent glitches
+        camera.clampPitch();
+    }
 
     // ── Package-private accessors for AbilityController ───────────────────────
     // AbilityController is in the same package so these stay package-visible.
@@ -397,53 +587,49 @@ public class Player {
 
     private static final float EPSILON = 0.01f;
 
-    private boolean resolveCollisionX(World world, float dx) {
+    /**
+     * Generalised swept-AABB collision after the player has moved by {@code delta}
+     * along world {@code axis} (0=X,1=Y,2=Z). The player box is WIDTH×WIDTH in the two
+     * non-gravity axes and HEIGHT along the gravity axis (feet at {@code position},
+     * extending toward {@code upDir}). Returns true if blocked; when {@code axis} is the
+     * gravity axis it zeroes velocityY and, on a floor hit, sets onGround.
+     *
+     * For default gravity (down = −Y) this reduces exactly to the old per-axis resolvers.
+     */
+    private boolean resolveAxis(World world, int axis, float delta) {
+        if (delta == 0f) return false;
         float halfW = WIDTH / 2f;
-        int minY = (int)Math.floor(position.y + EPSILON),           maxY = (int)Math.floor(position.y + HEIGHT - EPSILON);
-        int minZ = (int)Math.floor(position.z - halfW + EPSILON),   maxZ = (int)Math.floor(position.z + halfW - EPSILON);
+        float us    = -gravSign;                         // up sign on the gravity axis
 
-        if (dx > 0) {
-            int leadX = (int)Math.floor(position.x + halfW);
-            for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++)
-                if (world.getBlock(leadX, y, z).isSolid()) { position.x = leadX - halfW; return true; }
-        } else if (dx < 0) {
-            int trailX = (int)Math.floor(position.x - halfW);
-            for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++)
-                if (world.getBlock(trailX, y, z).isSolid()) { position.x = trailX + 1f + halfW; return true; }
-        }
-        return false;
-    }
+        // Box extent as an offset from position, per world axis.
+        float[] lo = { -halfW, -halfW, -halfW };
+        float[] hi = {  halfW,  halfW,  halfW };
+        if (us > 0f) { lo[gravAxis] = 0f;      hi[gravAxis] = HEIGHT; }
+        else         { lo[gravAxis] = -HEIGHT; hi[gravAxis] = 0f;     }
 
-    private boolean resolveCollisionY(World world, float dy) {
-        float halfW = WIDTH / 2f;
-        int minX = (int)Math.floor(position.x - halfW + EPSILON), maxX = (int)Math.floor(position.x + halfW - EPSILON);
-        int minZ = (int)Math.floor(position.z - halfW + EPSILON), maxZ = (int)Math.floor(position.z + halfW - EPSILON);
+        float[] p = { position.x, position.y, position.z };
+        int a1 = (axis + 1) % 3, a2 = (axis + 2) % 3;    // the two cross-section axes
+        int lo1 = (int)Math.floor(p[a1] + lo[a1] + EPSILON), hi1 = (int)Math.floor(p[a1] + hi[a1] - EPSILON);
+        int lo2 = (int)Math.floor(p[a2] + lo[a2] + EPSILON), hi2 = (int)Math.floor(p[a2] + hi[a2] - EPSILON);
 
-        if (dy > 0) {
-            int headY = (int)Math.floor(position.y + HEIGHT);
-            for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++)
-                if (world.getBlock(x, headY, z).isSolid()) { position.y = headY - HEIGHT; velocityY = 0f; return true; }
-        } else if (dy < 0) {
-            int feetY = (int)Math.floor(position.y);
-            for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++)
-                if (world.getBlock(x, feetY, z).isSolid()) { position.y = feetY + 1f; velocityY = 0f; onGround = true; return true; }
-        }
-        return false;
-    }
+        boolean positive = delta > 0f;
+        int     block    = (int)Math.floor(positive ? p[axis] + hi[axis] : p[axis] + lo[axis]);
 
-    private boolean resolveCollisionZ(World world, float dz) {
-        float halfW = WIDTH / 2f;
-        int minX = (int)Math.floor(position.x - halfW + EPSILON), maxX = (int)Math.floor(position.x + halfW - EPSILON);
-        int minY = (int)Math.floor(position.y + EPSILON),          maxY = (int)Math.floor(position.y + HEIGHT - EPSILON);
-
-        if (dz > 0) {
-            int leadZ = (int)Math.floor(position.z + halfW);
-            for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++)
-                if (world.getBlock(x, y, leadZ).isSolid()) { position.z = leadZ - halfW; return true; }
-        } else if (dz < 0) {
-            int trailZ = (int)Math.floor(position.z - halfW);
-            for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++)
-                if (world.getBlock(x, y, trailZ).isSolid()) { position.z = trailZ + 1f + halfW; return true; }
+        int[] c = new int[3];
+        c[axis] = block;
+        for (int i1 = lo1; i1 <= hi1; i1++) {
+            c[a1] = i1;
+            for (int i2 = lo2; i2 <= hi2; i2++) {
+                c[a2] = i2;
+                if (world.getBlock(c[0], c[1], c[2]).isSolid()) {
+                    position.setComponent(axis, positive ? (block - hi[axis]) : (block + 1f - lo[axis]));
+                    if (axis == gravAxis) {
+                        velocityY = 0f;
+                        if (Math.signum(delta) == Math.signum(gravSign)) onGround = true;   // floor hit
+                    }
+                    return true;
+                }
+            }
         }
         return false;
     }
@@ -468,6 +654,35 @@ public class Player {
                 return res;
             }
             lastBX = bx; lastBY = by; lastBZ = bz;
+        }
+        return null;
+    }
+    /**
+     * Set direct velocity during a grapple zip, supporting both the standard physics
+     * engine and the custom test movement sandbox cleanly.
+     */
+    private void setDirectVelocity(float x, float y, float z) {
+        if (useTestMovement) {
+            testMovement.velocity.set(x, y, z);
+        } else {
+            velocityY = y;
+        }
+    }
+
+    /**
+     * Sweeps a long-range raycast to detect an anchor block for the grappling hook.
+     */
+    public Vector3f getGrappleAimTarget(Camera camera, World world, float maxRange) {
+        Vector3f dir  = camera.getLookDirection();
+        float    step = 0.4f;
+        float    rx   = camera.position.x, ry = camera.position.y, rz = camera.position.z;
+
+        for (float dist = 0f; dist < maxRange; dist += step) {
+            rx += dir.x * step; ry += dir.y * step; rz += dir.z * step;
+            int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
+            if (by >= 0 && by < Chunk.HEIGHT && world.getBlock(bx, by, bz).isSolid()) {
+                return new Vector3f(rx, ry, rz);
+            }
         }
         return null;
     }

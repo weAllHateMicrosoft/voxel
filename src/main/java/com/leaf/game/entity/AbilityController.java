@@ -127,6 +127,10 @@ public class AbilityController {
     public  Vector3f blinkDest       = new Vector3f();
     private float    blinkCooldown   = 0f;
     private boolean  lastE           = false;
+    /** Super-fast-travel state: while true the player zips from origin→dest over blinkTravelDur. */
+    public  boolean  isBlinkTraveling = false;
+    private float    blinkTravelT     = 0f;
+    private float    blinkTravelDur   = 0.15f;
 
     // ── SMOOTH CAMERA EFFECTS ─────────────────────────────────────────────────
     // Composited into Player.getCameraRoll() and Player.getCameraFovBoost()
@@ -176,6 +180,13 @@ public class AbilityController {
         justBlinked = false;
         tickCooldowns(dt);
         updateRewindTrail();
+
+        // ── BLINK FAST-TRAVEL — own the player's position while zipping ─────────
+        if (isBlinkTraveling) {
+            updateBlinkTravel(dt);
+            lastE = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;  // don't re-fire on key hold
+            return true;   // full positional control — caller skips normal physics
+        }
 
         // ── STONE PILLAR (hold K) ─────────────────────────────────────────────
         boolean kHeld = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS
@@ -643,14 +654,45 @@ public class AbilityController {
             lastFZ = rz;
         }
 
+        // Super-fast TRAVEL instead of an instant teleport: zip along the clear
+        // line-of-sight to the target over a short, distance-scaled duration. The
+        // raycast above already stopped at the first solid block, so the straight
+        // path origin→dest is collision-free — we can interpolate it directly.
         blinkOrigin.set(player.position);
         blinkDest.set(lastFX, lastFY, lastFZ);
-        player.position.set(lastFX, lastFY, lastFZ);
-        player.highestY  = lastFY; // suppress fall-damage at destination
-        justBlinked      = true;
-        blinkFlashTimer  = GameConfig.blinkFlashDecay;
+        float dist = blinkOrigin.distance(blinkDest);
+        blinkTravelDur = Math.max(GameConfig.blinkTravelMin,
+                          Math.min(GameConfig.blinkTravelMax, dist / GameConfig.blinkTravelSpeed));
+        blinkTravelT     = 0f;
+        isBlinkTraveling = true;
         blinkCooldown    = GameConfig.blinkCooldown;
         com.leaf.game.core.AudioManager.play("teleport");
+    }
+
+    /**
+     * Advance the blink fast-travel: ease the player along origin→dest, hold a speed
+     * FOV + motion tint, and finish with the white flash + ghost trail. Returns true
+     * while traveling so the caller skips normal physics (we own the position).
+     */
+    private void updateBlinkTravel(float dt) {
+        blinkTravelT += dt;
+        float f  = Math.min(1f, blinkTravelT / blinkTravelDur);
+        float ef = f * f * (3f - 2f * f);                 // smoothstep ease
+        player.position.set(
+                blinkOrigin.x + (blinkDest.x - blinkOrigin.x) * ef,
+                blinkOrigin.y + (blinkDest.y - blinkOrigin.y) * ef,
+                blinkOrigin.z + (blinkDest.z - blinkOrigin.z) * ef);
+        player.setVelocityY(0f);
+        player.highestY = player.position.y;             // no fall-damage from the zip itself
+
+        smoothFovBoost += (16f - smoothFovBoost) * Math.min(1f, 14f * dt);   // speed pull-back
+        blendOverlay(new Vector3f(0.85f, 0.93f, 1.0f), 0.10f, dt);          // faint motion streak
+
+        if (f >= 1f) {
+            isBlinkTraveling = false;
+            justBlinked      = true;                     // Window draws the ghost trail this frame
+            blinkFlashTimer  = GameConfig.blinkFlashDecay;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -659,7 +701,7 @@ public class AbilityController {
 
     /** True when any ability is running (dash, cannonball charging/firing, rewind). */
     public boolean isAnyAbilityActive() {
-        return isDashing || isCannonballing || isCharging_ || isRewinding|| isPillaring|| isHealing;
+        return isDashing || isCannonballing || isCharging_ || isRewinding|| isPillaring|| isHealing|| isBlinkTraveling;
     }
 
     /**

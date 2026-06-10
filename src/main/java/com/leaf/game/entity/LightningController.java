@@ -51,6 +51,8 @@ public class LightningController {
         public float life, maxLife;
         /** True for chain-water bolts (blue tint vs. white primary). */
         public boolean isChain;
+        /** Set by Window once the 3-D strike VFX have been spawned for this bolt. */
+        public boolean fxSpawned = false;
         /** 0–1 brightness fade driven by remaining life. */
         public float brightness() { return life / maxLife; }
     }

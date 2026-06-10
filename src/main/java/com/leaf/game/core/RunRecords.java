@@ -45,6 +45,8 @@ public class RunRecords {
 
     public int  totalDeaths() { return totalDeaths; }
     public int  bestWave()    { return bestWave;    }
+    /** True once the player has earned Kamui (3 deaths) — persists across runs. */
+    public boolean isKamuiUnlocked() { return kamuiEverUnlocked; }
 
     /** Call when a new run starts (PLAY button or restart after death). */
     public void newRun(float nowSecs) {

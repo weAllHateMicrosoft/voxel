@@ -238,9 +238,15 @@ public class WorldGen {
     private void generateSurfaceChunk(Chunk chunk) {
         int worldX = chunk.cx * Chunk.SIZE;
         int worldZ = chunk.cz * Chunk.SIZE;
-        // cy == 0, so worldYOffset == 0 and worldY == localY throughout
-        final float seaFrac = (GameConfig.seaLevel - GameConfig.heightBase) / (float) GameConfig.heightRange;
 
+        // ── FLAPPY BIRD INFINITE PIPE INTERCEPT ──
+        // If the chunk falls inside the Flappy Zone, bypass normal terrain entirely
+        if (worldX >= 4800 && worldX <= 6000 && worldZ >= 4960 && worldZ <= 5040) {
+            generateFlappyTrackChunk(chunk, worldX, worldZ);
+            return;
+        }
+
+        final float seaFrac = (GameConfig.seaLevel - GameConfig.heightBase) / (float) GameConfig.heightRange;
         for (int lx = 0; lx < Chunk.SIZE; lx++) {
             for (int lz = 0; lz < Chunk.SIZE; lz++) {
                 int wx = worldX + lx;
@@ -375,6 +381,15 @@ public class WorldGen {
                 boolean underGround = false; // Tracks if we have passed the terrain surface
                 int dirtCount = 0;
 
+                // FLOOD ZONE: this column's water level — raised only inside the
+                // drowned region, otherwise the normal sea level (no global flood).
+                int effFlood = GameConfig.seaLevel;
+                if (GameConfig.floodRadius > 0f) {
+                    float fdx = wx - GameConfig.floodCenterX, fdz = wz - GameConfig.floodCenterZ;
+                    if (fdx * fdx + fdz * fdz < GameConfig.floodRadius * GameConfig.floodRadius)
+                        effFlood = Math.max(GameConfig.seaLevel, GameConfig.floodLevel);
+                }
+
                 for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
                     if (solid[ly]) underGround = true; // We hit earth, everything below is underground
 
@@ -383,8 +398,9 @@ public class WorldGen {
                         // ── ABYSS HOOK ③a: Suppress Water (worldY = ly for cy=0) ──
                         boolean noWater = aCol != null && abyss.suppressWater(aCol, ly);
 
-                        // Only place water if we are NOT underground (prevents flooded caves)
-                        boolean isOcean = !underGround && ly <= GameConfig.seaLevel;
+                        // Only place water if we are NOT underground (prevents flooded caves).
+                        // effFlood raises the water inside the drowned region only.
+                        boolean isOcean = !underGround && ly <= effFlood;
 
                         chunk.setBlock(lx, ly, lz,
                                 (!noWater && isOcean) ? Block.WATER : Block.AIR);
@@ -397,10 +413,12 @@ public class WorldGen {
                             if (!hitSurface) {
                                 hitSurface = true;
                                 dirtCount = 0;
-                                if (ly >= GameConfig.seaLevel) {
+                                if (ly >= effFlood) {
+                                    // Dry land surface (emerges above the flood) → biome block.
                                     Block surf = isAlpine ? cladder.surfaceBlock(ly, fbmSlope) : biome.surfaceBlock();
                                     chunk.setBlock(lx, ly, lz, surf);
                                 } else if (ly >= GameConfig.seaLevel - 4) {
+                                    // Submerged lakebed / shore → sand.
                                     chunk.setBlock(lx, ly, lz, Block.SAND);
                                 } else {
                                     chunk.setBlock(lx, ly, lz, (wx + wz) % 2 == 0 ? Block.GRAVEL : Block.CLAY);
@@ -477,5 +495,80 @@ public class WorldGen {
     private float remap(float val, float inMin, float inMax, float outMin, float outMax) {
         float t = Math.max(0f, Math.min(1f, (val - inMin) / (inMax - inMin)));
         return outMin + t * (outMax - outMin);
+    }
+    private void generateFlappyTrackChunk(Chunk chunk, int worldX, int worldZ) {
+        for (int lx = 0; lx < Chunk.SIZE; lx++) {
+            for (int lz = 0; lz < Chunk.SIZE; lz++) {
+                int wx = worldX + lx;
+                int wz = worldZ + lz;
+
+                // Flat floor and ceiling boundaries
+                int floorY = 200;
+                int ceilY = 260;
+
+                // Initialize floor and ceiling structures
+                boolean[] solid = new boolean[Chunk.HEIGHT];
+                for (int ly = 0; ly < Chunk.HEIGHT; ly++) {
+                    solid[ly] = (ly <= floorY) || (ly >= ceilY);
+                }
+
+                // Locate the nearest pipe center along X
+                int startX = 5020;
+                int interval = 20;
+
+                // Find nearest pipe X coordinate
+                int pipeX = startX + Math.round((float)(wx - startX) / interval) * interval;
+                int dx = Math.abs(wx - pipeX);
+                int dz = Math.abs(wz - 5000); // Centered at Z=5000
+
+                // Precompute the gap properties ONCE per column to eliminate the CPU bottleneck
+                int gapCenterY = 218;
+                int gapHalfHeight = 4;
+                boolean isPipeColumn = (pipeX >= startX && dx <= 2 && dz <= 2);
+
+                if (isPipeColumn) {
+                    long hash = (long) pipeX * 0x9E3779B97F4A7C15L ^ GameConfig.seed;
+                    hash = (hash ^ (hash >>> 30)) * 0xBF58476D1CE4E5B9L;
+                    gapCenterY = 218 + (int)(Math.abs(hash) % 24);
+
+                    int bottomLipY = gapCenterY - gapHalfHeight - 1;
+                    int topLipY    = gapCenterY + gapHalfHeight + 1;
+
+                    for (int ly = floorY + 1; ly < ceilY; ly++) {
+                        boolean isGap = (ly >= gapCenterY - gapHalfHeight) && (ly <= gapCenterY + gapHalfHeight);
+                        if (!isGap) {
+                            int maxDist = (ly == bottomLipY || ly == topLipY) ? 2 : 1;
+                            if (dx <= maxDist && dz <= maxDist) {
+                                solid[ly] = true;
+                            }
+                        }
+                    }
+                }
+
+                // Paint blocks
+                for (int ly = Chunk.HEIGHT - 1; ly >= 0; ly--) {
+                    if (!solid[ly]) {
+                        chunk.setBlock(lx, ly, lz, Block.AIR);
+                    } else {
+                        if (ly <= floorY) {
+                            chunk.setBlock(lx, ly, lz, Block.LAVA); // FLOOR IS LAVA!
+                        } else if (ly >= ceilY) {
+                            chunk.setBlock(lx, ly, lz, Block.STONE);      // Gray ceiling
+                        } else if (ly <= 229 && wx >= 4960 && wx <= 4995 && wz >= 4994 && wz <= 5006) {
+                            // Safe starting platform block
+                            chunk.setBlock(lx, ly, lz, Block.MESA_STONE);
+                        } else {
+                            // Pipe coloring (Uses the precomputed gapCenterY — no redundant math!)
+                            boolean isLip = (ly == gapCenterY - gapHalfHeight - 1) || (ly == gapCenterY + gapHalfHeight + 1);
+                            chunk.setBlock(lx, ly, lz, isLip ? Block.PIPE_LIP : Block.PIPE_BODY);
+                        }
+                    }
+                }
+
+                // Indestructible bedrock base
+                chunk.setBlock(lx, 0, lz, Block.STONE);
+                chunk.setBlock(lx, 1, lz, Block.STONE);
+            }
+        }
     }
 }

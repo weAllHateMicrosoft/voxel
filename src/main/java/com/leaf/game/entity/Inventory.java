@@ -13,6 +13,8 @@ public class Inventory {
     // How many blocks the player starts with. There's no pickaxe, so the player
     // relies on these for cover/barricades during waves — start them generously.
     public Inventory() {
+        items.put(Block.TELESCOPE, 1);
+        items.put(Block.GRAPPLING_HOOK, 1);
         items.put(Block.CRYSTAL_AMETHYST, 256);
         items.put(Block.MEGALITH,  256);
         items.put(Block.ANCIENT_MARROW, 256);
@@ -68,5 +70,11 @@ public class Inventory {
             }
         }
         return sb.toString();
+    }
+
+    /** Add a specific quantity of a block to the inventory. */
+    public void addBlockAmount(Block block, int amount) {
+        if (block == Block.AIR || amount <= 0) return;
+        items.merge(block, amount, Integer::sum);
     }
 }

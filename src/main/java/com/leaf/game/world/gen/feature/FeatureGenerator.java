@@ -189,45 +189,69 @@ public class FeatureGenerator {
                 rng = nextRng(rng);
                 int iZ = rz * ISLAND_REGION + (int)((rng >>> 1) % ISLAND_REGION);
                 rng = nextRng(rng);
-                int radius    = 18 + (int)((rng >>> 1) % 35);  // 18–52 blocks
+                int   radius  = 16 + (int)((rng >>> 1) % 30);            // 16–45 top radius
                 rng = nextRng(rng);
-                int liftOff   = 65 + (int)((rng >>> 1) % 90);  // 65–154 blocks above ground
+                int   liftOff = 90 + (int)((rng >>> 1) % 120);           // float high into the sky
                 rng = nextRng(rng);
-                int thickness = 9  + (int)((rng >>> 1) % 13);  // 9–21 blocks tall
+                float phase   = ((rng >>> 1) % 628) / 100f;             // organic rim-wobble phase
+                rng = nextRng(rng);
+                int   peak    = 3 + (int)((rng >>> 1) % 7);             // gentle central dome
+                rng = nextRng(rng);
+                // Underside spike depth: how far the centre tapers to a point (≈1.4–2.1×R).
+                float spikeMul = 1.4f + ((rng >>> 1) % 70) / 100f;
+                int   spike    = (int)(radius * spikeMul);
 
                 for (int lx = 0; lx < Chunk.SIZE; lx++) {
                     for (int lz = 0; lz < Chunk.SIZE; lz++) {
-                        float dx   = (worldX + lx) - iX;
-                        float dz   = (worldZ + lz) - iZ;
+                        int wx = worldX + lx, wz = worldZ + lz;
+                        float dx = wx - iX, dz = wz - iZ;
                         float dist = (float) Math.sqrt(dx * dx + dz * dz);
-                        if (dist >= radius) continue;
 
-                        // No islands over deep ocean
-                        if (worldGen.sampleContinentalness(worldX + lx, worldZ + lz) < 0.15f) continue;
+                        // Organic, lumpy rim — not a perfect circle (matches the refs).
+                        float ang  = (float) Math.atan2(dz, dx);
+                        float wob  = 1f + 0.17f * (float) Math.sin(ang * 3 + phase)
+                                        + 0.09f * (float) Math.sin(ang * 5 - phase * 1.7f);
+                        float effR = radius * wob;
+                        if (dist >= effR) continue;
 
                         int groundY = surfaceY(chunk, lx, lz);
-                        int islandBase = groundY + liftOff;
-                        if (islandBase + thickness >= Chunk.HEIGHT - 4) continue;
+                        int base    = groundY + liftOff;
+                        float nd    = 1f - dist / effR;                  // 0 rim → 1 centre
 
-                        // Smoothstep radial fade: underside tapers at edges
-                        float edgeFade = smoothstep(1f - (dist / radius));
-                        int topY    = islandBase + thickness;
-                        int bottomY = islandBase + thickness - (int)(thickness * edgeFade);
+                        // Flat grassy plateau with a soft central peak.
+                        int topY = base + (int) (peak * smoothstep(nd));
+                        // Dramatic underside: thin at the rim, plunging to a point at the centre.
+                        int depth   = 2 + (int) (spike * nd * nd);
+                        int bottomY = topY - depth;
+                        if (topY >= Chunk.HEIGHT - 4) continue;
+                        if (bottomY < groundY + 18) bottomY = groundY + 18;   // keep an air gap
+                        if (bottomY > topY) continue;
 
-                        // Island body
+                        int span = Math.max(1, topY - bottomY);
                         for (int ly = bottomY; ly <= topY; ly++) {
-                            Block b = (ly >= topY - 1) ? Block.ANCIENT_SOIL : Block.ISLAND_STONE;
+                            int   fromTop   = topY - ly;
+                            float depthFrac = (float) (ly - bottomY) / span;
+                            Block b;
+                            if      (fromTop == 0)        b = Block.GRASS;            // green plateau
+                            else if (fromTop <= 2)        b = Block.DIRT;             // soil layer
+                            else if (depthFrac < 0.30f)   b = Block.MESA_STONE;       // rocky point
+                            else {                                                   // banded tan cliffs
+                                int band = Math.floorMod(ly, 7);
+                                b = (band < 2) ? Block.MESA_TERRACOTTA : Block.MESA_CLAY;
+                            }
                             chunk.setBlock(lx, ly, lz, b);
                         }
 
-                        // Hanging roots from underside
-                        if (edgeFade > 0.25f) {
-                            long rootRng = regionHash(seed, worldX + lx, worldZ + lz, 77);
-                            int  rootLen = 2 + (int)((rootRng >>> 1) % 5);
-                            for (int r = 1; r <= rootLen; r++) {
-                                int ry = bottomY - r;
-                                if (ry < 0 || chunk.getBlock(lx, ry, lz) != Block.AIR) break;
-                                chunk.setBlock(lx, ry, lz, Block.HANGING_ROOT);
+                        // Long stalactite drips hanging from the central mass.
+                        if (nd > 0.45f) {
+                            long dr = regionHash(seed, wx, wz, 77);
+                            if ((dr & 0x3L) == 0L) {
+                                int len = 2 + (int)((dr >>> 2) % (long)(nd * 9 + 2));
+                                for (int r = 1; r <= len; r++) {
+                                    int ry = bottomY - r;
+                                    if (ry < 1 || chunk.getBlock(lx, ry, lz) != Block.AIR) break;
+                                    chunk.setBlock(lx, ry, lz, Block.MESA_STONE);
+                                }
                             }
                         }
                     }

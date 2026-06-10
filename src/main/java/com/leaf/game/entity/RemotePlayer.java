@@ -10,6 +10,8 @@ import java.util.List;
 public class RemotePlayer {
 
     private final Mesh mesh;
+    private final Mesh barBg;   // dark backing of the floating health bar
+    private final Mesh barFg;   // green fill (width = health fraction)
 
     public float x, y, z;
     public float yaw, pitch, roll;
@@ -21,6 +23,9 @@ public class RemotePlayer {
     public boolean targetHooked = false;
     public float targetHookX, targetHookY, targetHookZ;
 
+    /** Synced teammate health (drives the floating bar). */
+    public float health = 1f, maxHealth = 1f;
+
     // Local Caches for Bandwidth-Free Trails
     public final List<Vector3f> dashTrail = new ArrayList<>();
     public final List<Vector3f> rewindTrail = new ArrayList<>();
@@ -28,7 +33,9 @@ public class RemotePlayer {
     private float snapshotTimer = 0f;
 
     public RemotePlayer() {
-        mesh = buildSteveModel();
+        mesh  = buildSteveModel();
+        barBg = buildQuad(0.10f, 0.02f, 0.02f);   // dark red backing
+        barFg = buildQuad(0.15f, 0.95f, 0.30f);   // bright green fill
     }
 
     public void update(float rawDeltaTime) {
@@ -73,10 +80,63 @@ public class RemotePlayer {
         Matrix4f mvp = new Matrix4f(projection).mul(view).mul(model);
         shader.setUniform("mvp", mvp);
         mesh.render();
+
+        renderHealthBar(shader, projection, view);
+    }
+
+    /** A small camera-facing health bar floating above the teammate's head. */
+    private void renderHealthBar(Shader shader, Matrix4f projection, Matrix4f view) {
+        float frac = (maxHealth > 0f) ? Math.max(0f, Math.min(1f, health / maxHealth)) : 0f;
+
+        // Camera right/up/toward in WORLD space, read from the view rotation rows.
+        Vector3f right   = new Vector3f(view.m00(), view.m10(), view.m20());
+        Vector3f up      = new Vector3f(view.m01(), view.m11(), view.m21());
+        Vector3f toward  = new Vector3f(view.m02(), view.m12(), view.m22()); // bar→camera
+        Vector3f nrm     = new Vector3f(right).cross(up);
+
+        float barW = 1.0f, barH = 0.14f, headY = 2.20f;
+        // Bottom-left corner of the (centred) bar.
+        Vector3f origin = new Vector3f(x, y + headY, z)
+                .fma(-0.5f * barW, right).fma(-0.5f * barH, up);
+
+        Matrix4f vp = new Matrix4f(projection).mul(view);
+
+        // Backing (full width), then green fill (left-anchored, width = frac), nudged
+        // toward the camera so it sits in front of the backing without z-fighting.
+        drawBar(shader, vp, origin, right, up, nrm, barW, barH);
+        Vector3f fgOrigin = new Vector3f(origin).fma(0.01f, toward);
+        if (frac > 0f) drawBar(shader, vp, fgOrigin, right, up, nrm, barW * frac, barH);
+    }
+
+    private void drawBar(Shader shader, Matrix4f vp, Vector3f o,
+                         Vector3f right, Vector3f up, Vector3f nrm, float sx, float sy) {
+        // Columns = (right*sx, up*sy, normal, origin) — maps the unit quad [0,1]² into world.
+        Matrix4f model = new Matrix4f(
+                right.x * sx, right.y * sx, right.z * sx, 0f,
+                up.x    * sy, up.y    * sy, up.z    * sy, 0f,
+                nrm.x,        nrm.y,        nrm.z,        0f,
+                o.x,          o.y,          o.z,          1f);
+        shader.setUniform("mvp", new Matrix4f(vp).mul(model));
+        (sx < 0.999f ? barFg : barBg).render();
     }
 
     public void cleanup() {
         mesh.cleanup();
+        barBg.cleanup();
+        barFg.cleanup();
+    }
+
+    /** A unit quad in local [0,1]² (z=0), single colour, matching the 10-float vertex layout. */
+    private Mesh buildQuad(float r, float g, float b) {
+        float[] v = {
+            // x, y, z,   r, g, b, a,   nx, ny, nz
+            0f, 0f, 0f,   r, g, b, 1f,  0f, 0f, 1f,
+            1f, 0f, 0f,   r, g, b, 1f,  0f, 0f, 1f,
+            1f, 1f, 0f,   r, g, b, 1f,  0f, 0f, 1f,
+            0f, 1f, 0f,   r, g, b, 1f,  0f, 0f, 1f,
+        };
+        int[] idx = { 0, 1, 2, 2, 3, 0 };
+        return new Mesh(v, idx);
     }
 
     // --- Builds a hierarchical "Steve" out of colored boxes ---

@@ -74,8 +74,34 @@ public class AudioManager {
     private static final Map<String, Float>   loopBase    = new HashMap<>(); // name → requested gain
     private static final java.util.Set<String> duckExempt = new java.util.HashSet<>(); // loops immune to ducking
 
-    private static float masterGain = 1.0f;
+    private static volatile float masterGain = 1.0f;
     private static float duckGain   = 1.0f;  // 1 = no duck, lowers non-exempt loops
+
+    // ── Mixer categories (each on top of master) ──────────────────────────────
+    // SFX = everything that isn't a mob or music sound.
+    // MOB = enemy/golem noises (names starting enemy_/golem_/mob_).
+    // MUSIC = background tracks (names containing music/theme/bgm) — forward-compatible.
+    public static final int CAT_SFX = 0, CAT_MOB = 1, CAT_MUSIC = 2;
+    private static volatile float sfxGain   = 1.0f;
+    private static volatile float mobGain   = 1.0f;
+    private static volatile float musicGain = 1.0f;
+
+    /** Classify a sound by its file name so the right category slider controls it. */
+    public static int categoryOf(String name) {
+        if (name.startsWith("enemy_") || name.startsWith("golem_") || name.startsWith("mob_"))
+            return CAT_MOB;
+        String n = name.toLowerCase();
+        if (n.startsWith("music") || n.contains("theme") || n.contains("bgm") || n.contains("_music"))
+            return CAT_MUSIC;
+        return CAT_SFX;
+    }
+    private static float categoryGain(String name) {
+        switch (categoryOf(name)) {
+            case CAT_MOB:   return mobGain;
+            case CAT_MUSIC: return musicGain;
+            default:        return sfxGain;
+        }
+    }
 
     // Debug telemetry (read with getDebugStats()).
     private static volatile long voicesPlayed = 0L;
@@ -351,7 +377,7 @@ public class AudioManager {
         if (s == null) return;
         float base = loopBase.getOrDefault(name, 1f);
         float duck = duckExempt.contains(name) ? 1f : duckGain;
-        alSourcef(s, AL_GAIN, base * masterGain * duck);
+        alSourcef(s, AL_GAIN, base * masterGain * duck * categoryGain(name));
     }
 
     // ── One-shots ────────────────────────────────────────────────────────────
@@ -379,7 +405,7 @@ public class AudioManager {
             alSource3f(s, AL_POSITION, 0f, 0f, 0f);
             alSource3f(s, AL_VELOCITY, 0f, 0f, 0f);
             alSourcef(s, AL_PITCH, pit);
-            alSourcef(s, AL_GAIN, vol * masterGain);
+            alSourcef(s, AL_GAIN, vol * masterGain * categoryGain(name));
             alSourcei(s, AL_BUFFER, buf);
             routeSource(s);
             alSourcePlay(s);
@@ -426,7 +452,7 @@ public class AudioManager {
             alSource3f(s, AL_POSITION, px, py, pz);
             alSource3f(s, AL_VELOCITY, vx, vy, vz);
             alSourcef(s, AL_PITCH, 1f);
-            alSourcef(s, AL_GAIN, masterGain);
+            alSourcef(s, AL_GAIN, masterGain * categoryGain(name));
             alSourcef(s, AL_REFERENCE_DISTANCE, Math.max(1f, maxRange * 0.15f));
             alSourcef(s, AL_MAX_DISTANCE, maxRange);
             alSourcef(s, AL_ROLLOFF_FACTOR, 1f);
@@ -581,6 +607,17 @@ public class AudioManager {
             if (ready) for (String n : loops.keySet()) applyLoopGain(n);
         });
     }
+
+    // ── Mixer category volumes (each 0..1, on top of master) ──────────────────
+    private static void reapplyLoops() { if (ready) for (String n : loops.keySet()) applyLoopGain(n); }
+    public static void setMasterVolume(float g) { setMasterGain(g); }
+    public static void setSfxVolume(float g)   { ensureInit(); final float v = Math.max(0f, g); AUDIO.submit(() -> { sfxGain = v;   reapplyLoops(); }); }
+    public static void setMobVolume(float g)   { ensureInit(); final float v = Math.max(0f, g); AUDIO.submit(() -> { mobGain = v;   reapplyLoops(); }); }
+    public static void setMusicVolume(float g) { ensureInit(); final float v = Math.max(0f, g); AUDIO.submit(() -> { musicGain = v; reapplyLoops(); }); }
+    public static float getMasterVolume() { return masterGain; }
+    public static float getSfxVolume()    { return sfxGain; }
+    public static float getMobVolume()    { return mobGain; }
+    public static float getMusicVolume()  { return musicGain; }
 
     /**
      * Duck (lower) all looping sounds except those marked exempt, e.g. dip

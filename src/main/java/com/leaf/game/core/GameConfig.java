@@ -8,6 +8,13 @@ public class GameConfig {
     public static int heightBase  = 200;
     public static int heightRange = 100;
     public static int seaLevel    = 220;
+    // FLOOD ("drowned" terrain): a SINGLE circular region whose ground is covered
+    // by water up to floodLevel. Everywhere else stays dry (uses seaLevel). Set
+    // floodRadius = 0 to disable. Far from spawn (777,777) / canyon (−1400,900).
+    public static int   floodLevel   = 240;
+    public static int   floodCenterX = 1200;
+    public static int   floodCenterZ = 1200;
+    public static float floodRadius  = 260f;
 
     // ── BIOME THRESHOLDS ─────────────────────────────────────────────────────
     public static int   beachMaxAltitude     = 2;
@@ -67,50 +74,6 @@ public class GameConfig {
     public static int caveSurfaceBuffer = 6;
     public static int caveBedrockFloor  = 4;
 
-    // ── DEPRIVATION DOMAIN (Water God Stance) ─────────────────────────────────
-    // Tap ['] to enter a locked defensive stance. Any entity moving inside the
-    // radius is instantly counter-struck with a golden thread and killed.
-    public static float depRadius          = 6f;    // tight kill-bubble radius (blocks) — anyone who steps in dies
-    public static float depDuration        = 10f;   // max stance seconds before auto-exit
-    public static float depCooldownSecs    = 1f;    // recovery cooldown after stance ends
-    public static float depDamage          = 9999f; // counter-strike damage (instant kill)
-    public static float depDetectMinVel    = 0.22f; // min movement per detection tick to trigger
-    public static float depDetectTick      = 0.07f; // how often movement is sampled (seconds)
-    public static float depSlashLife       = 0.45f; // slash-crescent lifetime (longer = more readable swing)
-    public static float depTurnDuration    = 0.5f;  // bezier head-turn time when locking onto a slashed enemy
-    public static float depAuraInterval    = 0.9f;  // seconds between idle "ready-sword" aura pulses
-
-    // ── CANYON / MESA REGION (faithful gelami Shadertoy port) ─────────────────
-    // A fixed circular region rendered as a PURE 3D isosurface (no heightmap):
-    // solid wherever fbm3D(x,y,z) < canyonSurfaceFactor, isotropic, capped flat
-    // at the top — giving caverns, arches, overhangs, banded terracotta masses,
-    // vivid grass tops and turquoise pools, exactly like the sample.
-    // Spawn stays a snow mountain; press F5 in-game to warp here and back.
-    // Location of the canyon centre (far from spawn 777,777 and the Abyss 2000,2000).
-    public static int   canyonCenterX        = -1400;
-    public static int   canyonCenterZ        = 900;
-    public static float canyonRadius         = 260f;   // full-canyon core radius (blocks)
-    public static float canyonEdgeBand       = 80f;    // smooth rim band outside the core
-    // ★ THE TWO KNOBS TO TWEAK:
-    public static float canyonFreq           = 0.040f; // feature size (BIGGER = smaller, busier rock; ~0.03 chunky … 0.06 detailed)
-    public static float canyonSurfaceFactor  = 0.50f;  // density (LOWER = more open/airy & more arches; HIGHER = more solid)
-    // Vertical extent (the visible band of terrain):
-    public static int   canyonCeilingY       = 268;    // mesa tops cap — open sky above this
-    public static int   canyonFloorY         = 200;    // solid foundation below this (buried)
-    public static int   canyonWaterLevel     = 222;    // turquoise pools fill basins below this Y
-    public static float canyonTopFade        = 16f;    // how rounded/tapered the mesa tops are
-    // Cosmetic:
-    public static int   canyonBandThickness  = 5;      // thickness of each sedimentary strata band
-
-    // ── BLUE CANYON / SNOW BIOME (Shadertoy snow biome — blue-grey rock, white tops) ─
-    // Same isosurface shape as the warm canyon but with the Shadertoy's snow palette.
-    // Placed 450 blocks north of the warm zone; walk/fly there from the F5 warp.
-    public static int   canyonBlueCenterX   = -1400;
-    public static int   canyonBlueCenterZ   = 450;
-    public static float canyonBlueRadius    = 220f;
-    public static float canyonBlueEdgeBand  = 70f;
-    // Uses the same freq / surfaceFactor / ceiling / floor / water / topFade / bandThickness.
-
 
     public static float sunDirX         = 0.6f;
     public static float sunDirY         = 1.0f;
@@ -118,13 +81,29 @@ public class GameConfig {
     public static float sunStrength     = 0.75f;
     public static float ambientStrength = 0.25f;
 
+    // ── DAY / NIGHT CYCLE ─────────────────────────────────────────────────────
+    /** Real seconds for one full day→night→day loop (at normal speed). */
+    public static float dayLengthSec    = 600f;   // 5 minutes
+    /** Where the cycle starts (0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk). */
+    public static float dayStartTime    = 0.32f;  // gentle morning
+    /** Time-cycle multiplier — cranked sky-high for the "Made in Heaven" effect. */
+    public static float dayNightSpeed   = 1f;
+    /** Moon disc size (world scale of the 3D sphere at 900 blocks ≈ angular size). */
+    public static float moonSizeScale   = 22f;
+    /** Observer latitude/longitude (degrees) — drives the whole sky's geometry. */
+    public static double observerLatDeg = 43.8561;   // Markham, ON (change to relocate the sky)
+    public static double observerLonDeg = -79.3370;
+
     public static float mouseSensitivity = 0.001f;
     public static float fov              = 70.0f;
+
+    /** Player starting/maximum health (buffed from the old 50 for more survivability). */
+    public static float playerMaxHealth = 75.0f;
 
     public static float GRAVITY      = 35.0f;
     public static float JUMP_FORCE   = 10.0f;
     public static float WALK_SPEED   = 5.0f;
-    public static float SPRINT_SPEED = 8.5f;
+    public static float SPRINT_SPEED = 10.5f;
     public static float FLY_SPEED    = 100.0f;
 
     // ── FLIGHT ENGINE ─────────────────────────────────────────────────────────
@@ -211,10 +190,13 @@ public class GameConfig {
     public static float rewindSpeed      = 3.0f;  // playback is 3× real-time
     public static float rewindCooldown   = 5.0f;
 
-    // Blink (tap E) — teleport to crosshair target up to blinkRange blocks away
+    // Blink (tap E) — super-fast travel to the crosshair target (not instant)
     public static float blinkRange       = 22f;   // blocks
     public static float blinkCooldown    = 2.0f;
     public static float blinkFlashDecay  = 0.30f; // seconds for white flash to fade
+    public static float blinkTravelSpeed = 70f;   // blocks/sec the zip travels at
+    public static float blinkTravelMin   = 0.09f; // min travel time (short hops still read)
+    public static float blinkTravelMax   = 0.32f; // max travel time (long zips stay snappy)
 
     // ── MELEE ATTACK (Runic Cleave — F key) ──────────────────────────────────
     // Windup: camera lifts, FOV tightens, gold vignette builds (0.14 s)
@@ -511,6 +493,16 @@ public class GameConfig {
     // ── FAST ATTACK / KNIFE COMBO (;  key) ───────────────────────────────────
     // Three rapid knife slashes — deals damage but destroys no terrain.
     /** Damage per hit (3 hits per combo). */
+    // ── GATLING GUN ───────────────────────────────────────────────────────────
+    /** Damage per bullet. ~18 rounds/sec so 4.5 = ~80 DPS. */
+    public static float gatlingDamage      = 20f;
+    /** Seconds between rounds (lower = faster). 0.055 ≈ 18 rps. */
+    public static float gatlingFireRate    = 0.055f;
+    /** Bullet range in blocks. */
+    public static float gatlingRange       = 95f;
+    /** Random spread cone half-angle (radians). 0 = laser-precise, 0.1 = very wild. */
+    public static float gatlingSpread      = 0.045f;
+
     public static float knifeDamage        = 18f;
     /** Reach of each knife slash (blocks). */
     public static float knifeRange         = 2.8f;
@@ -545,7 +537,7 @@ public class GameConfig {
     /** Mana cost per dash use. */
     public static float manaDash             = 6f;
     /** Mana cost per blink use. */
-    public static float manaBlink            = 50f;
+    public static float manaBlink            = 30f;
     /** Mana cost to fire the cannonball. */
     public static float manaCannonball       = 18f;
     /** Mana cost per ground-smash activation. */
