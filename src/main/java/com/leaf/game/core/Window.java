@@ -620,9 +620,14 @@ public class Window {
         float age, life;
         float s0, s1;           // start/end scale (or radius)
         float r, g, b;          // emissive colour (HDR)
+        boolean ambient;        // true = decorative living-world particle (does NOT
+                                // trigger the full-screen bloom FBO; see doFxBloom)
         Fx(int type, float x, float y, float z) { this.type = type; this.x = x; this.y = y; this.z = z; }
     }
     private final java.util.ArrayList<Fx> fxList = new java.util.ArrayList<>();
+    /** While true, FX spawned via fxBolt/fxRing/etc. are tagged decorative (ambient)
+     *  so they don't trigger the full-screen bloom FBO. Set around the ambience loop. */
+    private boolean fxSpawnAmbient = false;
 
     // ── METEOR STORM ───────────────────────────────────────────────────────────
     /** A falling meteorite: a glowing hot core + comet trail that carves a crater. */
@@ -1903,6 +1908,7 @@ public class Window {
                         ambienceTimer -= deltaTime;
                         if (ambienceTimer <= 0f && !isPreloading) {
                             ambienceTimer = 0.28f;
+                            fxSpawnAmbient = true;   // tag these as decorative (no bloom FBO)
                             for (Enemy e : enemyManager.getEnemies()) {
                                 if (!e.alive) continue;
                                 float adx = e.position.x - player.position.x;
@@ -1948,6 +1954,7 @@ public class Window {
                                        player.position.z + (float) Math.sin(ang) * rr,
                                        0f, 1f, 0f, 1.0f, 0.05f, 1.2f, 0.18f, 0.07f, 0.022f);
                             }
+                            fxSpawnAmbient = false;  // back to bloom-worthy FX
                         }
 
                         // ── PROCESS GOLEM BLOCK BREAKING ──
@@ -3414,8 +3421,16 @@ public class Window {
             boolean doDiscoBloom = cdActive && !isPreloading && bloomShader != null && cdSpawnT > 0.05f;
             // Domain always blooms — the HDR gold hemisphere + threads + boundary ring need it.
             boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
-            // Shared ability-FX (slashes, rings, bolts) bloom whenever any are live.
-            boolean doFxBloom    = (!fxList.isEmpty() || !qbBullets.isEmpty() || !meteors.isEmpty())
+            // Shared ability-FX (slashes, rings, bolts) bloom whenever any "real" one
+            // is live. Ambient living-world particles (tower embers, sakura petals,
+            // volcanic motes) are EXCLUDED — they fire continuously, so letting them
+            // route the whole scene through the bloom FBO every frame washed the world
+            // out to a bright, see-through haze (the "transparent shader" bug).
+            boolean hasBloomFx = false;
+            for (int fi = 0; fi < fxList.size(); fi++) {
+                if (!fxList.get(fi).ambient) { hasBloomFx = true; break; }
+            }
+            boolean doFxBloom    = (hasBloomFx || !qbBullets.isEmpty() || !meteors.isEmpty())
                     && !isPreloading && bloomShader != null;
             // Stone Canon's charge gathers searing emissive energy → bloom it.
             boolean doStoneBloom = isChargingStoneCanon && !isPreloading && bloomShader != null;
@@ -6316,6 +6331,7 @@ public class Window {
 
     /** Add an FX locally AND broadcast it to the MP peer so the opponent sees it too. */
     private void pushFx(Fx e) {
+        e.ambient = fxSpawnAmbient;
         fxList.add(e);
         if (network != null && network.connected) {
             network.sendFx(e.type, new float[]{

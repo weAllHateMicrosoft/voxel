@@ -31,15 +31,18 @@ public class BiomeRegistry {
             return Biome.ICY_PEAKS;
         }
 
-        // 2.5 SPECIAL PATCH BIOMES — rare, coherent regions selected by the patch
-        //     noise and gated to a plausible climate so each reads naturally.
-        //     (Volcanic lands in hot/dry zones, sakura in mild/wet, etc.)
-        if (patch > 0.42f) {
-            if (temp > 0.40f && hum < 0.12f)                    return Biome.VOLCANIC;
-            if (temp > 0.05f && temp <= 0.40f && hum > 0.04f)   return Biome.SAKURA;
-            if (temp <= 0.05f && temp > -0.30f && hum > 0.12f)  return Biome.MUSHROOM;
-            if (temp <= -0.05f && hum < 0.02f)                  return Biome.CRYSTAL_FIELDS;
-            if (temp > -0.05f && temp <= 0.30f)                 return Biome.AUTUMN;
+        // 2.5 SPECIAL PATCH BIOMES — coherent regions selected by the low-frequency
+        //     patch noise. The climate space is PARTITIONED (every branch returns a
+        //     biome) so that whenever a patch qualifies it always becomes one of the
+        //     special biomes — this makes them common enough to actually find while
+        //     exploring, rather than rare slivers that fall through to the matrix.
+        //     Ordered hot → cold; humidity breaks the cold tie (damp = mushroom).
+        if (patch > 0.16f) {
+            if (temp >  0.30f)  return Biome.VOLCANIC;        // hot & harsh
+            if (temp >  0.06f)  return Biome.SAKURA;          // warm temperate
+            if (temp > -0.12f)  return Biome.AUTUMN;          // cool temperate
+            if (hum  >  0.00f)  return Biome.MUSHROOM;        // cold & damp
+            return Biome.CRYSTAL_FIELDS;                       // cold & dry
         }
 
         // 3. Fallback to Temperature & Humidity Matrix

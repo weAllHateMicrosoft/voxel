@@ -27,6 +27,12 @@ public class WorldGen {
     private Noise biomeJitter;
     private Noise mountainMask;
 
+    /** Minimum mountain-mask value for a column to lift into an alpine peak.
+     *  Higher = fewer/rarer snow mountains (was 0.30; raised to thin them out so
+     *  rolling land and special biomes get more room). Shared by generation and
+     *  the surface-height estimate so {@link #biomeAt}/teleport stay accurate. */
+    private static final float MOUNTAIN_SPAWN_THRESHOLD = 0.46f;
+
     // ── The Abyss Generator (Non-final so it can be initialized in init()) ──
     private AbyssGenerator abyss;
 
@@ -174,6 +180,35 @@ public class WorldGen {
     public float sampleHeight(int wx, int wz) { return computeFinalShape(sampleContinentalness(wx, wz), sampleErosion(wx, wz), samplePeaksValleys(wx, wz)); }
 
     /**
+     * Alpine-aware estimate of the surface world-Y at (wx, wz), mirroring the
+     * targetY computation in {@link #generateSurfaceChunk} including the mountain
+     * lift. Used by {@link #biomeAt} (so ICY_PEAKS is classified correctly) and by
+     * the {@code /biome} teleport (so the player lands on the real surface rather
+     * than buried inside an alpine peak).
+     */
+    public float surfaceYEstimate(int wx, int wz) {
+        float c     = sampleContinentalness(wx, wz);
+        float e     = sampleErosion(wx, wz);
+        float pv    = samplePeaksValleys(wx, wz);
+        float shape = computeFinalShape(c, e, pv);
+        float targetY = GameConfig.heightBase + shape * GameConfig.heightRange;
+
+        float mMask = mountainMask.ridgedOctave((wx + seedOffX) * 0.001f, (wz + seedOffZ) * 0.001f, 2, 0.5f);
+        if (c > 0.05f && mMask > MOUNTAIN_SPAWN_THRESHOLD) {
+            float[] ero = eroFbm.sampleFull(wx, wz);
+            float fbmH  = ero[0];
+            float blend = (mMask - MOUNTAIN_SPAWN_THRESHOLD) / (1f - MOUNTAIN_SPAWN_THRESHOLD);
+            blend = Math.max(0f, Math.min(1f, blend));
+            blend = blend * blend * (3f - 2f * blend);
+            float coastFade = Math.max(0f, Math.min(1f, (c - 0.05f) / 0.15f));
+            blend *= coastFade;
+            float massiveY = GameConfig.seaLevel + 5f + (fbmH * 225f);
+            targetY = lerp(targetY, massiveY, blend);
+        }
+        return targetY;
+    }
+
+    /**
      * Re-derive the surface biome at (wx, wz) — used by FeatureGenerator and the
      * Inferno-Tower site director to gate biome-specific content. Uses an
      * approximate surface elevation (no mountain/river/rim refinement), which is
@@ -185,7 +220,8 @@ public class WorldGen {
         float pv = samplePeaksValleys(wx, wz);
         float shape = computeFinalShape(c, e, pv);
         float seaFrac = (GameConfig.seaLevel - GameConfig.heightBase) / (float) GameConfig.heightRange;
-        int   ty = (int)(GameConfig.heightBase + shape * GameConfig.heightRange);
+        // Alpine-aware ty so tall peaks classify as ICY_PEAKS (matches generation).
+        int   ty = (int) surfaceYEstimate(wx, wz);
         float temp = sampleTemperature(wx, wz);
         float hum  = sampleHumidity(wx, wz);
         float river = sampleRiver(wx, wz);
@@ -312,7 +348,7 @@ public class WorldGen {
                 float fbmSlope = 0f;
 
                 float mMask = mountainMask.ridgedOctave((wx + seedOffX) * 0.001f, (wz + seedOffZ) * 0.001f, 2, 0.5f);
-                float mountainSpawnThreshold = 0.30f;
+                float mountainSpawnThreshold = MOUNTAIN_SPAWN_THRESHOLD;
 
                 if (c > 0.05f && mMask > mountainSpawnThreshold) {
                     float[] ero = eroFbm.sampleFull(wx, wz);
@@ -502,11 +538,14 @@ public class WorldGen {
         return lerp(Math.min(1f, contH + pvContrib), contH, erosionFlatnessSpline(eNorm));
     }
     private float continentalnessSpline(float c) {
-        if (c < -0.45f) return remap(c, -1.00f, -0.45f, 0.02f, 0.08f);
-        if (c < -0.10f) return remap(c, -0.45f, -0.10f, 0.08f, 0.20f);
-        if (c <  0.05f) return remap(c, -0.10f,  0.05f, 0.20f, 0.25f);
-        if (c <  0.30f) return remap(c,  0.05f,  0.30f, 0.25f, 0.36f);
-        if (c <  0.65f) return remap(c,  0.30f,  0.65f, 0.36f, 0.78f);
+        // Sea level sits at shape 0.20 (seaFrac). The crossing point was at c≈-0.10,
+        // which put roughly a third of the map underwater. Pushing it down to c≈-0.30
+        // shrinks the oceans and gives more dry land for biomes to spread across.
+        if (c < -0.60f) return remap(c, -1.00f, -0.60f, 0.04f, 0.12f);
+        if (c < -0.30f) return remap(c, -0.60f, -0.30f, 0.12f, 0.20f);   // sea level at c≈-0.30
+        if (c <  0.05f) return remap(c, -0.30f,  0.05f, 0.20f, 0.30f);
+        if (c <  0.30f) return remap(c,  0.05f,  0.30f, 0.30f, 0.40f);
+        if (c <  0.65f) return remap(c,  0.30f,  0.65f, 0.40f, 0.78f);
         if (c <  0.85f) return remap(c,  0.65f,  0.85f, 0.78f, 0.88f);
         return             remap(c,  0.85f,  1.00f, 0.88f, 0.92f);
     }

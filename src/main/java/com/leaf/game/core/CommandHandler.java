@@ -47,20 +47,19 @@ public class CommandHandler {
 
             case "biome": {
                 if (parts.length < 2) {
-                    win.chatHistory.add("[System] Special biomes: volcanic, sakura, mushroom, crystal, autumn");
-                    win.chatHistory.add("[System] Common biomes: forest, plains, desert, savanna, taiga, snowy, tundra, ocean");
-                    win.chatHistory.add("[System] Usage: /biome <name>  (searches up to 3000 blocks)");
+                    win.chatHistory.add("[Biomes] volcanic sakura mushroom crystal autumn");
+                    win.chatHistory.add("[Biomes] forest plains desert savanna taiga tundra ocean");
+                    win.chatHistory.add("Type /biome <name> to teleport to the nearest one.");
                     break;
                 }
                 com.leaf.game.world.gen.biome.Biome target = parseBiomeName(parts[1].toLowerCase());
                 if (target == null) {
-                    win.chatHistory.add("[System]: Unknown biome '" + parts[1] + "'. Type /biome for list.");
+                    win.chatHistory.add("[System]: Unknown biome '" + parts[1] + "'. Type /biome for the list.");
                     break;
                 }
-                win.chatHistory.add("[System]: Searching for " + parts[1] + " biome...");
                 int px = (int) win.player.position.x;
                 int pz = (int) win.player.position.z;
-                int step = 200, range = 3000;
+                int step = 160, range = 4000;
                 int foundX = Integer.MIN_VALUE, foundZ = Integer.MIN_VALUE;
                 float bestDistSq = Float.MAX_VALUE;
                 for (int dx = -range; dx <= range; dx += step) {
@@ -76,15 +75,15 @@ public class CommandHandler {
                     }
                 }
                 if (foundX == Integer.MIN_VALUE) {
-                    win.chatHistory.add("[System]: " + parts[1] + " not found within " + range + " blocks. Try exploring further first.");
+                    win.chatHistory.add("[System]: No " + parts[1] + " within " + range + " blocks - try exploring further out.");
                     break;
                 }
-                float shape = win.worldGen.sampleHeight(foundX, foundZ);
-                int surfaceY = com.leaf.game.core.GameConfig.heightBase
-                        + (int)(shape * com.leaf.game.core.GameConfig.heightRange) + 3;
+                // Alpine-aware surface height so we never bury the player in a peak;
+                // +4 clearance lets them settle onto the freshly generated ground.
+                int surfaceY = (int) win.worldGen.surfaceYEstimate(foundX, foundZ) + 4;
                 win.player.position.set(foundX + 0.5f, surfaceY, foundZ + 0.5f);
                 int dist = (int) Math.sqrt(bestDistSq);
-                win.chatHistory.add("[System]: Teleported to " + parts[1] + " biome, " + dist + " blocks away!");
+                win.chatHistory.add("[System]: Warped to " + parts[1] + " biome, " + dist + " blocks away.");
                 break;
             }
 
