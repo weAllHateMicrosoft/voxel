@@ -23,6 +23,7 @@ public class CommandHandler {
             case "help":
                 win.chatHistory.add("[System] Commands:");
                 win.chatHistory.add("  /skip - Skip onboarding AND all wave practices.");
+                win.chatHistory.add("  /spider [spawn|ride|laser] - Spawn, mount, or target spiders.");
                 win.chatHistory.add("  /give <block_name> [amt] - Give specific block.");
                 win.chatHistory.add("  /give all [amt] - Fill hotbar with all building blocks.");
                 win.chatHistory.add("  /god - Toggle invincibility.");

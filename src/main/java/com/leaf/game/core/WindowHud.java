@@ -1901,8 +1901,11 @@ class WindowHud {
     //  HELP SCREEN  (F1)
     // ─────────────────────────────────────────────────────────────────────────
 
+    // --- FILE: src/main/java/com/leaf/game/core/WindowHud.java ---
+// Replace the renderHelpScreen method with this updated version:
+
     void renderHelpScreen(float screenW, float screenH) {
-        float winW = Math.min(720f, screenW - 40f);
+        float winW = Math.min(850f, screenW - 40f);
         float winH = Math.min(screenH - 40f, screenH - 40f);
         ImGui.setNextWindowPos(screenW / 2f - winW / 2f, screenH / 2f - winH / 2f);
         ImGui.setNextWindowSize(winW, winH);
@@ -1913,6 +1916,22 @@ class WindowHud {
 
         ImGui.textDisabled("  [F1] or [ESC] to close.   Scroll down for all sections.");
         ImGui.separator();
+        ImGui.spacing();
+
+        // ── MARKER / SHOWCASE FEATURES ────────────────────────────────────────
+        ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "SHOWCASE / SANDBOX (For Marking & Testing)");
+        ImGui.separator();
+        helpRow("[ ` ] (Tilde)", "Flappy Bird Mode: Instantly transforms the game into a 2D side-scrolling Flappy Bird arcade game. Press [TAB] while in it to toggle 3D/2D perspective.");
+        helpRow("[ F7 ]", "Orbital Annihilation: A 12-second cinematic 3D orbital strike that carves a massive crater and destroys everything in its radius.");
+        helpRow("[ F8 ]", "The World (Time Stop): DIO's time stop. Inverts colors, freezes all enemies and projectiles in place for several seconds.");
+        helpRow("[ F4 ]", "Meteor Storm: Rains down flaming meteorites from the sky that dynamically carve craters into the terrain upon impact.");
+        helpRow("[ \\ ] (Backslash)", "Mega Meteor: Drops a single colossal, mountain-erasing meteor onto the map.");
+        helpRow("[ . ] (Period)", "Chocolate Disco: Spawns a 9x9 tactical grid. Click cells to mark them, press [.] again to detonate marked cells.");
+        helpRow("[ ' ] (Quote)", "Deprivation Domain (Water God Stance): A golden absolute-defense hemisphere. Any enemy entering is instantly sliced into 8 physical pieces.");
+        helpRow("[ , ] (Comma)", "Quantum Bullet: Fires a projectile that phases through walls, creating visual ripple distortions on the surfaces it passes through.");
+        helpRow("[ F10 ]", "Radar Sweep: Turns the terrain into a 3D radar scope, pinging enemies through walls with wireframe highlights.");
+        helpRow("[ F12 ]", "Parkour Movement: Toggles standard survival physics into the frictionless, Quake-style momentum physics engine.");
+        helpRow("Chat [/skip]", "Type '/skip' in chat (press T) to instantly bypass all tutorials and jump straight to infinite waves.");
         ImGui.spacing();
 
         // ── YOUR ABILITIES (unlocked vs. still locked) ────────────────────────
@@ -1938,7 +1957,6 @@ class WindowHud {
         ImGui.separator();
         helpRow("WASD", "Move. Double-tap W to sprint.");
         helpRow("Space", "Jump. Double-tap Space to toggle flight mode (must unlock FLIGHT first).");
-        helpRow("[Shift] in air", "GROUND SLAM  -  hold Shift while falling, just before you land. Craters the terrain and damages nearby enemies. The bigger the fall, the bigger the crater.");
         helpRow("Shift (in air)", "While falling from height: slam into the ground. Craters the terrain and damages nearby enemies. Bigger fall = bigger crater.");
         ImGui.spacing();
 
@@ -1973,11 +1991,11 @@ class WindowHud {
         // ── SPECIAL ABILITIES ─────────────────────────────────────────────────
         ImGui.textColored(0.85f, 0.35f, 1.0f, 1.0f, "SPECIAL ABILITIES");
         ImGui.separator();
-        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously  -  ends when mana runs out or you press Z again. Cooldown after use.");
+        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously.");
         helpRow("[J]  Position Swap", "Instantly teleport-swap with the nearest enemy in range. Great for escaping a bad spot or dropping enemies off cliffs.");
-        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed  -  you blink backward, a paper dummy appears at your old position, then explodes a moment later damaging nearby enemies.");
-        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact  -  they cannot move for several seconds.");
-        helpRow("[I]  Stone Canon", "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile (you can't move while charging). Release to fire. The longer you charge, the more stone consumed and the bigger the explosion.");
+        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed  -  you blink backward, a paper dummy appears at your old position, then explodes.");
+        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact.");
+        helpRow("[I]  Stone Canon", "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile. Release to fire.");
         helpRow("[L]  Heal", "Hold [L] to channel healing energy. Restores health over time while held. You cannot move while channeling.");
         ImGui.spacing();
 
@@ -1987,10 +2005,8 @@ class WindowHud {
         helpRow("[X]", "Deploy your drone directly above you. Press [X] again to recall it.");
         helpRow("[TAB]", "Enter the drone's perspective to pilot it manually. Press [TAB] again to return to your body.");
         helpRow("Piloting  -  WASD", "Fly the drone. Space = up, Shift = down.");
-        helpRow("Piloting  -  click", "Fire a shot in whatever direction the drone is facing.");
         helpRow("Not piloting  -  click", "The drone auto-targets and fires at the nearest visible enemy.");
         helpRow("Two dots (top-right)", "Indicate line-of-sight: yours (left dot) and the drone's (right dot). Both green = clear shot.");
-        helpRow("Gold diamond", "Shows your drone's position on screen. If it's off-screen, an arrow on the edge points toward it.");
         ImGui.spacing();
 
         // ── MINATO'S SEAL ─────────────────────────────────────────────────────
@@ -1999,7 +2015,6 @@ class WindowHud {
         helpRow("[H]", "Throw a seal marker. It sticks to the first surface it touches.");
         helpRow("[B]", "Instantly teleport to the seal nearest your crosshair. The targeted seal glows to indicate the destination.");
         helpRow("[N]", "Pull the targeted seal back to your hand without teleporting.");
-        helpRow("Tip", "Up to 5 seals active at once. Use them for escape routes, high-ground setup, and rapid repositioning. Off-screen seals show as arrows on the screen edge.");
         ImGui.spacing();
 
         // ── TIME CONTROL ──────────────────────────────────────────────────────
@@ -2010,40 +2025,16 @@ class WindowHud {
         ImGui.spacing();
 
         // ── WORLD & UI ────────────────────────────────────────────────────────
-        ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & BUILDING");
+        ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & UI");
         ImGui.separator();
-        helpRow("LMB (hold)", "Break the block you're looking at.");
-        helpRow("RMB", "Place the block selected in your hotbar.");
+        helpRow("LMB / RMB", "Break block (hold) / Place selected block.");
         helpRow("1 – 9", "Select hotbar slot.");
-        helpRow("[P]", "Spawn a test enemy at your crosshair. Enemies also spawn automatically in waves.");
-        helpRow("[ESC]", "Open the pause menu.");
-        helpRow("[F1]", "This screen.");
+        helpRow("Left ALT", "Open Backpack menu to swap out blocks/tools.");
+        helpRow("[P]", "Debug: Spawn a test slime at your crosshair.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
-        helpRow("[,]",  "'Quantum Bullet' (testing). Fire a bullet that PHASES through every wall, block and mountain — it doesn't stop. As it enters and leaves each surface it ripples the wall (expanding rings perpendicular to its flight) and it pierces enemies even through cover. A searing cyan-violet orb with a light trail.");
-        helpRow("[']",  "'Deprivation Domain' — Water God Stance (testing). Tap ['] to lock yourself in place in a silent standoff. The world inside the " + (int)GameConfig.depRadius + "-block domain tints gold and hyper-real; outside turns cool and distant. The instant ANY enemy or projectile moves inside, a chaotic 'slash storm' of anime sword-crescents erupts around you in every direction (a 360° dome of light-speed swings) and the victim bursts apart into white-hot voxel chunks that char as they fall. Stand perfectly still and let the horde shred itself. Lasts " + (int)GameConfig.depDuration + " s; press ['] again to exit. Tune via GameConfig (dep*). Inspired by Mushoku Tensei's Deprivation Field + Soul Knight's AoE sweeps.");
-        helpRow("[K]",  "'Chocolate Disco' grid (testing). Aim at the ground and press K to spawn a 9×9 glowing geometry grid. LMB marks/unmarks a cell (the cell becomes a gold wireframe box). Press K again to DETONATE all marked cells — white-hot light sears from the wireframe edges, a column of light shoots skyward, and all blocks/enemies inside are destroyed. Press K with nothing marked to dismiss the grid. Grid is horizontal and always visible through terrain.");
-        helpRow("[F5]", "Warp to the 'Canyon' (testing). Teleports you to a warm mesa region (banded terracotta cliffs, arches, turquoise pools). Fly ~450 blocks north for the BLUE version (snow biome — blue-grey rock, white tops). Press [F5] again to return. Press [V] mid-flight to cycle SKIM → SOAR → GRAPPLE.");
-        helpRow("[F6]", "Non-Euclidean 'Layered Rooms' (testing). Teleports you into a 2x2 building with a central pillar. Walk CLOCKWISE around the pillar and you pass through endless distinct rooms (1,2,3,4,5,6...) instead of looping after four. Press [F6] again to leave.");
-        helpRow("[F10]", "'Radar Sweep' (testing). Your world becomes a 3D radar scope from where you stand — range rings + bearing spokes on the terrain, a rotating sweep arm with an opaque→transparent afterglow that pings the landscape, and a wireframe box around every enemy that flares as the arm passes it. One ~8s scan, then back to normal.");
-        helpRow("[F8]", "'The World' (testing). A sphere of photographic-negative reality bursts from your feet — everything inside inverts and shifts to electric blue, enemies and projectiles freeze in place while you keep moving, then the domain collapses back. DIO's time stop.");
-        helpRow("[F7]", "'Orbital Annihilation' (testing). Aim at a block and press F7 for a ~12s fully-3D cinematic: a spinning gyroscope of energy rings + pulsing core, accelerating implosion rings that detonate, a blackout with the terrain glowing as a wireframe scan + floating embers, a CARVED crater, then a volumetric orbital laser with helix beams, shockwave, and debris. Stand back.");
+        helpRow("[F5]", "Warp to the Mesa/Canyon region (teleports you to a warm mesa biome).");
+        helpRow("[F6]", "Non-Euclidean 'Layered Rooms'. Teleports you into an impossible, infinitely looping 4D space.");
         ImGui.spacing();
-
-        // ── MANA & COOLDOWNS ──────────────────────────────────────────────────
-        ImGui.textColored(0.4f, 0.6f, 1.0f, 1.0f, "MANA & RESOURCES");
-        ImGui.separator();
-        helpRow("Mana bar", "Blue bar below your health. Most abilities cost mana. Regenerates slowly over time.");
-        helpRow("Cooldown icons", "The ability bar at the bottom shows each ability's cooldown as a filling overlay. Grayed-out = on cooldown or not enough mana.");
-        ImGui.spacing();
-
-        // ── ENEMY TYPES ───────────────────────────────────────────────────────
-        ImGui.textColored(0.9f, 0.3f, 0.1f, 1.0f, "ENEMIES");
-        ImGui.separator();
-        helpRow("Green tint", "ZOMBIE  -  slow melee chaser. Closes in and bites. Low damage per hit but relentless. Appears in large numbers early on.");
-        helpRow("Bone-white", "THROWER  -  skeleton archer. Keeps its distance and pelts you with projectiles. Kill it before it repositions.");
-        helpRow("Blue-grey (large)", "GOLEM  -  heavily armored tank. Slow but extremely tanky. Slams the ground for AoE damage and throws boulders. Appears from wave 3.");
-        helpRow("Health bars", "Float above every enemy. Green = healthy, yellow = damaged, red = near death.");
-        helpRow("Waves", "Enemies spawn in escalating waves. The wave number shows in the top-left. Later waves bring more Golems.");
 
         ImGui.end();
     }
