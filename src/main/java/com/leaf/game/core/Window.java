@@ -52,6 +52,9 @@ public class Window {
     boolean showNoiseViewer = false;
     RaycastResult lastTarget = null;
 
+    public com.leaf.game.entity.spider.SpiderEnemy riddenSpider = null;
+    public boolean spiderLaserActive = false;
+
     NetworkSession network;
     RemotePlayer remotePlayer;
     private Shader starShader = null;
@@ -1306,6 +1309,36 @@ public class Window {
                         boolean wasOnGroundAudio = player.isOnGround();
                         boolean wasFlightMode    = player.debugMode;
                         player.heldBlock = hotbar[selectedSlot]; // Sync the held block to the player
+                        // ── SPIDER RIDING INPUT ──
+                        if (riddenSpider != null && riddenSpider.alive) {
+                            Vector3f fwd = camera.getForward();
+                            Vector3f right = camera.getRight();
+                            Vector3f move = new Vector3f();
+                            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move.add(fwd);
+                            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move.sub(fwd);
+                            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move.add(right);
+                            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move.sub(right);
+                            if (move.lengthSquared() > 0.001f) move.normalize();
+
+                            riddenSpider.rideInput.set(move);
+
+                            // Snap player to the spider's back
+                            player.position.set(riddenSpider.position.x, riddenSpider.position.y + 2.0f, riddenSpider.position.z);
+                            player.setVelocityY(0f);
+                            player.highestY = player.position.y;
+                        }
+
+                        // ── LASER POINTER UPDATE ──
+                        if (spiderLaserActive && lastTarget != null && lastTarget.hit) {
+                            for (Enemy e : enemyManager.getEnemies()) {
+                                if (e instanceof com.leaf.game.entity.spider.SpiderEnemy) {
+                                    com.leaf.game.entity.spider.SpiderEnemy se = (com.leaf.game.entity.spider.SpiderEnemy) e;
+                                    if (se.mode == com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.FOLLOW_TARGET) {
+                                        se.laserTarget.set(lastTarget.hitX + 0.5f, lastTarget.hitY + 1.0f, lastTarget.hitZ + 0.5f);
+                                    }
+                                }
+                            }
+                        }
                         player.update(window, camera, world, deltaTime);
 
                         // ── DEPRIVATION DOMAIN: enforce position lock every frame ─
@@ -3477,6 +3510,31 @@ public class Window {
                         // ── Animated path ──
                         for (Enemy enemy : enemyManager.getEnemies()) {
                             if (enemy == mpProxy) continue;   // invisible PvP hitbox — never drawn
+                            // ── SPIDER RENDER CALL ──
+                            if (enemy instanceof com.leaf.game.entity.spider.SpiderEnemy) {
+                                com.leaf.game.entity.spider.SpiderEnemy spider = (com.leaf.game.entity.spider.SpiderEnemy) enemy;
+                                float flashF = spider.hitFlashTimer > 0f ? (spider.hitFlashTimer / 0.18f) : 0f;
+                                float alpha  = spider.alive ? 1.0f : flashF;
+
+                                if (alpha > 0.02f) {
+                                    shader.setUniform("alphaMultiplier", alpha);
+
+                                    // Apply damage flash overlay
+                                    if (spider.hitFlashTimer > 0f) {
+                                        shader.setUniform("overlayVignetteStrength", 0.6f * flashF);
+                                        shader.setUniform("overlayVignetteColor", new Vector3f(1.0f, 0.25f, 0.25f));
+                                    }
+
+                                    // DELEGATE TO OUR NEW RENDERER
+                                    com.leaf.game.entity.spider.SpiderRenderer.render(spider, shader, projection, view);
+
+                                    // Reset shader uniforms
+                                    shader.setUniform("overlayVignetteStrength", 0f);
+                                    shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
+                                    shader.setUniform("alphaMultiplier", 1.0f);
+                                }
+                                continue; // Skip the humanoid animation rendering below!
+                            }
                             float flashF = enemy.hitFlashTimer > 0f ? (enemy.hitFlashTimer / 0.18f) : 0f;
                             float alpha  = enemy.alive ? 1.0f : flashF;
                             if (alpha < 0.02f) {
@@ -3760,7 +3818,22 @@ public class Window {
                 renderAbilityGhosts(shader, projection, view);
                 // ── GATLING GUN: first-person spinning-barrel viewmodel ─────────
                 if (!isPreloading) renderGatlingViewModel(shader, projection, view, camera);
+                // ── Render Laser Pointer Dot ──
+                if (spiderLaserActive && lastTarget != null && lastTarget.hit) {
+                    glDisable(GL_DEPTH_TEST);
+                    shader.setUniform("emissiveMode", 1);
+                    shader.setUniform("emissiveTint", new Vector3f(3.0f, 0.2f, 0.2f)); // Glowing red
 
+                    Matrix4f dotMat = new Matrix4f()
+                            .translate(lastTarget.hitX + 0.5f, lastTarget.hitY + 1.05f, lastTarget.hitZ + 0.5f)
+                            .scale(0.15f);
+                    shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(dotMat));
+                    getItemMesh(Block.CRATER_BLOOM).render(); // Use any simple block mesh
+
+                    shader.setUniform("emissiveMode", 0);
+                    shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
+                    glEnable(GL_DEPTH_TEST);
+                }
                 // 10. Knife view model — disabled (re-enable when model is ready)
                 // if (player != null && !player.debugMode && !player.stand.isInStandPerspective()) {
                 //     renderKnifeViewModel(shader, projection, view, camera);
@@ -3856,6 +3929,7 @@ public class Window {
         imguiGlfw.dispose();
         ImGui.destroyContext();
         if (remotePlayer != null) remotePlayer.cleanup();
+        com.leaf.game.entity.spider.SpiderRenderer.cleanup();
     }
 
     // ─────────────────────────────────────────────────────────────────────────

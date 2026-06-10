@@ -1901,8 +1901,11 @@ class WindowHud {
     //  HELP SCREEN  (F1)
     // ─────────────────────────────────────────────────────────────────────────
 
+    // --- FILE: src/main/java/com/leaf/game/core/WindowHud.java ---
+// Replace the renderHelpScreen method with this updated version:
+
     void renderHelpScreen(float screenW, float screenH) {
-        float winW = Math.min(720f, screenW - 40f);
+        float winW = Math.min(850f, screenW - 40f);
         float winH = Math.min(screenH - 40f, screenH - 40f);
         ImGui.setNextWindowPos(screenW / 2f - winW / 2f, screenH / 2f - winH / 2f);
         ImGui.setNextWindowSize(winW, winH);
@@ -1913,6 +1916,22 @@ class WindowHud {
 
         ImGui.textDisabled("  [F1] or [ESC] to close.   Scroll down for all sections.");
         ImGui.separator();
+        ImGui.spacing();
+
+        // ── MARKER / SHOWCASE FEATURES ────────────────────────────────────────
+        ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "SHOWCASE / SANDBOX (For Marking & Testing)");
+        ImGui.separator();
+        helpRow("[ ` ] (Tilde)", "Flappy Bird Mode: Instantly transforms the game into a 2D side-scrolling Flappy Bird arcade game. Press [TAB] while in it to toggle 3D/2D perspective.");
+        helpRow("[ F7 ]", "Orbital Annihilation: A 12-second cinematic 3D orbital strike that carves a massive crater and destroys everything in its radius.");
+        helpRow("[ F8 ]", "The World (Time Stop): DIO's time stop. Inverts colors, freezes all enemies and projectiles in place for several seconds.");
+        helpRow("[ F4 ]", "Meteor Storm: Rains down flaming meteorites from the sky that dynamically carve craters into the terrain upon impact.");
+        helpRow("[ \\ ] (Backslash)", "Mega Meteor: Drops a single colossal, mountain-erasing meteor onto the map.");
+        helpRow("[ . ] (Period)", "Chocolate Disco: Spawns a 9x9 tactical grid. Click cells to mark them, press [.] again to detonate marked cells.");
+        helpRow("[ ' ] (Quote)", "Deprivation Domain (Water God Stance): A golden absolute-defense hemisphere. Any enemy entering is instantly sliced into 8 physical pieces.");
+        helpRow("[ , ] (Comma)", "Quantum Bullet: Fires a projectile that phases through walls, creating visual ripple distortions on the surfaces it passes through.");
+        helpRow("[ F10 ]", "Radar Sweep: Turns the terrain into a 3D radar scope, pinging enemies through walls with wireframe highlights.");
+        helpRow("[ F12 ]", "Parkour Movement: Toggles standard survival physics into the frictionless, Quake-style momentum physics engine.");
+        helpRow("Chat [/skip]", "Type '/skip' in chat (press T) to instantly bypass all tutorials and jump straight to infinite waves.");
         ImGui.spacing();
 
         // ── YOUR ABILITIES (unlocked vs. still locked) ────────────────────────
@@ -1938,7 +1957,6 @@ class WindowHud {
         ImGui.separator();
         helpRow("WASD", "Move. Double-tap W to sprint.");
         helpRow("Space", "Jump. Double-tap Space to toggle flight mode (must unlock FLIGHT first).");
-        helpRow("[Shift] in air", "GROUND SLAM  -  hold Shift while falling, just before you land. Craters the terrain and damages nearby enemies. The bigger the fall, the bigger the crater.");
         helpRow("Shift (in air)", "While falling from height: slam into the ground. Craters the terrain and damages nearby enemies. Bigger fall = bigger crater.");
         ImGui.spacing();
 
@@ -1973,11 +1991,11 @@ class WindowHud {
         // ── SPECIAL ABILITIES ─────────────────────────────────────────────────
         ImGui.textColored(0.85f, 0.35f, 1.0f, 1.0f, "SPECIAL ABILITIES");
         ImGui.separator();
-        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously  -  ends when mana runs out or you press Z again. Cooldown after use.");
+        helpRow("[Z]  Kamui", "Activate a space-time vortex around yourself. Distorts the whole screen. While active: hold LMB to charge an absorption ring that sucks in nearby enemies. Drains mana continuously.");
         helpRow("[J]  Position Swap", "Instantly teleport-swap with the nearest enemy in range. Great for escaping a bad spot or dropping enemies off cliffs.");
-        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed  -  you blink backward, a paper dummy appears at your old position, then explodes a moment later damaging nearby enemies.");
-        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact  -  they cannot move for several seconds.");
-        helpRow("[I]  Stone Canon", "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile (you can't move while charging). Release to fire. The longer you charge, the more stone consumed and the bigger the explosion.");
+        helpRow("[V]  Substitute", "(On foot, not in flight) Hold [V] to prime. The next hit you take is completely absorbed  -  you blink backward, a paper dummy appears at your old position, then explodes.");
+        helpRow("[M]  Quagmire", "Fire a mud wave at the enemy you're aiming at. It travels along the ground and traps them on contact.");
+        helpRow("[I]  Stone Canon", "Stand near stone blocks and hold [I] to charge. Nearby stone is absorbed into a massive projectile. Release to fire.");
         helpRow("[L]  Heal", "Hold [L] to channel healing energy. Restores health over time while held. You cannot move while channeling.");
         ImGui.spacing();
 
@@ -1987,10 +2005,8 @@ class WindowHud {
         helpRow("[X]", "Deploy your drone directly above you. Press [X] again to recall it.");
         helpRow("[TAB]", "Enter the drone's perspective to pilot it manually. Press [TAB] again to return to your body.");
         helpRow("Piloting  -  WASD", "Fly the drone. Space = up, Shift = down.");
-        helpRow("Piloting  -  click", "Fire a shot in whatever direction the drone is facing.");
         helpRow("Not piloting  -  click", "The drone auto-targets and fires at the nearest visible enemy.");
         helpRow("Two dots (top-right)", "Indicate line-of-sight: yours (left dot) and the drone's (right dot). Both green = clear shot.");
-        helpRow("Gold diamond", "Shows your drone's position on screen. If it's off-screen, an arrow on the edge points toward it.");
         ImGui.spacing();
 
         // ── MINATO'S SEAL ─────────────────────────────────────────────────────
@@ -1999,7 +2015,6 @@ class WindowHud {
         helpRow("[H]", "Throw a seal marker. It sticks to the first surface it touches.");
         helpRow("[B]", "Instantly teleport to the seal nearest your crosshair. The targeted seal glows to indicate the destination.");
         helpRow("[N]", "Pull the targeted seal back to your hand without teleporting.");
-        helpRow("Tip", "Up to 5 seals active at once. Use them for escape routes, high-ground setup, and rapid repositioning. Off-screen seals show as arrows on the screen edge.");
         ImGui.spacing();
 
         // ── TIME CONTROL ──────────────────────────────────────────────────────
@@ -2010,34 +2025,16 @@ class WindowHud {
         ImGui.spacing();
 
         // ── WORLD & UI ────────────────────────────────────────────────────────
-        ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & BUILDING");
+        ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & UI");
         ImGui.separator();
-        helpRow("LMB (hold)", "Break the block you're looking at.");
-        helpRow("RMB", "Place the block selected in your hotbar.");
+        helpRow("LMB / RMB", "Break block (hold) / Place selected block.");
         helpRow("1 – 9", "Select hotbar slot.");
-        helpRow("[P]", "Spawn a test enemy at your crosshair. Enemies also spawn automatically in waves.");
-        helpRow("[ESC]", "Open the pause menu.");
-        helpRow("[F1]", "This screen.");
+        helpRow("Left ALT", "Open Backpack menu to swap out blocks/tools.");
+        helpRow("[P]", "Debug: Spawn a test slime at your crosshair.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
-        helpRow("[F5]", "Non-Euclidean: 'Bigger on the Inside' tunnel. Teleports you to a short 5-block archway. Step through it to enter a 50-block interior tunnel  -  impossible geometry via FBO portal rendering.");
-        helpRow("[F6]", "Non-Euclidean: 'Rotating Rooms'. Teleports you to a 6-room cycle. Walk through identical-looking doorways  -  two are hidden portals that loop you back to the start.");
+        helpRow("[F5]", "Warp to the Mesa/Canyon region (teleports you to a warm mesa biome).");
+        helpRow("[F6]", "Non-Euclidean 'Layered Rooms'. Teleports you into an impossible, infinitely looping 4D space.");
         ImGui.spacing();
-
-        // ── MANA & COOLDOWNS ──────────────────────────────────────────────────
-        ImGui.textColored(0.4f, 0.6f, 1.0f, 1.0f, "MANA & RESOURCES");
-        ImGui.separator();
-        helpRow("Mana bar", "Blue bar below your health. Most abilities cost mana. Regenerates slowly over time.");
-        helpRow("Cooldown icons", "The ability bar at the bottom shows each ability's cooldown as a filling overlay. Grayed-out = on cooldown or not enough mana.");
-        ImGui.spacing();
-
-        // ── ENEMY TYPES ───────────────────────────────────────────────────────
-        ImGui.textColored(0.9f, 0.3f, 0.1f, 1.0f, "ENEMIES");
-        ImGui.separator();
-        helpRow("Green tint", "ZOMBIE  -  slow melee chaser. Closes in and bites. Low damage per hit but relentless. Appears in large numbers early on.");
-        helpRow("Bone-white", "THROWER  -  skeleton archer. Keeps its distance and pelts you with projectiles. Kill it before it repositions.");
-        helpRow("Blue-grey (large)", "GOLEM  -  heavily armored tank. Slow but extremely tanky. Slams the ground for AoE damage and throws boulders. Appears from wave 3.");
-        helpRow("Health bars", "Float above every enemy. Green = healthy, yellow = damaged, red = near death.");
-        helpRow("Waves", "Enemies spawn in escalating waves. The wave number shows in the top-left. Later waves bring more Golems.");
 
         ImGui.end();
     }
@@ -2396,4 +2393,147 @@ class WindowHud {
         float t  = Math.min(1f, Math.min(ex, ey));
         return t * t * (3f - 2f * t); // smoothstep
     }
+
+    void renderChocolateDiscoConsole() {
+        if (!win.showDiscoUI) return;
+
+        // Position on the left side of the screen
+        ImGui.setNextWindowPos(30, 100, imgui.flag.ImGuiCond.FirstUseEver);
+        ImGui.begin("Chocolate Disco Datapad", imgui.flag.ImGuiWindowFlags.AlwaysAutoResize | imgui.flag.ImGuiWindowFlags.NoCollapse);
+
+        ImGui.textColored(1.0f, 0.8f, 0.1f, 1.0f, "MODE: ANNIHILATE");
+        ImGui.separator();
+        ImGui.spacing();
+
+        // X-Axis Headers
+        ImGui.text("   "); ImGui.sameLine();
+        for (int c = 0; c < 9; c++) {
+            ImGui.text(" " + (c + 1) + " "); ImGui.sameLine();
+        }
+        ImGui.newLine();
+
+        // Reset hover state (updated only if hovered this frame)
+        win.cdHoverR = -1;
+        win.cdHoverC = -1;
+
+        // 9x9 Grid of ImGui Buttons
+        for (int r = 0; r < 9; r++) {
+            // Y-Axis Headers
+            ImGui.text("" + (char)('A' + r) + " "); ImGui.sameLine();
+
+            for (int c = 0; c < 9; c++) {
+                if (c > 0) ImGui.sameLine();
+                ImGui.pushID(r * 9 + c);
+
+                boolean marked = win.cdMarked[r][c];
+                boolean det    = win.cdDetT[r][c] > 0;
+
+                // Color the buttons based on their state
+                if (det) {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.2f, 0.2f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.4f, 0.4f, 1.0f);
+                } else if (marked) {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 1.0f, 0.7f, 0.1f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 1.0f, 0.85f, 0.3f, 1.0f);
+                } else {
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.Button, 0.15f, 0.15f, 0.2f, 1.0f);
+                    ImGui.pushStyleColor(imgui.flag.ImGuiCol.ButtonHovered, 0.2f, 0.8f, 0.9f, 1.0f);
+                }
+
+                if (ImGui.button("##cell", 28f, 28f)) {
+                    if (!det) {
+                        win.cdMarked[r][c] = !marked;
+                        win.cdMeshDirty = true;
+                    }
+                }
+
+                if (ImGui.isItemHovered()) {
+                    win.cdHoverR = r;
+                    win.cdHoverC = c;
+                    win.cdMeshDirty = true;
+                }
+
+                ImGui.popStyleColor(2);
+                ImGui.popID();
+            }
+            ImGui.newLine();
+        }
+
+        ImGui.spacing(); ImGui.separator(); ImGui.spacing();
+
+        if (ImGui.button("EXECUTE", 280f, 40f)) {
+            win.detonateDiscoGrid(win.world);
+        }
+        ImGui.spacing();
+        if (ImGui.button("DISMISS", 280f, 30f)) {
+            win.dismissDiscoGrid();
+        }
+
+        ImGui.end();
+    }
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  CHOCOLATE DISCO: IMGUI WRIST-CONSOLE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    enum DiscoMode { ANNIHILATE, DROP, REDIRECT }
+    DiscoMode currentDiscoMode = DiscoMode.ANNIHILATE;
+
+    private void handleDiscoClick(int r, int c) {
+        if (currentDiscoMode == DiscoMode.ANNIHILATE) {
+            // Mode 1: Toggle the Mark for Detonation
+            if (win.cdDetT[r][c] <= 0f) {
+                win.cdMarked[r][c] = !win.cdMarked[r][c];
+                win.cdMeshDirty = true;
+            }
+        }
+        else if (currentDiscoMode == DiscoMode.DROP) {
+            // Mode 2: Call down an orbital strike of your currently selected block!
+            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wy = win.cdGridY + 40f; // Drop from the sky
+
+            com.leaf.game.entity.DroppedItem item = new com.leaf.game.entity.DroppedItem(
+                    (int)wx, (int)wy, (int)wz, win.selectedBlock, new org.joml.Vector3f(0f, -40f, 0f) // Heavy downward slam velocity
+            );
+            win.droppedItems.add(item);
+            com.leaf.game.core.AudioManager.play("fall_hit", 0.8f);
+        }
+        else if (currentDiscoMode == DiscoMode.REDIRECT) {
+            // Mode 3: Instantly warp all active projectiles to this cell
+            float wx = win.cdGridX - Window.CD_HALF + c * Window.CD_CELL + Window.CD_CELL * 0.5f;
+            float wz = win.cdGridZ - Window.CD_HALF + r * Window.CD_CELL + Window.CD_CELL * 0.5f;
+
+            boolean redirected = false;
+
+            // Redirect player Void Shards
+            for (com.leaf.game.entity.AttackController.ActiveBolt bolt : win.player.attacks.activeBolts) {
+                bolt.pos.set(wx, win.cdGridY + 1.5f, wz);
+                redirected = true;
+            }
+            // Redirect enemy boulders/projectiles
+            for (com.leaf.game.entity.EnemyManager.EnemyProjectile proj : win.enemyManager.projectiles) {
+                proj.pos.set(wx, win.cdGridY + 1.5f, wz);
+                redirected = true;
+            }
+
+            if (redirected) {
+                com.leaf.game.core.AudioManager.play("snipe_redirect", 1.0f);
+                com.leaf.game.core.ScreenEffectManager.INSTANCE.flash(0f, 0.8f, 1.0f, 0.4f, 0.1f);
+            }
+        }
+    }
+    /** Simple hook glyph for the hotbar (diagonal line + three-prong grappling tip). */
+    private void drawGrappleIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        float cx = (x0 + x1) * 0.5f;
+        int ropeCol = ImGui.colorConvertFloat4ToU32(0.85f, 0.85f, 0.85f, 0.9f);
+        int hookCol = ImGui.colorConvertFloat4ToU32(0.55f, 0.55f, 0.60f, 1.0f);
+
+        // Draw cable
+        draw.addLine(x0 + w*0.22f, y1 - h*0.22f, cx, y0 + h*0.42f, ropeCol, 2.2f);
+        // Draw hook head
+        draw.addTriangleFilled(cx, y0 + h*0.42f, cx - w*0.14f, y0 + h*0.24f, cx + w*0.14f, y0 + h*0.24f, hookCol);
+    }
+
+
 }
