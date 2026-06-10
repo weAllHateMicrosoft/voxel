@@ -4,6 +4,16 @@ import com.leaf.game.world.Block;
 import imgui.ImGui;
 import static org.lwjgl.glfw.GLFW.*;
 
+/**
+ * BackpackUI — an ImGui-powered in-game inventory window.
+ *
+ * <p>Toggled with {@code Left Alt}.  While the backpack is open the mouse cursor
+ * is freed and the player cannot move or use abilities.  Displays the player's
+ * collected blocks so they can be inspected before placing in the hotbar.
+ *
+ * <p>Rendering is driven by {@link #render(float, float)} inside the ImGui pass
+ * in {@link Window}; toggling is driven by the GLFW key callback via {@link #toggle()}.
+ */
 public class BackpackUI {
 
     private final Window win;

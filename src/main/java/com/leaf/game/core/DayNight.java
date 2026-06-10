@@ -2,6 +2,23 @@ package com.leaf.game.core;
 
 import org.joml.Vector3f;
 
+/**
+ * DayNight — drives the procedural sky, lighting, and real-sky astronomy for DESCENT.
+ *
+ * <p>Each frame {@link #update(float)} advances the in-game clock and recomputes:
+ * <ul>
+ *   <li>Sun and moon positions (procedural great-circle paths)</li>
+ *   <li>Sky colours — zenith and horizon gradient, day → sunset → night transitions</li>
+ *   <li>Ambient and directional light colour and intensity</li>
+ *   <li>Visible stars from the Yale Bright Star Catalogue (BSC5), updated every 30 s</li>
+ *   <li>Moon phase, aurora, lunar eclipse, and Milky Way rendering uniforms</li>
+ *   <li>Real nebula sky-directions (M42 Orion, M31 Andromeda, M8 Lagoon, η Carinae)</li>
+ * </ul>
+ *
+ * <p>Call {@link #init()} once after the GL context exists, then {@link #update(float)}
+ * every frame. All computed values are public fields read directly by the shaders
+ * via {@link com.leaf.game.core.Window}.
+ */
 public class DayNight {
 
     public float time = GameConfig.dayStartTime;
@@ -43,6 +60,10 @@ public class DayNight {
     // FIX: Static catalog so we only read the file/generate background stars ONCE at startup.
     private static java.util.List<Astronomy.StarRecord> starCatalog;
 
+    /**
+     * Loads the star catalogue (once, shared across instances) and runs the first
+     * sky recompute. Must be called after the OpenGL context is created.
+     */
     public void init() {
         if (starCatalog == null) {
             starCatalog = Astronomy.loadBSC5("/bsc5.csv", 6.0f);
@@ -50,6 +71,12 @@ public class DayNight {
         recompute();
     }
 
+    /**
+     * Advances the in-game clock and recomputes all sky, lighting, and star values.
+     * Call once per frame before uploading uniforms to the sky shader.
+     *
+     * @param dt real-world seconds elapsed since the last frame
+     */
     public void update(float dt) {
         this.lastDt = dt;
         float delta = dt * GameConfig.dayNightSpeed / Math.max(1f, GameConfig.dayLengthSec);

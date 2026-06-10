@@ -1,5 +1,13 @@
 package com.leaf.game.core;
 
+/**
+ * GameConfig — centralised numeric constants for DESCENT.
+ *
+ * <p>All tunable values (terrain generation frequencies, combat stats, timing)
+ * live here so they can be adjusted in one place without hunting through
+ * scattered files.  Fields are {@code public static} so any class can read
+ * them without passing a config object around.
+ */
 public class GameConfig {
     public static long  seed           = 1L;
     public static int   renderDistance = 6;

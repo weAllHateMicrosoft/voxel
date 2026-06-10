@@ -2,89 +2,239 @@
 
 **Survive. Learn. Escape.**
 
-**DESCENT** is a 3D high-mobility voxel survival game. You awaken in a procedurally generated world with a mysterious Chakra Crystal. As you survive escalating waves of enemies, the crystal bonds with you, unlocking devastating anime-inspired combat abilities, time-manipulation, and high-speed parkour mechanics.
-
-### 🎮 How to Get Started (Gameplay)
-The game features a seamless, built-in tutorial to get you started! Just run the game and click **PLAY**.
-
-**Basic Controls:**
-* **Movement:** `W` `A` `S` `D`
-* **Jump:** `Space`
-* **Sprint:** Double-tap `W`
-* **Look:** Mouse
-* **Mine Block:** Hold `Left Click`
-* **Place Block:** `Right Click` (Select blocks with `1`-`9`)
-
-*Note: The game will teach you your abilities organically as you clear waves. If you ever forget your controls, press **[F1]** in-game to open the Master Ability Guide!*
+DESCENT is a 3D high-mobility voxel survival game. You awaken in a procedurally generated world and must survive escalating waves of enemies. As you clear each wave, a mysterious Chakra Crystal bonds with you and unlocks a new anime-inspired combat ability — culminating in time-manipulation, inter-dimensional phases, and high-speed parkour.
 
 ---
 
-### 📝 Summary
-*This game features a custom 3D engine built using LWJGL and OpenGL, extending far beyond standard 2D frameworks.*
+## How to Run
 
-To help you grade the project quickly without having to grind through all 10 waves of enemies, we have included a suite of **Developer Cheat Codes**.
+### macOS
+```bash
+bash play-mac.sh
+```
 
-**General Debug & Grading:**
-* `F3` - Opens the Debug Menu (shows coordinates, FPS, and Time Scale).
-* `F9` - **Wave Skip:** Instantly kills all enemies and clears the current wave so you can quickly unlock the next ability and see the between-wave UI.
-* `P` - Instantly spawn a test enemy at your crosshair.
-* `0` (Zero) - Spawn a boss-level Guardian Golem.
-* Gatling Gun (`[Hotbar Slot 5]`)** - Select slot 5 and hold Left-Click to rapidly shred through enemies and vaporize terrain.
+### Windows
+```
+play-windows.bat
+```
 
-**Abilities :**
-We implemented several "Ultimate" abilities for extra visual demonstration. You can trigger these at any time:
-* `F7` - **Orbital Annihilation:** Aim at a block and press F7 to trigger a massive 3D cinematic volumetric laser strike.
-* `F8` - **The World (Time Stop):** Freezes all enemies, inverts screen colors, and halts time physics.
-* `F10` - **Radar Sweep:** Projects a 3D radar scope onto the world geometry to scan for enemies through walls.
-* `'` (Apostrophe) - **Deprivation Domain:** Locks the player in place and creates a golden hemisphere. Any enemy that enters is instantly auto-slashed.
-* `,` (Comma) - **Quantum Bullet:** Fires a projectile that ripples the screen space and phases through solid walls.
-* 
-# DESCENT - Complete Ability Guide
+### Build from Source
+```bash
+./gradlew build
+java -jar build/libs/game.jar
+```
 
-A breakdown of every ability currently implemented in **DESCENT**, mapped to their default keybindings.
+> **Note:** The game uses a custom 3D engine (LWJGL + OpenGL 3.3) as a teacher-approved
+> alternative to Greenfoot. It is a standalone `.jar` — no Greenfoot install needed.
 
 ---
 
-## ⚔️ Combat & Offensive
+## How to Play
 
-* **Void Shard (Snipe) (`[C]`)** - Hold to charge and fire an explosive crystal bolt. Longer hold increases damage and blast radius.
-* **Runic Cleave (Slash) (`[F]`)** - A wide melee swing that shatters blocks in a 3D crescent and knocks back enemies.
-* **Gatling Gun (`[Hotbar]`)** - Hold Left-Click to rapidly shred through enemies and vaporize terrain.
-* **Lightning (`[U]`)** - Call down a lightning strike on your target. Double-tap `[U]` for an AoE blast. Automatically chains between enemies standing in water.
-* **Stone Canon (`[I]`)** - Stand near stone and hold to absorb blocks into a massive boulder, then launch it.
-* **Grab & Slam (`[O]`)** - Grab a nearby enemy, hoist them overhead, and slam them into the ground to create an impact crater.
-* **Knife Combo (`[;]`)** - Three rapid, high-damage melee slashes (does not destroy terrain).
+Click **PLAY** on the title screen. The built-in tutorial will guide you through the controls
+step-by-step — teaching one mechanic at a time and waiting for you to do it before moving on.
+
+### Core Controls
+
+| Key | Action |
+|---|---|
+| `W` `A` `S` `D` | Move |
+| `Space` | Jump |
+| Double-tap `W` | Sprint |
+| Double-tap `Space` | Toggle flight |
+| Mouse | Look around |
+| Left Click (hold) | Mine block |
+| Right Click | Place block |
+| `1`–`9` | Select hotbar slot |
+| `T` | Open chat (type commands) |
+| `F1` | Open the in-game Master Ability Guide |
 
 ---
 
-## 🏃 Movement & Mobility
+## Rubric Checklist
 
-* **Flight (`[Double Space]`)** - Take to the skies. Press `[V]` to cycle between Skim (low-altitude glide), Soar (3D free-flight), and Grapple (hook-and-swing).
-* **Dash (`[Q]`)** - Instant horizontal burst in your movement direction, leaving a trail of fading ghost duplicates.
-* **Blink (`[E]`)** - Teleport along a straight, fast-travel path directly to your crosshair (up to 22 blocks).
-* **Cannonball (`[Hold G]`)** - Charge up, view your ballistic trajectory, and launch yourself as a highly destructive projectile.
-* **Stone Pillar (`[K]`)** - Erupt a stone spire beneath your feet, launching yourself high into the air.
-* **Ground Smash (`[Shift in air]`)** - Slam down to the earth, creating a massive crater and shockwave scaled by your fall height.
+This section maps every grading criterion directly to the code that fulfils it.
 
 ---
 
-## 🌀 Tactical & Utility
+### Title Screen & End Screen
 
-* **Position Swap (`[J]`)** - Instantly swap places with the nearest visible enemy.
-* **Minato's Seal (`[H] / [B] / [N]`)** - Press `[H]` to throw an anchor seal, `[B]` to warp to it, and `[N]` to reclaim it to your inventory.
-* **Kamui (`[Z]`)** - Phase into another dimension to become completely invincible. Hold Left-Click to charge a vortex and suck enemies into the void.
-* **Paper Substitute (`[Hold V]`)** - Hold to prime. The next hit you take is negated, blinking you backward and leaving behind an exploding decoy.
-* **Quagmire (`[M]`)** - Fire a wave of mud along the ground that traps enemies and stamps out
+| Feature | Implementation |
+|---|---|
+| Title screen | [`WindowHud.java`](src/main/java/com/leaf/game/core/WindowHud.java) — rendered with Dear ImGui; shows game title and a **Play Game** button |
+| Intro cutscene | [`CutsceneManager.java`](src/main/java/com/leaf/game/core/CutsceneManager.java) — letterbox bars + typewriter text plays once when the world finishes loading |
+| End screen (win) | Same — ending cutscene triggers after clearing Wave 9, then shows final stats |
+| Death screen | [`RunRecords.java`](src/main/java/com/leaf/game/core/RunRecords.java) + `WindowHud` — shows wave reached, time played, and all-time bests |
 
-### 🏆 Features Included from Rubric
-* **Title/End Screens:** Implemented via ImGui overlays (`WindowHud.java` and `CutsceneManager.java`).
-* **Tutorial/Intuitive UI:** Implemented via `TutorialManager.java` which guides the player step-by-step upon spawning.
-* **Motivation/Progression:** Endless wave spawner (`EnemyManager.java`) that introduces harder enemies (Golems) over time, rewarding the player with new abilities via a pop-up card system.
-* **Array Animation:** Skeletal hierarchical animation using arrays/matrices parsed from Blockbench (`AnimPlayer.java`).
-* **Sound Effects:** 3D spatial audio system utilizing OpenAL (`AudioManager.java`).
+---
 
-### 📚 Credits & Assets
-* Engine built using Java, LWJGL 3, and JOML (Java OpenGL Math Library).
-* UI powered by ImGui.
-* Audio decoded via Java Sound SPI and managed via OpenAL.
-* 3D Models animated via Blockbench.
+### Instructions / Tutorial
+
+| Feature | Implementation |
+|---|---|
+| Staged tutorial | [`TutorialManager.java`](src/main/java/com/leaf/game/core/TutorialManager.java) — teaches one concept per step (movement → melee → ranged → flight) and waits for the player to *actually do* each action before advancing |
+| Ability practice | [`AbilityPractice.java`](src/main/java/com/leaf/game/core/AbilityPractice.java) — per-ability mini-sessions that play automatically after each wave unlock |
+| In-game help | Press `F1` at any time for the full ability reference card |
+| Skip option | Type `/skip` in chat to skip the tutorial instantly (useful for grading) |
+
+---
+
+### Scoring & Achievement System
+
+| Feature | Implementation |
+|---|---|
+| Best wave record | [`RunRecords.java`](src/main/java/com/leaf/game/core/RunRecords.java) — persists best wave reached, total deaths, and run time to `descent_records.txt` |
+| Ability unlock progression | [`Progression.java`](src/main/java/com/leaf/game/core/Progression.java) — 18 unlockable abilities accumulate across runs; unlocked set is saved to disk |
+| End-of-run stats | Death screen + ending cutscene show: wave reached, deaths, total run time, lifetime best wave |
+| Secret achievement | **Kamui** — a hidden ability that only unlocks after dying exactly 3 times |
+
+---
+
+### Motivation to Keep Playing
+
+- **Escalating waves:** each wave spawns more enemies with harder types (`EnemyManager.java`)
+- **18 progressive ability unlocks:** a new combat power is revealed on a cinematic card after every wave
+- **Persistent records:** `descent_records.txt` tracks your best wave across sessions — beat your own high score
+- **Hidden content:** the Kamui ability is only unlocked through dying 3 times, rewarding experimentation
+- **Story:** an intro and ending cutscene give the run context and a goal to reach
+
+---
+
+### Sound & Sound Effects
+
+[`AudioManager.java`](src/main/java/com/leaf/game/core/AudioManager.java) — a complete OpenAL 3D spatial audio engine.
+
+- **60+ original sound effects** covering: every ability, movement states (walking, running, landing, water), block break types (stone, soil, sand, crystal), and ambient wind/water environments
+- Sounds are positional in 3D space — distant audio fades correctly by distance
+- Underwater reverb filter activates when the camera enters water
+
+---
+
+### Animation Using Arrays
+
+The animation system uses arrays as its core data structure throughout:
+
+| Class | Array usage |
+|---|---|
+| [`AnimClip.java`](src/main/java/com/leaf/game/anim/AnimClip.java) | Stores a `Map<String, List<Keyframe>>` — an array of `Keyframe` objects per named bone |
+| [`AnimPlayer.java`](src/main/java/com/leaf/game/anim/AnimPlayer.java) | Iterates the keyframe array each frame to interpolate transforms; outputs a `Map<String, Matrix4f>` (one pose matrix per part) that the renderer applies |
+| [`AnimModel.java`](src/main/java/com/leaf/game/anim/AnimModel.java) | Holds an array of `PartDef` (one per bone/cube) defining the skeleton |
+| [`BlockbenchImporter.java`](src/main/java/com/leaf/game/anim/BlockbenchImporter.java) | Parses `.bbmodel` files from Blockbench and populates those arrays at load time |
+| [`ModelRenderer.java`](src/main/java/com/leaf/game/anim/ModelRenderer.java) | Walks the part array in hierarchy order to compute final world-space transforms |
+
+Enemy models (Golem, Slime) are all animated using this system. Each live enemy owns its own `AnimPlayer` instance so they animate independently.
+
+---
+
+### Source Code Quality
+
+| Requirement | Status |
+|---|---|
+| All classes capitalised | Yes — every class follows PascalCase |
+| Class-level Javadoc (`/** */` comments) | Yes — all major classes have API descriptions |
+| Public method Javadoc (`@param`, `@return`) | Yes — all public methods documented |
+| Good variable / method / class names | Yes — descriptive names throughout |
+| Arrays used correctly | Yes — keyframe arrays, part arrays, enemy lists, hotbar array |
+| Organised and correctly formatted | Yes — consistent indentation, grouped sections with divider comments |
+| Comments on complex code | Yes — non-obvious logic (A\* pathfinding, FABRIK IK, star coordinate transforms) is explained inline |
+
+**Key classes to sample for marking:**
+
+- [`AnimPlayer.java`](src/main/java/com/leaf/game/anim/AnimPlayer.java) — clean array iteration and interpolation
+- [`EnemyManager.java`](src/main/java/com/leaf/game/entity/EnemyManager.java) — wave spawning with clear Javadoc
+- [`Progression.java`](src/main/java/com/leaf/game/core/Progression.java) — ability unlock schedule, well-commented enum
+- [`TutorialManager.java`](src/main/java/com/leaf/game/core/TutorialManager.java) — multi-step tutorial logic with step-by-step documentation
+
+---
+
+## Developer Cheat Codes
+
+Use these to grade quickly without completing all 10 waves:
+
+| Key / Command | What it does |
+|---|---|
+| `F9` | **Wave Skip** — instantly kills all enemies and advances the wave counter |
+| `F3` | Open debug overlay (FPS, player coords, time scale) |
+| `P` | Spawn a basic enemy at your crosshair |
+| `0` (zero) | Spawn a boss-tier Guardian Golem |
+| Hotbar slot 5 | **Gatling Gun** — hold Left Click to rapidly destroy terrain and enemies |
+| `F7` | **Orbital Annihilation** — volumetric cinematic laser strike |
+| `F8` | **The World** — freeze all enemies, invert screen colours |
+| `F10` | **Radar Sweep** — 3D radar pulse that sees enemies through walls |
+| `'` (apostrophe) | **Deprivation Domain** — golden hemisphere that auto-slashes any enemy that enters |
+| `,` (comma) | **Quantum Bullet** — fires a phase-shift projectile that passes through solid walls |
+| `/skip` (chat) | Skip the full tutorial + all wave-unlock practice sessions |
+| `/god` (chat) | Toggle invincibility |
+| `/give all` (chat) | Fill hotbar with all building blocks |
+| `/spider spawn` (chat) | Spawn a procedural IK spider enemy |
+
+---
+
+## Full Ability Reference
+
+### Combat & Offensive
+
+| Ability | Key | Description |
+|---|---|---|
+| Void Shard (Snipe) | `C` | Hold to charge a crystal bolt; longer charge = bigger explosion |
+| Runic Cleave (Slash) | `F` | Wide melee swing that shatters blocks in a 3D crescent |
+| Gatling Gun | Hotbar slot 5 | Hold Left Click to rapid-fire and vaporise terrain |
+| Lightning | `U` | Strike your target; double-tap for AoE; chains between enemies in water |
+| Stone Canon | `I` | Stand near stone, hold to absorb it into a boulder, release to fire |
+| Grab & Slam | `O` | Grab an enemy overhead and slam them into the ground |
+| Knife Combo | `;` | Three rapid high-damage melee slashes |
+
+### Movement & Mobility
+
+| Ability | Key | Description |
+|---|---|---|
+| Flight | Double-tap `Space` | Take to the skies; press `V` to cycle Skim / Soar / Grapple modes |
+| Dash | `Q` | Instant burst in your movement direction |
+| Blink | `E` | Teleport up to 22 blocks to your crosshair |
+| Cannonball | Hold `G` | Charge up, preview your trajectory arc, then launch yourself as a projectile |
+| Stone Pillar | `K` | Erupt a stone spire beneath your feet and launch skyward |
+| Ground Smash | `Shift` (in air) | Slam into the earth creating a crater; bigger from higher falls |
+
+### Tactical & Utility
+
+| Ability | Key | Description |
+|---|---|---|
+| Position Swap | `J` | Instantly swap places with the nearest visible enemy |
+| Minato's Seal | `H` / `B` / `N` | Throw a warp anchor (`H`), teleport to it (`B`), recall it (`N`) |
+| Kamui | `Z` | Phase into another dimension — invincible; hold Left Click to vortex-suck enemies |
+| Paper Substitute | Hold `V` | Prime a decoy; the next hit is absorbed, you blink back, decoy explodes |
+| Quagmire | `M` | Fire a mud wave along the ground that traps enemies |
+| Time Dilation | `R` / `Y` | Slow time (`R`) or speed it up (`Y`) |
+| Heal | `L` | Channel healing over time (you cannot move while channelling) |
+| Manhattan Transfer | `X` / `Tab` | Deploy a combat drone that auto-fires; `Tab` to pilot it yourself |
+
+---
+
+## Architecture Overview
+
+The game is built on a **custom 3D engine** (teacher-approved):
+
+| Layer | Key classes |
+|---|---|
+| Engine core | `Window.java` — game loop, input routing, render orchestration |
+| Voxel world | `World.java`, `Chunk.java`, `WorldGen.java` — procedural generation + streaming |
+| Player | `Player.java` + 7 sub-controllers (`AbilityController`, `AttackController`, `FlightController`, `StandController`, `SealController`, `LightningController`, `GrabController`) |
+| Enemies | `Enemy.java`, `EnemyManager.java` — AI state machine, A\* pathfinding, wave spawning |
+| Spider | `SpiderEnemy.java` + FABRIK IK system — procedural leg placement on any surface |
+| Skeletal animation | `AnimPlayer.java`, `AnimModel.java`, `AnimClip.java` — array-based keyframe interpolation |
+| Rendering | `Shader.java`, `ModelRenderer.java`, `ChunkMesher.java`, `BlockTextureAtlas.java` |
+| Audio | `AudioManager.java` — OpenAL 3D spatial audio with EFX reverb |
+| Sky / Astronomy | `DayNight.java`, `Astronomy.java`, `CelestialNav.java` — real BSC5 star catalogue |
+| Progression | `Progression.java`, `RunRecords.java` — unlock system + persistent high-score records |
+| HUD / UI | `WindowHud.java`, `CutsceneManager.java`, `TutorialManager.java`, `BackpackUI.java` |
+
+---
+
+## Credits
+
+- **Engine:** Java 17 + LWJGL 3 (OpenGL 3.3)
+- **Math:** JOML (Java OpenGL Math Library)
+- **UI:** Dear ImGui (via imgui-java)
+- **Audio:** OpenAL + Java Sound SPI
+- **3D Models & Animations:** Blockbench (`.bbmodel` → custom JSON pipeline)
+- **Star data:** Yale Bright Star Catalogue (BSC5)

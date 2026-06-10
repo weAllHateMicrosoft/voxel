@@ -34,6 +34,22 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 
+/**
+ * Window — the central game hub for DESCENT.
+ *
+ * <p>Owns and coordinates every top-level system:
+ * <ul>
+ *   <li>GLFW window + OpenGL 3.3 context creation and the main game loop</li>
+ *   <li>World generation, chunk streaming, and block interaction</li>
+ *   <li>Player entity, enemy wave system ({@link EnemyManager}), and dropped items</li>
+ *   <li>Day/night cycle ({@link DayNight}), 3D audio ({@link AudioManager})</li>
+ *   <li>ImGui HUD ({@link WindowHud}), cutscenes ({@link CutsceneManager}), and tutorial ({@link TutorialManager})</li>
+ *   <li>Ability progression (wave clearing → unlock cards → {@link Progression})</li>
+ *   <li>Optional peer-to-peer multiplayer via {@link com.leaf.game.net.NetworkSession}</li>
+ * </ul>
+ *
+ * <p>Entry point: {@link #run()} — called from {@link com.leaf.game.Main}.
+ */
 public class Window {
     long window;
     Player player;
@@ -439,6 +455,10 @@ public class Window {
     private boolean lastF6        = false;
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Main entry point. Initialises the engine, runs the game loop, then tears
+     * down all GPU and audio resources before exiting the JVM.
+     */
     public void run() {
         init();
         loop();

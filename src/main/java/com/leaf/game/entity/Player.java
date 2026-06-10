@@ -12,6 +12,30 @@ import org.joml.Vector3f;
 
 import static org.lwjgl.glfw.GLFW.*;
 
+/**
+ * Player — the local player entity in DESCENT.
+ *
+ * <p>Handles first-person movement (walk, sprint, jump, 6-axis gravity-flip),
+ * voxel collision detection, health, mana, and fall damage.
+ *
+ * <p>Input is routed to a set of specialised sub-controllers that each own
+ * their own keybindings and cooldown logic:
+ * <ul>
+ *   <li>{@link AbilityController}  — Dash, Cannonball, Blink, Kamui, …</li>
+ *   <li>{@link AttackController}   — Snipe, Slash, Gatling Gun, …</li>
+ *   <li>{@link FlightController}   — Skim / Soar / Grapple flight modes</li>
+ *   <li>{@link StandController}    — Manhattan Transfer combat drone</li>
+ *   <li>{@link SealController}     — Minato's Seal teleport anchors</li>
+ *   <li>{@link LightningController} — lightning strike ability</li>
+ *   <li>{@link GrabController}     — grab-and-slam ability</li>
+ * </ul>
+ *
+ * <p>Every ability is gated through {@link com.leaf.game.core.Progression};
+ * pressing a locked key silently does nothing until that wave's unlock is earned.
+ *
+ * <p>Updated once per frame by {@link com.leaf.game.core.Window} via
+ * {@link #update(long, com.leaf.game.util.Camera, com.leaf.game.world.World, float)}.
+ */
 public class Player {
 
     public boolean debugMode = false;
@@ -114,6 +138,13 @@ public class Player {
     //  Constructor
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Constructs the player at the given world-space spawn coordinates.
+     *
+     * @param x spawn X position
+     * @param y spawn Y position (surface level)
+     * @param z spawn Z position
+     */
     public Player(float x, float y, float z) {
         position = new Vector3f(x, y, z);
         highestY = y;
@@ -123,6 +154,15 @@ public class Player {
     //  Main update (called with time-scaled deltaTime from Window.java)
     // ─────────────────────────────────────────────────────────────────────────
 
+    /**
+     * Ticks all player logic for one frame: movement, collision, gravity, ability
+     * sub-controllers, and camera synchronisation.
+     *
+     * @param window    the GLFW window handle (for keyboard/mouse polling)
+     * @param camera    the first-person camera (position and look direction are updated here)
+     * @param world     the voxel world used for collision and raycast queries
+     * @param deltaTime seconds elapsed since the last frame (time-scaled by the game speed)
+     */
     public void update(long window, Camera camera, World world, float deltaTime) {
         double now = glfwGetTime();
 
@@ -515,13 +555,26 @@ public class Player {
         camera.position.set(position.x, position.y + EYE_HEIGHT, position.z);
     }
 
+    /**
+     * Returns the camera roll angle (radians) contributed by flight banking
+     * and ability visual effects.
+     *
+     * @return roll in radians, added on top of the base camera rotation each frame
+     */
     public float getCameraRoll() {
         return flightController.getCameraRoll() + abilities.getCameraRoll();
     }
+    /**
+     * Returns extra field-of-view degrees to add this frame (negative = zoom in).
+     * Combines contributions from sprinting, abilities, and ground-smash wind-up.
+     *
+     * @return FOV delta in degrees
+     */
     public float getCameraFovBoost() {
         if (isSmashing) return -8f;
         return flightController.getFovBoost() + abilities.getCameraFovBoost() + attacks.getFovBoost();
     }
+    /** @return {@code true} while the player is in a ground-smash dive. */
     public boolean isSmashing() { return isSmashing; }
 
     // ── GRAVITY (6-axis) HELPERS ──────────────────────────────────────────────
@@ -572,8 +625,18 @@ public class Player {
 
     // ── Package-private accessors for AbilityController ───────────────────────
     // AbilityController is in the same package so these stay package-visible.
+    /** @return current vertical velocity along the player's up axis (m/s). */
     public float getVelocityY()   { return velocityY; }
+
+    /**
+     * Overrides the current vertical velocity. Used by abilities (Dash, Cannonball)
+     * to apply launch impulses.
+     *
+     * @param v new velocity in m/s along the player's up axis
+     */
     public void  setVelocityY(float v) { this.velocityY = v; }
+
+    /** @return {@code true} when the player is resting on a solid surface. */
     public boolean isOnGround()        { return onGround; }
     /** True when the camera / eye position is inside a liquid block — used to trigger underwater reverb. */
     public boolean isCameraSubmerged() { return cameraSubmerged; }

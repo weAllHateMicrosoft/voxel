@@ -3,6 +3,19 @@ package com.leaf.game.core;
 import com.leaf.game.entity.Enemy;
 import com.leaf.game.world.Block;
 
+/**
+ * CommandHandler — processes developer debug commands typed in the in-game chat.
+ *
+ * <p>Commands start with {@code /} (e.g. {@code /skip}, {@code /god}, {@code /give}).
+ * Open the chat bar with {@code T} and type any command.
+ *
+ * <p>Useful for grading:
+ * <ul>
+ *   <li>{@code /skip}      — bypass the tutorial and all wave-unlock practices</li>
+ *   <li>{@code /god}       — toggle invincibility</li>
+ *   <li>{@code /give all}  — fill the hotbar with every building block</li>
+ * </ul>
+ */
 public class CommandHandler {
 
     private final Window win;
