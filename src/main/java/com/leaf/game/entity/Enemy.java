@@ -36,7 +36,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY, SPIDER }
+    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY, SPIDER, LAVA_SLIME, INFERNO_TOWER }
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -117,6 +117,17 @@ public class Enemy {
     private float slamWindUp    = 0f;
     public  boolean wantsToThrow = false;
     private float throwCooldown  = 0f;
+
+    // ── INFERNO TOWER special ───────────────────────────────────────────────────
+    /** Signal (read + cleared by EnemyManager) that the tower should erupt a slime. */
+    public  boolean wantsToSpawnMinion = false;
+    /** Lava slimes this tower currently owns (cap via GameConfig.infernoMinionCap). */
+    public  int     liveMinions        = 0;
+    private float   minionSpawnTimer    = 0f;
+    /** Id of the Inferno Tower that spawned this minion, or -1 if not tower-spawned. */
+    public  int     ownerTowerId       = -1;
+    /** True for free-explore ambient roamers (despawn when the player wanders away). */
+    public  boolean ambient            = false;
 
     // ── GUARDIAN special ──────────────────────────────────────────────────────
     public  float   facingYaw    = 0f;
@@ -216,6 +227,19 @@ public class Enemy {
                 atk_    = 2.5f; atkI_  = 1.2f;
                 cr = 1.2f; hh = 0.8f; // Wide, squat hitbox
             }
+            case LAVA_SLIME -> {
+                health_ = GameConfig.lavaSlimeHealth;  speed_ = GameConfig.lavaSlimeSpeed;
+                dps_    = GameConfig.lavaSlimeDamagePerSec;  aggro_ = GameConfig.lavaSlimeAggroRange;
+                atk_    = GameConfig.lavaSlimeAttackRange;   atkI_  = GameConfig.lavaSlimeAttackInterval;
+                cr = 0.6f; hh = 0.5f;            // identical body to SLIME
+            }
+            case INFERNO_TOWER -> {
+                // Stationary high-HP spawner; physically inert like DUMMY but active.
+                health_ = GameConfig.infernoTowerHealth;  speed_ = 0f;
+                dps_    = 0f;  aggro_ = GameConfig.infernoAggroRange;
+                atk_    = 0f;  atkI_  = 999f;
+                cr = 3.0f; hh = 6.0f;            // ~12-block-tall model footprint
+            }
             default -> {
                 health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
                 dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
@@ -272,6 +296,7 @@ public class Enemy {
     public void update(float dt, World world, Vector3f playerPos, List<Enemy> allEnemies) {
         framePlayerDamage    = 0f;
         wantsToThrow         = false;
+        wantsToSpawnMinion   = false;
         pendingGrabImpact    = false;
 
         if (!alive) {
@@ -331,9 +356,29 @@ public class Enemy {
         switch (type) {
             case GOLEM    -> tickGolemAI(dt, distToPlayer, leash, playerCentre);
             case THROWER  -> tickThrowerAI(dt, distToPlayer, leash);
-            case ZOMBIE, SLIME -> tickZombieAI(dt, distToPlayer, leash);
+            case ZOMBIE, SLIME, LAVA_SLIME -> tickZombieAI(dt, distToPlayer, leash);
             case GUARDIAN -> tickGuardianAI(dt, distToPlayer, leash, playerCentre);
+            case INFERNO_TOWER -> tickTowerAI(dt, distToPlayer);
             case DUMMY -> { /* stationary practice target — no AI */ }
+            default -> { /* SPIDER overrides update() entirely */ }
+        }
+    }
+
+    // ─── INFERNO TOWER ────────────────────────────────────────────────────────
+    /**
+     * Stationary spawner. While the player is within aggro range, count down to the
+     * next eruption; on fire, raise {@link #wantsToSpawnMinion} (EnemyManager spawns
+     * the lava slime + VFX) unless the minion cap is already reached.
+     */
+    private void tickTowerAI(float dt, float distToPlayer) {
+        if (distToPlayer > aggroRange) {
+            minionSpawnTimer = GameConfig.infernoSpawnInterval * 0.5f; // re-arm, half delay
+            return;
+        }
+        minionSpawnTimer -= dt;
+        if (minionSpawnTimer <= 0f) {
+            minionSpawnTimer = GameConfig.infernoSpawnInterval;
+            if (liveMinions < GameConfig.infernoMinionCap) wantsToSpawnMinion = true;
         }
     }
 
@@ -1123,6 +1168,8 @@ public class Enemy {
             case GUARDIAN -> new float[]{ 1.0f,  1.0f,  1.0f  };
             case SPIDER   -> new float[]{ 1.0f,  1.0f,  1.0f  };
             case DUMMY    -> new float[]{ 0.75f, 0.88f, 0.75f };
+            case LAVA_SLIME    -> new float[]{ 0.92f, 0.92f, 0.92f };   // slightly chunkier slime
+            case INFERNO_TOWER -> new float[]{ 3.0f,  3.0f,  3.0f  };   // ~12-block landmark
         };
     }
 

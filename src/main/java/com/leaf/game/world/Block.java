@@ -74,7 +74,48 @@ public enum Block {
     // ── FLAPPY BIRD CLASSIC GREEN PIPES ──
     PIPE_BODY       (0.43f, 0.78f, 0.08f, 1.0f,  4.0f),  // Rich shaded green pipe column
     PIPE_LIP        (0.52f, 0.86f, 0.12f, 1.0f,  4.0f),  // Brighter highlighted pipe collar
-    LAVA            (1.00f, 0.22f, 0.05f, 0.90f, 0.0f);  // Liquid glowing red/orange lava
+    LAVA            (1.00f, 0.22f, 0.05f, 0.90f, 0.0f),  // Liquid glowing red/orange lava
+
+    // ── Volcanic Ashlands ────────────────────────────────────────
+    // Black basalt foundations, glowing magma veins, glassy obsidian, soft ash.
+    BASALT          (0.16f, 0.15f, 0.18f, 1.0f,  4.5f),  // dark columnar volcanic rock
+    SMOOTH_BASALT   (0.11f, 0.10f, 0.13f, 1.0f,  4.5f),  // polished darker basalt
+    MAGMA           (0.98f, 0.42f, 0.10f, 1.0f,  3.0f),  // glowing orange crust (walkable, hot)
+    OBSIDIAN        (0.10f, 0.07f, 0.17f, 1.0f,  8.0f),  // glassy near-black violet
+    ASH             (0.42f, 0.40f, 0.40f, 1.0f,  0.5f),  // soft grey ashfall
+    EMBER_ROCK      (0.52f, 0.20f, 0.11f, 1.0f,  3.5f),  // dark red rock veined with embers
+    CHARRED_LOG     (0.14f, 0.12f, 0.11f, 1.0f,  2.0f),  // burnt blackened wood
+
+    // ── Sakura Grove ─────────────────────────────────────────────
+    // Pastel pink canopy, mauve bark, petal carpet — calm and anime-flavoured.
+    SAKURA_GRASS    (0.96f, 0.70f, 0.80f, 1.0f,  0.8f),  // pale pink grass
+    SAKURA_SOIL     (0.45f, 0.32f, 0.34f, 1.0f,  0.8f),  // pinkish-brown soil
+    SAKURA_LOG      (0.40f, 0.26f, 0.30f, 1.0f,  2.0f),  // dark mauve bark
+    SAKURA_LEAVES   (1.00f, 0.72f, 0.86f, 0.90f, 0.2f),  // pink blossom canopy (translucent)
+    PINK_PETALS     (1.00f, 0.80f, 0.90f, 0.85f, 0.1f),  // drifting petal carpet (decorative)
+
+    // ── Bioluminescent Mushroom Forest ───────────────────────────
+    // Purple mycelium floor, cream stems, glowing caps that light the night.
+    MYCELIUM        (0.38f, 0.30f, 0.45f, 1.0f,  0.8f),  // purple-grey fungal floor
+    MUSHROOM_STEM   (0.90f, 0.88f, 0.80f, 1.0f,  1.0f),  // cream mushroom stem
+    GLOWCAP_RED     (1.00f, 0.28f, 0.30f, 1.0f,  0.4f),  // glowing red cap
+    GLOWCAP_TEAL    (0.20f, 0.95f, 0.85f, 1.0f,  0.4f),  // glowing teal cap
+    GLOWCAP_BLUE    (0.35f, 0.55f, 1.00f, 1.0f,  0.4f),  // glowing blue cap
+    GLOW_LICHEN     (0.55f, 1.00f, 0.70f, 0.85f, 0.2f),  // glowing lichen (decorative)
+
+    // ── Amethyst Crystal Fields ──────────────────────────────────
+    // Lavender meadows studded with geodes (cores reuse the CRYSTAL_* blocks).
+    AMETHYST_GRASS  (0.62f, 0.52f, 0.80f, 1.0f,  0.8f),  // lavender grass
+    CRYSTAL_SOIL    (0.30f, 0.24f, 0.40f, 1.0f,  0.9f),  // dark purple soil
+    GEODE_SHELL     (0.40f, 0.36f, 0.46f, 1.0f,  4.0f),  // rocky geode outer shell
+
+    // ── Autumn Maple Woods ───────────────────────────────────────
+    // Warm golden-brown grass and maples blazing red/gold/orange.
+    AUTUMN_GRASS    (0.62f, 0.52f, 0.22f, 1.0f,  0.8f),  // golden-brown grass
+    MAPLE_LOG       (0.36f, 0.24f, 0.16f, 1.0f,  2.0f),  // warm brown bark
+    MAPLE_LEAVES_RED   (0.78f, 0.18f, 0.12f, 0.90f, 0.2f),  // crimson canopy
+    MAPLE_LEAVES_GOLD  (0.90f, 0.70f, 0.16f, 0.90f, 0.2f),  // gold canopy
+    MAPLE_LEAVES_ORANGE(0.88f, 0.45f, 0.12f, 0.90f, 0.2f);  // orange canopy
     public final float r, g, b, a;
     public final float hardness;
 
@@ -167,9 +208,11 @@ public enum Block {
     }
 
     public boolean isSolid() {
-        // HANGING_ROOT and CRATER_BLOOM are decorative; the player walks through them
+        // HANGING_ROOT, CRATER_BLOOM, PINK_PETALS, GLOW_LICHEN are decorative —
+        // the player walks through them.
         return this != AIR && this != WATER && this != MESA_WATER
-                && this != HANGING_ROOT && this != CRATER_BLOOM;
+                && this != HANGING_ROOT && this != CRATER_BLOOM
+                && this != PINK_PETALS && this != GLOW_LICHEN;
     }
     public boolean isLiquid() { return this == WATER || this == MESA_WATER || this == LAVA; }
     public boolean isOpaque() { return this.a >= 1.0f; }

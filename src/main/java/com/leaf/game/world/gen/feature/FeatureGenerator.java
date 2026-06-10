@@ -4,6 +4,7 @@ import com.leaf.game.util.Noise;
 import com.leaf.game.world.Block;
 import com.leaf.game.world.Chunk;
 import com.leaf.game.world.gen.WorldGen;
+import com.leaf.game.world.gen.biome.Biome;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +47,13 @@ public class FeatureGenerator {
     private static final int FT_ISLAND   = 2;
     private static final int FT_FOSSIL   = 3;
     private static final int FT_MEGALITH = 4;
+    private static final int FT_TOWER    = 5;
+
+    // ── Inferno Tower siting (shared with EnemyManager's tower director) ───────
+    /** World blocks per Inferno-Tower candidate region. */
+    public static final int TOWER_REGION = 256;
+    /** Max reach of a tower foundation from its site centre (for chunk overlap). */
+    public static final int TOWER_MAX_R  = 9;
 
     // ── Region sizes (world blocks per region side) ───────────────────────────
     private static final int CRATER_REGION   = 1600;  // ~1 crater  per 1600×1600
@@ -66,11 +74,29 @@ public class FeatureGenerator {
     private final long  seed;
     private final Noise crystalNoise;    // Crystal spires zone
     private final Noise petrifiedNoise;  // Petrified forest zone
+    private final Noise volcanicNoise;   // Volcanic lava-pond / vent scatter
 
     public FeatureGenerator(long seed) {
         this.seed         = seed;
         crystalNoise   = new Noise(seed + 50_000L);
         petrifiedNoise = new Noise(seed + 51_000L);
+        volcanicNoise  = new Noise(seed + 52_000L);
+    }
+
+    /**
+     * Deterministic Inferno-Tower site for a candidate region, or {@code null} if
+     * that region hosts no tower. Shared by world-gen (foundation placement) and
+     * the EnemyManager tower director (entity spawning) so the two always coincide.
+     * Callers must still confirm {@code worldGen.biomeAt(site) == VOLCANIC}.
+     */
+    public static int[] infernoTowerSite(long seed, int rx, int rz) {
+        long rng = regionHash(seed, rx, rz, FT_TOWER);
+        if ((rng & 0xFFL) > 115L) return null;   // ~45 % of regions host a candidate
+        rng = nextRng(rng);
+        int x = rx * TOWER_REGION + (int)((rng >>> 1) % TOWER_REGION);
+        rng = nextRng(rng);
+        int z = rz * TOWER_REGION + (int)((rng >>> 1) % TOWER_REGION);
+        return new int[]{ x, z };
     }
 
     // =========================================================================
@@ -100,6 +126,15 @@ public class FeatureGenerator {
 
         // Phase 5 — General Surface Polish (Trees & Shrines)
         applyVegetationAndShrines(chunk, worldGen);
+
+        // Phase 6 — Special-biome dressing (sakura, mushroom, crystal, autumn, volcanic)
+        applyBiomeFeatures(chunk, worldGen);
+
+        // Phase 6.5 — Great Ancient Sakuras (rare colossal centerpiece trees)
+        applyGreatSakuras(chunk, worldGen);
+
+        // Phase 7 — Inferno-Tower foundations (volcanic biome landmarks)
+        applyInfernoTowers(chunk, worldGen);
     }
 
     // =========================================================================
@@ -850,6 +885,319 @@ public class FeatureGenerator {
                     }
                 }
             }
+        }
+    }
+
+    // =========================================================================
+    //  ⑧ SPECIAL-BIOME DRESSING  (sakura / mushroom / crystal / autumn / volcanic)
+    // =========================================================================
+
+    /**
+     * Per-column biome dressing: queries the surface biome and scatters that
+     * biome's signature features (blossom trees, glowing mushrooms, geodes,
+     * maples, lava ponds). Deterministic via per-column {@code regionHash}.
+     */
+    private void applyBiomeFeatures(Chunk chunk, WorldGen worldGen) {
+        int worldX = chunk.cx * Chunk.SIZE;
+        int worldZ = chunk.cz * Chunk.SIZE;
+
+        // Cheap gate: only pay the per-column biome lookups when the chunk's
+        // centre or a corner actually sits in a special patch biome. Ordinary
+        // chunks (the vast majority) skip this pass entirely.
+        boolean anySpecial = false;
+        int[][] probes = { {8, 8}, {0, 0}, {15, 0}, {0, 15}, {15, 15} };
+        for (int[] p : probes) {
+            if (isSpecialBiome(worldGen.biomeAt(worldX + p[0], worldZ + p[1]))) { anySpecial = true; break; }
+        }
+        if (!anySpecial) return;
+
+        for (int lx = 0; lx < Chunk.SIZE; lx++) {
+            for (int lz = 0; lz < Chunk.SIZE; lz++) {
+                int wx = worldX + lx, wz = worldZ + lz;
+                int sy = surfaceY(chunk, lx, lz);
+                if (sy < 200) continue;                  // no underwater dressing
+                Block ground = chunk.getBlock(lx, sy, lz);
+                Biome biome  = worldGen.biomeAt(wx, wz);
+                long rng     = regionHash(seed, wx, wz, 91);
+
+                switch (biome) {
+                    case SAKURA -> {
+                        if (ground == Block.SAKURA_GRASS && (rng % 20) == 0)      buildSakuraTree(chunk, lx, sy, lz, rng);
+                        else if (ground == Block.SAKURA_GRASS && (rng % 6) == 0)  place(chunk, lx, sy + 1, lz, Block.PINK_PETALS);
+                    }
+                    case AUTUMN -> {
+                        if (ground == Block.AUTUMN_GRASS && (rng % 14) == 0)      buildMapleTree(chunk, lx, sy, lz, rng);
+                    }
+                    case MUSHROOM -> {
+                        if (ground == Block.MYCELIUM && (rng % 24) == 0)          buildGiantMushroom(chunk, lx, sy, lz, rng);
+                        else if (ground == Block.MYCELIUM && (rng % 9) == 0)      place(chunk, lx, sy + 1, lz, Block.GLOW_LICHEN);
+                    }
+                    case CRYSTAL_FIELDS -> {
+                        if (ground == Block.AMETHYST_GRASS && (rng % 30) == 0)    buildGeode(chunk, lx, sy, lz, rng);
+                    }
+                    case VOLCANIC -> applyVolcanicColumn(chunk, lx, sy, lz, wx, wz);
+                    default -> { }
+                }
+            }
+        }
+    }
+
+    /** True for the rare patch biomes that get the per-column dressing pass. */
+    private static boolean isSpecialBiome(Biome b) {
+        return b == Biome.SAKURA || b == Biome.AUTUMN || b == Biome.MUSHROOM
+                || b == Biome.CRYSTAL_FIELDS || b == Biome.VOLCANIC;
+    }
+
+    /** Wide pink-canopy cherry tree with a petal carpet around the base. */
+    private void buildSakuraTree(Chunk chunk, int lx, int sy, int lz, long rng) {
+        int height = 5 + (int)((rng >>> 1) % 3);     // 5–7
+        for (int y = 1; y <= height; y++) place(chunk, lx, sy + y, lz, Block.SAKURA_LOG);
+        int top = sy + height;
+        for (int dy = -1; dy <= 2; dy++) {
+            int radius = (dy == 2) ? 1 : (dy == -1 ? 2 : 3);
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.abs(dx) == radius && Math.abs(dz) == radius && ((dx * 7 + dz * 13 + dy) & 1) == 0) continue;
+                    int px = lx + dx, pz = lz + dz, py = top + dy;
+                    if (px >= 0 && px < Chunk.SIZE && pz >= 0 && pz < Chunk.SIZE
+                            && py < Chunk.HEIGHT && chunk.getBlock(px, py, pz) == Block.AIR) {
+                        place(chunk, px, py, pz, Block.SAKURA_LEAVES);
+                    }
+                }
+            }
+        }
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                int px = lx + dx, pz = lz + dz;
+                if (px >= 0 && px < Chunk.SIZE && pz >= 0 && pz < Chunk.SIZE
+                        && chunk.getBlock(px, sy + 1, pz) == Block.AIR
+                        && chunk.getBlock(px, sy, pz).isSolid()) {
+                    place(chunk, px, sy + 1, pz, Block.PINK_PETALS);
+                }
+            }
+        }
+    }
+
+    /** Maple tree with a canopy of mixed red / gold / orange leaves. */
+    private void buildMapleTree(Chunk chunk, int lx, int sy, int lz, long rng) {
+        int height = 4 + (int)((rng >>> 1) % 3);     // 4–6
+        for (int y = 1; y <= height; y++) place(chunk, lx, sy + y, lz, Block.MAPLE_LOG);
+        for (int y = height - 2; y <= height + 1; y++) {
+            int radius = (y >= height) ? 1 : 2;
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (dx == 0 && dz == 0 && y <= height) continue;
+                    if (Math.abs(dx) == radius && Math.abs(dz) == radius && (((dx + dz + y) & 1) == 0)) continue;
+                    int px = lx + dx, pz = lz + dz, py = sy + y;
+                    if (px >= 0 && px < Chunk.SIZE && pz >= 0 && pz < Chunk.SIZE
+                            && py < Chunk.HEIGHT && chunk.getBlock(px, py, pz) == Block.AIR) {
+                        long lh = regionHash(seed, lx * 31 + dx, lz * 17 + dz, (int) (y + 5));
+                        Block leaf = switch ((int) (lh & 0x3L)) {
+                            case 0  -> Block.MAPLE_LEAVES_GOLD;
+                            case 1  -> Block.MAPLE_LEAVES_ORANGE;
+                            default -> Block.MAPLE_LEAVES_RED;
+                        };
+                        place(chunk, px, py, pz, leaf);
+                    }
+                }
+            }
+        }
+    }
+
+    /** Giant bioluminescent mushroom — cream stem with a glowing domed cap. */
+    private void buildGiantMushroom(Chunk chunk, int lx, int sy, int lz, long rng) {
+        int height = 5 + (int)((rng >>> 1) % 5);     // 5–9
+        Block cap = switch ((int)((rng >>> 4) % 3)) {
+            case 0  -> Block.GLOWCAP_RED;
+            case 1  -> Block.GLOWCAP_TEAL;
+            default -> Block.GLOWCAP_BLUE;
+        };
+        for (int y = 1; y <= height; y++) place(chunk, lx, sy + y, lz, Block.MUSHROOM_STEM);
+        int capY = sy + height;
+        int r = 2 + (int)((rng >>> 8) % 2);          // cap radius 2–3
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                if (dx * dx + dz * dz > r * r + 1) continue;
+                place(chunk, lx + dx, capY, lz + dz, cap);
+                if (Math.abs(dx) == r || Math.abs(dz) == r) place(chunk, lx + dx, capY - 1, lz + dz, cap); // drooping rim
+            }
+        }
+        place(chunk, lx, capY + 1, lz, cap);
+    }
+
+    /** Amethyst geode mound — rocky shell wrapped around a glowing crystal core. */
+    private void buildGeode(Chunk chunk, int lx, int sy, int lz, long rng) {
+        int r = 2 + (int)((rng >>> 1) % 2);          // 2–3
+        Block core = switch ((int)((rng >>> 4) % 4)) {
+            case 0  -> Block.CRYSTAL_AMETHYST;
+            case 1  -> Block.CRYSTAL_QUARTZ;
+            case 2  -> Block.CRYSTAL_CITRINE;
+            default -> Block.CRYSTAL_ROSE;
+        };
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = 0; dy <= r; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    float d = dx * dx + dy * dy + dz * dz;
+                    if (d > r * r) continue;
+                    Block b = (d >= (r - 1) * (r - 1)) ? Block.GEODE_SHELL : core;
+                    place(chunk, lx + dx, sy + 1 + dy, lz + dz, b);
+                }
+            }
+        }
+        place(chunk, lx, sy + 2 + r, lz, core);      // crystal point poking out the top
+    }
+
+    /** Volcanic surface dressing — lava ponds, magma crust rims, basalt vents. */
+    private void applyVolcanicColumn(Chunk chunk, int lx, int sy, int lz, int wx, int wz) {
+        float vn = volcanicNoise.octave(wx * 0.05f, wz * 0.05f, 2, 0.5f);
+        if (vn > 0.55f) {
+            place(chunk, lx, sy, lz, Block.LAVA);             // glowing lava pond
+        } else if (vn > 0.42f) {
+            place(chunk, lx, sy, lz, Block.MAGMA);            // hot crust around ponds
+        } else {
+            long h = regionHash(seed, wx, wz, 88);
+            if ((h % 60) == 0) {
+                int vh = 2 + (int)((h >>> 4) % 4);            // small basalt vent
+                for (int y = 1; y <= vh; y++) place(chunk, lx, sy + y, lz, (y == vh) ? Block.MAGMA : Block.BASALT);
+            } else if ((h % 30) == 0) {
+                place(chunk, lx, sy + 1, lz, Block.OBSIDIAN); // obsidian shard
+            }
+        }
+    }
+
+    // =========================================================================
+    //  ⑧b GREAT ANCIENT SAKURAS — rare colossal blossom trees (region-hash)
+    // =========================================================================
+
+    private static final int FT_GREAT_SAKURA   = 6;
+    private static final int GREAT_SAKURA_REGION = 384;  // ~1 candidate per 384×384
+    private static final int GREAT_SAKURA_MAX_R  = 14;   // canopy reach (chunk overlap)
+
+    /**
+     * A once-per-region colossal sakura: 2×2 trunk ~15 blocks tall, a vast domed
+     * blossom canopy, hanging petal strands, and a petal carpet below. Placed with
+     * the region-hash pattern so the canopy crosses chunk borders seamlessly; the
+     * ground height comes from {@link WorldGen#sampleHeight} so every chunk agrees
+     * on where the tree stands.
+     */
+    private void applyGreatSakuras(Chunk chunk, WorldGen worldGen) {
+        int worldX = chunk.cx * Chunk.SIZE;
+        int worldZ = chunk.cz * Chunk.SIZE;
+
+        forNearbyRegions(worldX, worldZ, GREAT_SAKURA_REGION, GREAT_SAKURA_MAX_R, (rx, rz) -> {
+            long rng = regionHash(seed, rx, rz, FT_GREAT_SAKURA);
+            if ((rng & 0xFFL) > 150L) return;   // ~60 % of regions host a candidate
+            rng = nextRng(rng);
+            int tX = rx * GREAT_SAKURA_REGION + (int)((rng >>> 1) % GREAT_SAKURA_REGION);
+            rng = nextRng(rng);
+            int tZ = rz * GREAT_SAKURA_REGION + (int)((rng >>> 1) % GREAT_SAKURA_REGION);
+            if (worldGen.biomeAt(tX, tZ) != Biome.SAKURA) return;
+
+            rng = nextRng(rng);
+            int trunkH  = 13 + (int)((rng >>> 1) % 5);   // 13–17
+            rng = nextRng(rng);
+            int canopyR = 8 + (int)((rng >>> 1) % 4);    // 8–11
+
+            // Chunk-independent ground height (same estimate biomeAt uses).
+            int gy = (int)(com.leaf.game.core.GameConfig.heightBase
+                    + worldGen.sampleHeight(tX, tZ) * com.leaf.game.core.GameConfig.heightRange);
+            int topY = gy + trunkH;
+
+            for (int lx = 0; lx < Chunk.SIZE; lx++) {
+                for (int lz = 0; lz < Chunk.SIZE; lz++) {
+                    int wx = worldX + lx, wz = worldZ + lz;
+                    int dx = wx - tX,     dz = wz - tZ;
+                    float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                    if (dist > canopyR + 2) continue;
+
+                    // 2×2 trunk (dx, dz in {0,1})
+                    if (dx >= 0 && dx <= 1 && dz >= 0 && dz <= 1) {
+                        for (int y = gy + 1; y <= topY; y++) place(chunk, lx, y, lz, Block.SAKURA_LOG);
+                    }
+
+                    // Domed canopy: thick ellipsoid shell drooping at the rim
+                    if (dist <= canopyR) {
+                        float nd    = dist / canopyR;                       // 0 centre → 1 rim
+                        int   crown = topY + Math.round((1f - nd * nd) * 4f);
+                        int   under = crown - 3 - Math.round((1f - nd) * 2f);
+                        for (int y = under; y <= crown; y++) {
+                            if (y <= gy + 2 || y >= Chunk.HEIGHT) continue;
+                            if (chunk.getBlock(lx, y, lz) == Block.AIR) place(chunk, lx, y, lz, Block.SAKURA_LEAVES);
+                        }
+                        // Hanging petal strands from the canopy underside
+                        long sRng = regionHash(seed, wx, wz, 73);
+                        if ((sRng & 0x7L) == 0L && nd > 0.3f) {
+                            int len = 2 + (int)((sRng >>> 3) % 4);
+                            for (int s = 1; s <= len; s++) {
+                                int sy2 = under - s;
+                                if (sy2 <= gy + 1 || chunk.getBlock(lx, sy2, lz) != Block.AIR) break;
+                                place(chunk, lx, sy2, lz, Block.PINK_PETALS);
+                            }
+                        }
+                        // Petal carpet on the ground beneath the crown
+                        if ((sRng & 0x3L) != 0L && dist < canopyR - 1) {
+                            int sy3 = surfaceY(chunk, lx, lz);
+                            if (sy3 > 2 && chunk.getBlock(lx, sy3, lz).isSolid()
+                                    && chunk.getBlock(lx, sy3 + 1, lz) == Block.AIR) {
+                                place(chunk, lx, sy3 + 1, lz, Block.PINK_PETALS);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // =========================================================================
+    //  ⑨ INFERNO-TOWER FOUNDATIONS  (volcanic-biome landmarks)
+    // =========================================================================
+
+    /**
+     * Carve a basalt foundation + lava moat at every deterministic tower site whose
+     * footprint overlaps this chunk and whose centre is in the VOLCANIC biome. The
+     * tower model itself is an entity spawned by EnemyManager's tower director at
+     * the same site (see {@link #infernoTowerSite}).
+     */
+    private void applyInfernoTowers(Chunk chunk, WorldGen worldGen) {
+        int worldX = chunk.cx * Chunk.SIZE;
+        int worldZ = chunk.cz * Chunk.SIZE;
+
+        forNearbyRegions(worldX, worldZ, TOWER_REGION, TOWER_MAX_R, (rx, rz) -> {
+            int[] site = infernoTowerSite(seed, rx, rz);
+            if (site == null) return;
+            if (worldGen.biomeAt(site[0], site[1]) != Biome.VOLCANIC) return;
+            buildTowerFoundation(chunk, worldX, worldZ, site[0], site[1]);
+        });
+    }
+
+    /** Basalt platform, obsidian pillars, and a ring of lava — the tower's base. */
+    private void buildTowerFoundation(Chunk chunk, int worldX, int worldZ, int cx, int cz) {
+        int R = 6;
+        for (int dx = -R; dx <= R; dx++) {
+            for (int dz = -R; dz <= R; dz++) {
+                int lx = cx + dx - worldX, lz = cz + dz - worldZ;
+                if (lx < 0 || lx >= Chunk.SIZE || lz < 0 || lz >= Chunk.SIZE) continue;
+                float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                if (dist > R) continue;
+                int sy = surfaceY(chunk, lx, lz);
+                if (sy < 2) continue;
+                if (dist <= R - 2) {
+                    place(chunk, lx, sy, lz, dist < 1.6f ? Block.OBSIDIAN : Block.BASALT);
+                    place(chunk, lx, sy + 1, lz, Block.AIR);     // clear footprint for the model
+                } else if (dist <= R - 1) {
+                    place(chunk, lx, sy, lz, Block.MAGMA);        // glowing crust ring
+                } else {
+                    place(chunk, lx, sy, lz, Block.LAVA);         // lava moat
+                }
+            }
+        }
+        int[][] corners = { {-3, -3}, {3, -3}, {-3, 3}, {3, 3} };
+        for (int[] c : corners) {
+            int lx = cx + c[0] - worldX, lz = cz + c[1] - worldZ;
+            if (lx < 0 || lx >= Chunk.SIZE || lz < 0 || lz >= Chunk.SIZE) continue;
+            int sy = surfaceY(chunk, lx, lz);
+            if (sy < 2) continue;
+            for (int h = 1; h <= 3; h++) place(chunk, lx, sy + h, lz, (h == 3) ? Block.MAGMA : Block.OBSIDIAN);
         }
     }
 }

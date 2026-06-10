@@ -40,7 +40,34 @@ public class CommandHandler {
                 win.chatHistory.add("  /give <block_name> [amt] - Give specific block.");
                 win.chatHistory.add("  /give all [amt] - Fill hotbar with all building blocks.");
                 win.chatHistory.add("  /god - Toggle invincibility.");
+                win.chatHistory.add("  /explore - Toggle free-explore (ambient spawns + tower sites).");
+                win.chatHistory.add("  /spawntower - Spawn an Inferno Tower just ahead of you.");
                 break;
+
+            case "explore":
+                win.enemyManager.freeExploreMode = !win.enemyManager.freeExploreMode;
+                win.chatHistory.add(win.enemyManager.freeExploreMode
+                        ? "[System]: Free-explore ENABLED - the world is alive: ambient spawns + Inferno-Tower sites."
+                        : "[System]: Free-explore DISABLED.");
+                break;
+
+            case "spawntower": {
+                // Drop a tower on the surface ~12 blocks ahead (+X) of the player.
+                int bx = (int) Math.floor(win.player.position.x) + 12;
+                int bz = (int) Math.floor(win.player.position.z);
+                int sy = -1;
+                for (int y = Math.min((int) win.player.position.y + 24, com.leaf.game.world.Chunk.HEIGHT - 2);
+                     y >= 2; y--) {
+                    if (win.world.getBlock(bx, y, bz).isSolid()) { sy = y + 1; break; }
+                }
+                if (sy < 0) {
+                    win.chatHistory.add("[System]: No solid ground found nearby - move and retry.");
+                } else {
+                    win.enemyManager.spawnAt(bx + 0.5f, sy, bz + 0.5f, Enemy.Type.INFERNO_TOWER);
+                    win.chatHistory.add("[System]: Inferno Tower erected! It spawns lava slimes until destroyed.");
+                }
+                break;
+            }
 
             case "skip":
             case "skiptutorial":

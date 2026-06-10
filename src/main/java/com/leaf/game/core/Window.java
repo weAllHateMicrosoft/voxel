@@ -178,6 +178,10 @@ public class Window {
     private com.leaf.game.anim.AnimModel enemyAnimModel = null;
     private com.leaf.game.anim.AnimModel slimeAnimModel = null;
     private com.leaf.game.anim.AnimModel golemAnimModel = null;
+    private com.leaf.game.anim.AnimModel lavaSlimeAnimModel = null;
+    private com.leaf.game.anim.AnimModel infernoTowerAnimModel = null;
+    /** Throttle for the living-world ambience VFX (tower embers, sakura petals). */
+    private float ambienceTimer = 0f;
     private final java.util.Map<Integer, com.leaf.game.anim.AnimPlayer> enemyAnimPlayers
             = new java.util.HashMap<>();
     /** Edge-detect for P key to spawn enemies. */
@@ -1181,6 +1185,10 @@ public class Window {
         if (slimeAnimModelLoaded != null) this.slimeAnimModel = slimeAnimModelLoaded;
         com.leaf.game.anim.AnimModel golemAnimModelLoaded = com.leaf.game.anim.AnimModel.loadFromClasspath("golem");
         if (golemAnimModelLoaded != null) this.golemAnimModel = golemAnimModelLoaded;
+        com.leaf.game.anim.AnimModel lavaSlimeLoaded = com.leaf.game.anim.AnimModel.loadFromClasspath("lava_slime");
+        if (lavaSlimeLoaded != null) this.lavaSlimeAnimModel = lavaSlimeLoaded;
+        com.leaf.game.anim.AnimModel infernoTowerLoaded = com.leaf.game.anim.AnimModel.loadFromClasspath("inferno_tower");
+        if (infernoTowerLoaded != null) this.infernoTowerAnimModel = infernoTowerLoaded;
 
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.5f, 0.7f, 0.9f, 1.0f);
@@ -1309,6 +1317,7 @@ public class Window {
 
         // ── ENEMY SYSTEM ─────────────────────────────────────────────────────
         this.enemyManager = new EnemyManager();
+        enemyManager.setWorldGen(worldGen);   // biome queries for tower sites + ambient mix
         player.stand.setEnemyManager(enemyManager);
         player.attacks.setEnemyManager(enemyManager);
         player.seals.setEnemyManager(enemyManager);      // enables seal-on-enemy attachment
@@ -1847,6 +1856,101 @@ public class Window {
                         // stop dead while the player keeps moving (dt=0 freezes them).
                         enemyManager.update(timeStopActive ? 0f : deltaTime, world, player.position);
 
+                        // ── INFERNO TOWER: eruption VFX (queued by EnemyManager) ──
+                        // A fireball launches from the tower mouth, streaks to the landing
+                        // spot, and the lava slime arrives in a molten splash.
+                        for (float[] ev : enemyManager.pendingTowerErupts) {
+                            fxBurst(ev[0], ev[1], ev[2], 0.6f, 2.8f, 0.35f, 3.2f, 1.4f, 0.4f);
+                            float ddx = ev[3] - ev[0], ddy = ev[4] - ev[1], ddz = ev[5] - ev[2];
+                            float dl = (float) Math.sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
+                            if (dl > 0.01f) {
+                                fxBolt(ev[0], ev[1], ev[2], ddx/dl, ddy/dl, ddz/dl,
+                                        dl, 0.22f, 0.32f, 2.8f, 1.2f, 0.35f);
+                            }
+                            fxRing(ev[3], ev[4] + 0.15f, ev[5], 0.4f, 3.4f, 0.45f, 2.6f, 0.9f, 0.25f);
+                            fxBurst(ev[3], ev[4] + 0.5f, ev[5], 0.3f, 1.7f, 0.30f, 2.8f, 1.1f, 0.3f);
+                            AudioManager.playAt("fall_smash",
+                                    new Vector3f(ev[3], ev[4], ev[5]), (Vector3f) null, 60f);
+                        }
+                        enemyManager.pendingTowerErupts.clear();
+
+                        // ── INFERNO TOWER: death eruption (column + shockwaves + shake) ──
+                        for (float[] ev : enemyManager.pendingTowerDeaths) {
+                            for (int k = 0; k < 6; k++) {
+                                fxBurst(ev[0], ev[1] + 1.5f + k * 2.2f, ev[2],
+                                        0.8f, 3.6f - k * 0.35f, 0.50f + k * 0.09f,
+                                        3.4f, 1.3f, 0.35f);
+                            }
+                            fxRing(ev[0], ev[1] + 0.3f, ev[2], 1.0f, 15f, 0.85f, 3.0f, 1.0f, 0.30f);
+                            fxRing(ev[0], ev[1] + 0.3f, ev[2], 0.5f, 9f,  1.15f, 2.2f, 0.6f, 0.20f);
+                            for (int k = 0; k < 14; k++) {
+                                float a  = (float)(Math.PI * 2 * k / 14.0);
+                                float ux = (float) Math.cos(a), uz = (float) Math.sin(a);
+                                fxBolt(ev[0], ev[1] + 9f, ev[2], ux * 0.55f, 0.83f, uz * 0.55f,
+                                        4.5f, 0.12f, 0.65f, 2.8f, 1.0f, 0.3f);
+                            }
+                            activeShakeAmplitude = 0.30f;
+                            activeShakeDuration  = 0.9f;
+                            smashShakeTimer      = 0.9f;
+                            AudioManager.playAt("fall_smash",
+                                    new Vector3f(ev[0], ev[1] + 4f, ev[2]), (Vector3f) null, 120f);
+                            enemyManager.processSmashKnockback(
+                                    (int) ev[0], (int) ev[1], (int) ev[2], 6);
+                        }
+                        enemyManager.pendingTowerDeaths.clear();
+
+                        // ── LIVING-WORLD AMBIENCE: tower embers, slime sparks, biome motes ──
+                        ambienceTimer -= deltaTime;
+                        if (ambienceTimer <= 0f && !isPreloading) {
+                            ambienceTimer = 0.28f;
+                            for (Enemy e : enemyManager.getEnemies()) {
+                                if (!e.alive) continue;
+                                float adx = e.position.x - player.position.x;
+                                float adz = e.position.z - player.position.z;
+                                if (adx*adx + adz*adz > 80f * 80f) continue;
+                                if (e.type == Enemy.Type.INFERNO_TOWER) {
+                                    // Rising embers from the crown + molten shimmer at the moat
+                                    float ang = (float)(Math.random() * Math.PI * 2);
+                                    float rr  = 0.8f + (float) Math.random() * 1.6f;
+                                    fxBolt(e.position.x + (float) Math.cos(ang) * rr,
+                                           e.position.y + 9.5f + (float) Math.random() * 2f,
+                                           e.position.z + (float) Math.sin(ang) * rr,
+                                           0f, 1f, 0f,
+                                           1.2f + (float) Math.random() * 1.5f, 0.06f, 0.8f,
+                                           2.6f, 1.1f, 0.3f);
+                                    if (Math.random() < 0.25) {
+                                        fxRing(e.position.x, e.position.y + 0.25f, e.position.z,
+                                               2.5f, 4.5f, 0.7f, 1.8f, 0.7f, 0.2f);
+                                    }
+                                } else if (e.type == Enemy.Type.LAVA_SLIME && Math.random() < 0.5) {
+                                    fxBolt(e.position.x, e.position.y + 0.6f, e.position.z,
+                                           0f, 1f, 0f, 0.7f, 0.05f, 0.5f, 2.4f, 1.0f, 0.3f);
+                                }
+                            }
+                            // Biome atmosphere around the player: drifting sakura petals /
+                            // rising volcanic embers. Cheap — a couple of soft fx streaks.
+                            com.leaf.game.world.gen.biome.Biome hereBiome =
+                                    worldGen.biomeAt((int) player.position.x, (int) player.position.z);
+                            if (hereBiome == com.leaf.game.world.gen.biome.Biome.SAKURA) {
+                                for (int k = 0; k < 2; k++) {
+                                    float ang = (float)(Math.random() * Math.PI * 2);
+                                    float rr  = 3f + (float) Math.random() * 14f;
+                                    fxBolt(player.position.x + (float) Math.cos(ang) * rr,
+                                           player.position.y + 2.5f + (float) Math.random() * 5f,
+                                           player.position.z + (float) Math.sin(ang) * rr,
+                                           0.25f, -1f, 0.18f,
+                                           0.8f, 0.05f, 1.6f, 1.0f, 0.55f, 0.65f);
+                                }
+                            } else if (hereBiome == com.leaf.game.world.gen.biome.Biome.VOLCANIC) {
+                                float ang = (float)(Math.random() * Math.PI * 2);
+                                float rr  = 4f + (float) Math.random() * 12f;
+                                fxBolt(player.position.x + (float) Math.cos(ang) * rr,
+                                       player.position.y + (float) Math.random() * 3f,
+                                       player.position.z + (float) Math.sin(ang) * rr,
+                                       0f, 1f, 0f, 1.0f, 0.05f, 1.2f, 2.2f, 0.8f, 0.25f);
+                            }
+                        }
+
                         // ── PROCESS GOLEM BLOCK BREAKING ──
                         for (Enemy e : enemyManager.getEnemies()) {
                             if (e.pendingBlockBreak) {
@@ -1895,6 +1999,7 @@ public class Window {
                                         enemyManager.totalKills, em, es);
                                 cutscene.startEnding();
                                 enemyManager.wavesEnabled = false;  // world is yours now — no more waves
+                                enemyManager.freeExploreMode = true; // …and it comes alive: ambient spawns + Inferno-Tower sites
                                 enemyManager.beginNextWave();        // clear the awaiting flag
                                 gameEnded = true;
                             } else {
@@ -4056,6 +4161,8 @@ public class Window {
 
                             com.leaf.game.anim.AnimModel targetModel =
                                     (enemy.type == Enemy.Type.SLIME    && slimeAnimModel != null) ? slimeAnimModel
+                                            : (enemy.type == Enemy.Type.LAVA_SLIME    && lavaSlimeAnimModel    != null) ? lavaSlimeAnimModel
+                                            : (enemy.type == Enemy.Type.INFERNO_TOWER && infernoTowerAnimModel != null) ? infernoTowerAnimModel
                                             : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
                                               : enemyAnimModel;
 
@@ -4068,14 +4175,18 @@ public class Window {
 
                             // Decide target animation from AI state
                             String want;
-                            if (isGuardian) {
+                            if (enemy.type == Enemy.Type.INFERNO_TOWER) {
+                                // Static structure — its only clip is the importer's bind pose.
+                                want = "idle";
+                            } else if (isGuardian) {
                                 // The guardian drives its own clip (patrol walk/idle + 3-hit combo).
                                 want = enemy.getAnimName();
                             } else if (!enemy.alive) {
                                 want = "death";
                             } else if (enemy.state == Enemy.State.CHASE || enemy.state == Enemy.State.RETREATING) {
                                 // ── USE "move" FOR SLIMES, "walk" FOR OTHERS ──
-                                want = (enemy.type == Enemy.Type.SLIME) ? "move" : "walk";
+                                want = (enemy.type == Enemy.Type.SLIME
+                                        || enemy.type == Enemy.Type.LAVA_SLIME) ? "move" : "walk";
                             } else if (enemy.state == Enemy.State.ATTACK || enemy.state == Enemy.State.SLAMMING) {
                                 want = "attack";
                             } else {
@@ -4105,7 +4216,9 @@ public class Window {
                             // (the slime/enemy_basic front is -Z and does). The guardian
                             // controls its own facing (patrol heading / toward player).
                             float faceY;
-                            if (isGuardian) {
+                            if (enemy.type == Enemy.Type.INFERNO_TOWER) {
+                                faceY = 0f;   // a building does not turn to watch you
+                            } else if (isGuardian) {
                                 faceY = enemy.facingYaw;
                             } else {
                                 float faceDx = player.position.x - enemy.position.x;
@@ -4138,8 +4251,23 @@ public class Window {
                                         tr, 1.0f, tb, 1.0f, 1.6f + 2.4f * ping, false);
                             }
 
+                            // Molten enemies smoulder: a faint warm tint + brightness pulse,
+                            // surging red-hot for a beat whenever they take a hit. (Radar
+                            // wireframe owns the override while it is active.)
+                            boolean molten = enemy.type == Enemy.Type.LAVA_SLIME
+                                    || enemy.type == Enemy.Type.INFERNO_TOWER;
+                            if (molten && !radarWire) {
+                                float hurt  = enemy.hitFlashTimer > 0f ? (enemy.hitFlashTimer / 0.18f) : 0f;
+                                float pulse = 0.5f + 0.5f * (float) Math.sin(glfwGetTime() * 2.4 + enemy.id);
+                                com.leaf.game.anim.ModelRenderer.setOverride(
+                                        1.0f, 0.42f + 0.3f * hurt, 0.16f,
+                                        0.06f + 0.30f * hurt,
+                                        1.10f + 0.10f * pulse + 0.85f * hurt,
+                                        true);
+                            }
                             com.leaf.game.anim.ModelRenderer.render(
                                     targetModel, ap.getPose(), worldMat, view, projection);
+                            if (molten && !radarWire) com.leaf.game.anim.ModelRenderer.clearOverride();
 
                             shader.bind();
                         }
@@ -6537,6 +6665,23 @@ public class Window {
         if (hotbar[selectedSlot] == Block.TORCH) {
             lights.add(new float[]{ camera.position.x, camera.position.y, camera.position.z,
                     1.7f, 1.0f, 0.5f, 11f });
+        }
+        // Molten enemies are light sources: Inferno Towers throw a broad furnace
+        // glow from their crown; lava slimes carry a small warm halo.
+        for (Enemy e : enemyManager.getEnemies()) {
+            if (lights.size() >= MAX) break;
+            if (!e.alive) continue;
+            float edx = e.position.x - camera.position.x;
+            float edz = e.position.z - camera.position.z;
+            if (e.type == Enemy.Type.INFERNO_TOWER) {
+                if (edx*edx + edz*edz > 130f * 130f) continue;
+                lights.add(new float[]{ e.position.x, e.position.y + 9f, e.position.z,
+                        2.2f, 0.9f, 0.30f, 26f });
+            } else if (e.type == Enemy.Type.LAVA_SLIME) {
+                if (edx*edx + edz*edz > 70f * 70f) continue;
+                lights.add(new float[]{ e.position.x, e.position.y + 0.6f, e.position.z,
+                        1.9f, 0.8f, 0.25f, 9f });
+            }
         }
         // Nearest placed torches.
         Vector3f pp = player.position;

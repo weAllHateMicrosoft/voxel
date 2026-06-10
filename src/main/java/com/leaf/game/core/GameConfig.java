@@ -318,6 +318,29 @@ public class GameConfig {
     public static float slimeAttackRange    = 1.5f;
     public static float slimeAttackInterval = 1.0f;
 
+    // ── ENEMY: LAVA SLIME (volcanic slime — tankier, hotter) ──────────────────
+    public static float lavaSlimeHealth         = 70f;
+    public static float lavaSlimeSpeed          = 3.4f;
+    public static float lavaSlimeDamagePerSec   = 7f;
+    public static float lavaSlimeAggroRange     = 28f;
+    public static float lavaSlimeAttackRange    = 1.6f;
+    public static float lavaSlimeAttackInterval = 1.0f;
+
+    // ── ENEMY: INFERNO TOWER (stationary spawner — high HP, erupts lava slimes) ─
+    public static float infernoTowerHealth   = 2500f;  // takes sustained fire to fell
+    public static float infernoSpawnInterval = 6.0f;   // seconds between minion eruptions
+    public static float infernoAggroRange    = 60f;    // only spawns when player is near
+    public static int   infernoMinionCap     = 6;      // max live slimes from one tower
+    /** How close the player must come (blocks) before a tower site rises into being. */
+    public static float infernoActivateRange = 140f;
+
+    // ── NATURAL / AMBIENT SPAWNING (post-wave free-explore world) ─────────────
+    public static int   ambientMaxNearby = 12;   // target roaming population around player
+    public static float ambientMinDist   = 30f;  // spawn ring inner radius
+    public static float ambientMaxDist   = 70f;  // spawn ring outer radius
+    public static float ambientDespawn   = 110f; // cull roamers past this distance
+    public static float ambientInterval  = 2.5f; // seconds between ambient spawn attempts
+
     // ── ENEMY WAVE SPAWNING ───────────────────────────────────────────────────
     /** Seconds between automatic wave spawns. */
     public static float spawnWaveInterval = 30f;

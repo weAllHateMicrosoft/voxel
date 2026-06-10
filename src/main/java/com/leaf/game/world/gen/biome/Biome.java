@@ -30,7 +30,14 @@ public enum Biome {
     SNOWY_PLAINS,    // frozen + dry  — white plains, stone subsurface
 
     // ── ALTITUDE OVERRIDE (any temp, ty >= snowAltitude) ─────────────────────
-    ICY_PEAKS;       // forced by elevation — snow capping stone
+    ICY_PEAKS,       // forced by elevation — snow capping stone
+
+    // ── SPECIAL PATCH BIOMES (rare, chosen by the biome-patch selector noise) ──
+    VOLCANIC,        // black basalt + magma + ash — home of the Inferno Towers
+    SAKURA,          // pink cherry-blossom grove
+    MUSHROOM,        // bioluminescent fungal forest
+    CRYSTAL_FIELDS,  // lavender meadow studded with amethyst geodes
+    AUTUMN;          // golden maple woods
 
     /** Top-most visible block at terrain surface. */
     public Block surfaceBlock() {
@@ -40,6 +47,11 @@ public enum Biome {
             case SAVANNA      -> Block.RED_SAND;
             case TUNDRA, SNOWY_PLAINS,
                  ICY_PEAKS    -> Block.SNOW;
+            case VOLCANIC       -> Block.BASALT;
+            case SAKURA         -> Block.SAKURA_GRASS;
+            case MUSHROOM       -> Block.MYCELIUM;
+            case CRYSTAL_FIELDS -> Block.AMETHYST_GRASS;
+            case AUTUMN         -> Block.AUTUMN_GRASS;
             default           -> Block.GRASS;
         };
     }
@@ -53,6 +65,11 @@ public enum Biome {
             case SAVANNA                 -> Block.RED_SAND;
             case ICY_PEAKS               -> Block.ICE;
             case SNOWY_PLAINS            -> Block.STONE;
+            case VOLCANIC                -> Block.BASALT;
+            case SAKURA                  -> Block.SAKURA_SOIL;
+            case MUSHROOM                -> Block.DIRT;
+            case CRYSTAL_FIELDS          -> Block.CRYSTAL_SOIL;
+            case AUTUMN                  -> Block.DIRT;
             default                      -> Block.DIRT;
         };
     }

@@ -163,7 +163,36 @@ public class WorldGen {
     public float sampleRiver(int wx, int wz) {
         return riverNoise.octave((wx + seedOffX) * GameConfig.riverFreq, (wz + seedOffZ) * GameConfig.riverFreq, GameConfig.riverOctaves, GameConfig.riverPersist);
     }
+    /**
+     * Low-frequency biome-patch selector. High values (&gt; ~0.48) carve out rare
+     * special biomes (volcanic, sakura, mushroom, crystal, autumn) as coherent
+     * regions a few hundred blocks wide. See {@link BiomeRegistry#evaluate}.
+     */
+    public float sampleBiomePatch(int wx, int wz) {
+        return biomeJitter.octave((wx + seedOffX) * 0.0009f, (wz + seedOffZ) * 0.0009f, 3, 0.5f);
+    }
     public float sampleHeight(int wx, int wz) { return computeFinalShape(sampleContinentalness(wx, wz), sampleErosion(wx, wz), samplePeaksValleys(wx, wz)); }
+
+    /**
+     * Re-derive the surface biome at (wx, wz) — used by FeatureGenerator and the
+     * Inferno-Tower site director to gate biome-specific content. Uses an
+     * approximate surface elevation (no mountain/river/rim refinement), which is
+     * accurate enough for feature placement.
+     */
+    public Biome biomeAt(int wx, int wz) {
+        float c  = sampleContinentalness(wx, wz);
+        float e  = sampleErosion(wx, wz);
+        float pv = samplePeaksValleys(wx, wz);
+        float shape = computeFinalShape(c, e, pv);
+        float seaFrac = (GameConfig.seaLevel - GameConfig.heightBase) / (float) GameConfig.heightRange;
+        int   ty = (int)(GameConfig.heightBase + shape * GameConfig.heightRange);
+        float temp = sampleTemperature(wx, wz);
+        float hum  = sampleHumidity(wx, wz);
+        float river = sampleRiver(wx, wz);
+        boolean isRiver = Math.abs(river) < GameConfig.riverThreshold && shape >= (seaFrac - 0.01f);
+        float patch = sampleBiomePatch(wx, wz);
+        return BiomeRegistry.evaluate(shape, seaFrac, isRiver, ty, temp, hum, patch);
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // PUBLIC ENTRY POINT — dispatches to surface or deep-abyss generation
@@ -376,7 +405,8 @@ public class WorldGen {
                     }
                 }
 
-                Biome biome = BiomeRegistry.evaluate(shape, seaFrac, isRiver, ty, temp, hum);
+                float biomePatch = sampleBiomePatch(wx, wz);
+                Biome biome = BiomeRegistry.evaluate(shape, seaFrac, isRiver, ty, temp, hum, biomePatch);
                 boolean hitSurface = false;
                 boolean underGround = false; // Tracks if we have passed the terrain surface
                 int dirtCount = 0;

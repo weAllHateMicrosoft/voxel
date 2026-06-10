@@ -3,11 +3,17 @@ package com.leaf.game.entity;
 import com.leaf.game.core.GameConfig;
 import com.leaf.game.world.Chunk;
 import com.leaf.game.world.World;
+import com.leaf.game.world.gen.WorldGen;
+import com.leaf.game.world.gen.biome.Biome;
+import com.leaf.game.world.gen.feature.FeatureGenerator;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * EnemyManager — owns all live enemies, routes damage events, and drives
@@ -84,6 +90,15 @@ public class EnemyManager {
         lastClearedWave  = 0;
         totalKills       = 0;
         wavesEnabled     = true;
+        // Back to the intro survival loop — open-world systems off until the
+        // final wave re-enables them. Destroyed-tower memory persists for the
+        // session so felled towers stay gone even across a restart.
+        freeExploreMode  = false;
+        activeTowerSites.clear();
+        towerIdToSite.clear();
+        towerDeathHandled.clear();
+        pendingTowerErupts.clear();
+        pendingTowerDeaths.clear();
     }
 
     /** Total enemies the player has killed this session (drives the demo objective). */
@@ -97,6 +112,28 @@ public class EnemyManager {
     public boolean wavesEnabled = false;
 
     private final Random rng = new Random();
+
+    // ── World-gen handle (biome queries for the tower director + ambient mix) ──
+    private WorldGen worldGen;
+    public void setWorldGen(WorldGen wg) { this.worldGen = wg; }
+
+    // ── Free-explore open world (enabled by Window after the final wave) ───────
+    /** When true, ambient roaming spawns and Inferno-Tower sites activate. */
+    public boolean freeExploreMode = false;
+    private float  ambientTimer    = 0f;
+    private float  towerScanTimer  = 0f;
+
+    // ── Inferno-Tower site bookkeeping ─────────────────────────────────────────
+    //   A site is spawned once when the player nears it, and recorded in
+    //   destroyedTowerSites on death so it never returns.
+    private final Set<Long>             activeTowerSites    = new HashSet<>();
+    private final Set<Long>             destroyedTowerSites = new HashSet<>();
+    private final HashMap<Integer,Long> towerIdToSite       = new HashMap<>();
+    private final Set<Integer>          towerDeathHandled   = new HashSet<>();
+
+    /** VFX events drained by Window. Erupt = {mouthX,Y,Z, landX,Y,Z}; Death = {x,y,z}. */
+    public final List<float[]> pendingTowerErupts = new ArrayList<>();
+    public final List<float[]> pendingTowerDeaths = new ArrayList<>();
 
     // ── Enemy projectiles (boulders, thrown rocks) ────────────────────────────
     public static class EnemyProjectile {
@@ -223,6 +260,9 @@ public class EnemyManager {
      * @param playerPos player feet position
      */
     public void update(float dt, World world, Vector3f playerPos) {
+        // Refresh each tower's live-minion count so its AI sees fresh numbers.
+        refreshTowerMinionCounts();
+
         // ── Update every enemy ─────────────────────────────────────────────────
         for (Enemy e : enemies) {
             e.update(dt, world, playerPos, enemies);
@@ -243,6 +283,17 @@ public class EnemyManager {
             // Spawn projectile when thrower/golem signals wantsToThrow
             if (e.wantsToThrow) {
                 spawnProjectileAt(e, playerPos);
+            }
+
+            // Inferno Tower erupts a lava slime
+            if (e.wantsToSpawnMinion) {
+                spawnTowerMinion(world, e);
+            }
+
+            // Inferno Tower just died → record the site (so it never respawns) + VFX
+            if (e.type == Enemy.Type.INFERNO_TOWER && !e.alive
+                    && !towerDeathHandled.contains(e.id)) {
+                handleTowerDeath(e);
             }
         }
 
@@ -283,7 +334,13 @@ public class EnemyManager {
         // ── Remove dead enemies once death flash is done ───────────────────────
         enemies.removeIf(e -> {
             boolean cull = !e.alive && e.hitFlashTimer <= 0f;
-            if (cull) totalKills++;
+            if (cull) {
+                totalKills++;
+                if (e.type == Enemy.Type.INFERNO_TOWER) {
+                    towerDeathHandled.remove(e.id);
+                    towerIdToSite.remove(e.id);   // site already moved to destroyed in handleTowerDeath
+                }
+            }
             return cull;
         });
 
@@ -302,6 +359,148 @@ public class EnemyManager {
                 awaitingNextWave = true;                    // Window unlocks + shows card, then beginNextWave()
             }
         }
+
+        // ── Free-explore open world: Inferno-Tower sites + ambient roamers ──────
+        if (freeExploreMode) {
+            towerScanTimer -= dt;
+            if (towerScanTimer <= 0f) {
+                towerScanTimer = 1.0f;
+                scanForTowerSites(world, playerPos);
+            }
+            tickAmbientSpawning(dt, world, playerPos);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Inferno Tower director + lava-slime minions
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Recompute every tower's live-minion count from its surviving lava slimes. */
+    private void refreshTowerMinionCounts() {
+        boolean anyTower = false;
+        for (Enemy e : enemies) if (e.type == Enemy.Type.INFERNO_TOWER) { anyTower = true; break; }
+        if (!anyTower) return;
+        HashMap<Integer,Integer> counts = new HashMap<>();
+        for (Enemy e : enemies) if (e.alive && e.ownerTowerId >= 0) counts.merge(e.ownerTowerId, 1, Integer::sum);
+        for (Enemy e : enemies) if (e.type == Enemy.Type.INFERNO_TOWER) e.liveMinions = counts.getOrDefault(e.id, 0);
+    }
+
+    /** Erupt a lava slime from a tower: spawn it near the base, queue eruption VFX. */
+    private void spawnTowerMinion(World world, Enemy tower) {
+        float ang = rng.nextFloat() * (float)(2 * Math.PI);
+        float d   = 3.5f + rng.nextFloat() * 3f;
+        Vector3f sp = surfaceAt(world,
+                tower.position.x + (float) Math.cos(ang) * d,
+                tower.position.z + (float) Math.sin(ang) * d);
+        if (sp == null) sp = new Vector3f(tower.position.x, tower.position.y, tower.position.z);
+        Enemy slime = spawnAt(sp.x, sp.y, sp.z, Enemy.Type.LAVA_SLIME);
+        slime.ownerTowerId = tower.id;
+        // Erupt VFX: fireball from the tower mouth (~11 blocks up) arcing to the landing spot.
+        pendingTowerErupts.add(new float[]{
+                tower.position.x, tower.position.y + 11f, tower.position.z, sp.x, sp.y, sp.z });
+    }
+
+    /** Record a tower's death so its site never respawns, and queue the death VFX. */
+    private void handleTowerDeath(Enemy tower) {
+        towerDeathHandled.add(tower.id);
+        pendingTowerDeaths.add(new float[]{ tower.position.x, tower.position.y, tower.position.z });
+        Long site = towerIdToSite.get(tower.id);
+        if (site != null) {
+            activeTowerSites.remove(site);
+            destroyedTowerSites.add(site);   // permanent — "when destroyed doesn't spawn anymore"
+        }
+    }
+
+    /** Pack a tower-site (wx,wz) into a stable long key. */
+    private static long siteKey(int wx, int wz) {
+        return ((long) wx << 32) | (wz & 0xFFFFFFFFL);
+    }
+
+    /**
+     * Spawn Inferno Towers at deterministic volcanic sites as the player nears them.
+     * Sites already active or destroyed are skipped, so each tower appears once and,
+     * once felled, never returns. Uses the same site function as the world-gen
+     * foundation ({@link FeatureGenerator#infernoTowerSite}).
+     */
+    private void scanForTowerSites(World world, Vector3f playerPos) {
+        if (worldGen == null) return;
+        float R = GameConfig.infernoActivateRange;
+        int region = FeatureGenerator.TOWER_REGION;
+        int loX = Math.floorDiv((int)(playerPos.x - R), region);
+        int hiX = Math.floorDiv((int)(playerPos.x + R), region);
+        int loZ = Math.floorDiv((int)(playerPos.z - R), region);
+        int hiZ = Math.floorDiv((int)(playerPos.z + R), region);
+
+        for (int rx = loX; rx <= hiX; rx++) {
+            for (int rz = loZ; rz <= hiZ; rz++) {
+                int[] site = FeatureGenerator.infernoTowerSite(GameConfig.seed, rx, rz);
+                if (site == null) continue;
+                long key = siteKey(site[0], site[1]);
+                if (activeTowerSites.contains(key) || destroyedTowerSites.contains(key)) continue;
+
+                float dx = site[0] - playerPos.x, dz = site[1] - playerPos.z;
+                if (dx * dx + dz * dz > R * R) continue;
+                if (worldGen.biomeAt(site[0], site[1]) != Biome.VOLCANIC) continue;
+
+                Vector3f sp = surfaceAt(world, site[0] + 0.5f, site[1] + 0.5f);
+                if (sp == null) continue;   // chunk not meshed yet — retry next scan
+
+                Enemy tower = spawnAt(sp.x, sp.y, sp.z, Enemy.Type.INFERNO_TOWER);
+                activeTowerSites.add(key);
+                towerIdToSite.put(tower.id, key);
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  Ambient open-world spawning (free-explore)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Maintain a roaming population around the player; cull roamers that wander off. */
+    private void tickAmbientSpawning(float dt, World world, Vector3f playerPos) {
+        float despawnSq = GameConfig.ambientDespawn * GameConfig.ambientDespawn;
+        int roamers = 0;
+        for (Enemy e : enemies) {
+            if (!e.ambient || !e.alive) continue;
+            float dx = e.position.x - playerPos.x, dz = e.position.z - playerPos.z;
+            if (dx * dx + dz * dz > despawnSq) { e.alive = false; continue; }
+            roamers++;
+        }
+
+        ambientTimer -= dt;
+        if (ambientTimer > 0f) return;
+        ambientTimer = GameConfig.ambientInterval;
+        if (roamers >= GameConfig.ambientMaxNearby) return;
+
+        Vector3f sp = findAmbientSpawn(world, playerPos);
+        if (sp == null) return;
+        Enemy e = spawnAt(sp.x, sp.y, sp.z, pickAmbientType(sp));
+        e.ambient = true;
+    }
+
+    /** Pick a roamer type, biased to lava slimes in volcanic terrain, spiders elsewhere. */
+    private Enemy.Type pickAmbientType(Vector3f sp) {
+        Biome b = (worldGen != null) ? worldGen.biomeAt((int) sp.x, (int) sp.z) : null;
+        float r = rng.nextFloat();
+        if (b == Biome.VOLCANIC) return r < 0.6f ? Enemy.Type.LAVA_SLIME : Enemy.Type.ZOMBIE;
+        if (r < 0.25f) return Enemy.Type.SPIDER;
+        if (r < 0.50f) return Enemy.Type.ZOMBIE;
+        if (r < 0.72f) return Enemy.Type.SLIME;
+        return Enemy.Type.THROWER;
+    }
+
+    /** Like findSpawnPoint but at the ambient ring distance. */
+    private Vector3f findAmbientSpawn(World world, Vector3f playerPos) {
+        float minD = GameConfig.ambientMinDist, maxD = GameConfig.ambientMaxDist;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            float angle = rng.nextFloat() * (float)(2 * Math.PI);
+            float dist  = minD + rng.nextFloat() * (maxD - minD);
+            Vector3f sp = surfaceAt(world,
+                    playerPos.x + (float) Math.cos(angle) * dist,
+                    playerPos.z + (float) Math.sin(angle) * dist);
+            if (sp != null) return sp;
+        }
+        return null;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
