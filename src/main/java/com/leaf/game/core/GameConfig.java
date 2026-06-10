@@ -1,13 +1,5 @@
 package com.leaf.game.core;
 
-/**
- * GameConfig — centralised numeric constants for DESCENT.
- *
- * <p>All tunable values (terrain generation frequencies, combat stats, timing)
- * live here so they can be adjusted in one place without hunting through
- * scattered files.  Fields are {@code public static} so any class can read
- * them without passing a config object around.
- */
 public class GameConfig {
     public static long  seed           = 1L;
     public static int   renderDistance = 6;
@@ -81,6 +73,50 @@ public class GameConfig {
 
     public static int caveSurfaceBuffer = 6;
     public static int caveBedrockFloor  = 4;
+
+    // ── DEPRIVATION DOMAIN (Water God Stance) ─────────────────────────────────
+    // Tap ['] to enter a locked defensive stance. Any entity moving inside the
+    // radius is instantly counter-struck with a golden thread and killed.
+    public static float depRadius          = 8f;    // tight kill-bubble radius (blocks) — anyone who steps in dies
+    public static float depDuration        = 10f;   // max stance seconds before auto-exit
+    public static float depCooldownSecs    = 1f;    // recovery cooldown after stance ends
+    public static float depDamage          = 9999f; // counter-strike damage (instant kill)
+    public static float depDetectMinVel    = 0.22f; // min movement per detection tick to trigger
+    public static float depDetectTick      = 0.07f; // how often movement is sampled (seconds)
+    public static float depSlashLife       = 0.45f; // slash-crescent lifetime (longer = more readable swing)
+    public static float depTurnDuration    = 0.5f;  // bezier head-turn time when locking onto a slashed enemy
+    public static float depAuraInterval    = 0.9f;  // seconds between idle "ready-sword" aura pulses
+
+    // ── CANYON / MESA REGION (faithful gelami Shadertoy port) ─────────────────
+    // A fixed circular region rendered as a PURE 3D isosurface (no heightmap):
+    // solid wherever fbm3D(x,y,z) < canyonSurfaceFactor, isotropic, capped flat
+    // at the top — giving caverns, arches, overhangs, banded terracotta masses,
+    // vivid grass tops and turquoise pools, exactly like the sample.
+    // Spawn stays a snow mountain; press F5 in-game to warp here and back.
+    // Location of the canyon centre (far from spawn 777,777 and the Abyss 2000,2000).
+    public static int   canyonCenterX        = -1400;
+    public static int   canyonCenterZ        = 900;
+    public static float canyonRadius         = 260f;   // full-canyon core radius (blocks)
+    public static float canyonEdgeBand       = 80f;    // smooth rim band outside the core
+    // ★ THE TWO KNOBS TO TWEAK:
+    public static float canyonFreq           = 0.040f; // feature size (BIGGER = smaller, busier rock; ~0.03 chunky … 0.06 detailed)
+    public static float canyonSurfaceFactor  = 0.50f;  // density (LOWER = more open/airy & more arches; HIGHER = more solid)
+    // Vertical extent (the visible band of terrain):
+    public static int   canyonCeilingY       = 268;    // mesa tops cap — open sky above this
+    public static int   canyonFloorY         = 200;    // solid foundation below this (buried)
+    public static int   canyonWaterLevel     = 222;    // turquoise pools fill basins below this Y
+    public static float canyonTopFade        = 16f;    // how rounded/tapered the mesa tops are
+    // Cosmetic:
+    public static int   canyonBandThickness  = 5;      // thickness of each sedimentary strata band
+
+    // ── BLUE CANYON / SNOW BIOME (Shadertoy snow biome — blue-grey rock, white tops) ─
+    // Same isosurface shape as the warm canyon but with the Shadertoy's snow palette.
+    // Placed 450 blocks north of the warm zone; walk/fly there from the F5 warp.
+    public static int   canyonBlueCenterX   = -1400;
+    public static int   canyonBlueCenterZ   = 450;
+    public static float canyonBlueRadius    = 220f;
+    public static float canyonBlueEdgeBand  = 70f;
+    // Uses the same freq / surfaceFactor / ceiling / floor / water / topFade / bandThickness.
 
 
     public static float sunDirX         = 0.6f;

@@ -112,6 +112,63 @@ public class ModelRenderer {
         shader.unbind();
     }
 
+    /**
+     * Render ONE HALF of a sliced corpse: the model is clipped along a body-local
+     * plane (cutNormal·p = cutOffset), keeping the {@code cutSide} half, and the cut
+     * surface glows molten gold. {@code bodyFly} is applied in body space (before the
+     * world matrix) so the half can separate + tumble while the clip stays put.
+     * Call twice (cutSide = +1 and −1) for the two halves. Caller manages blending.
+     */
+    public static void renderSliced(AnimModel model, Map<String, Matrix4f> pose,
+                                    Matrix4f worldMat, Matrix4f bodyFly,
+                                    Matrix4f view, Matrix4f projection,
+                                    Vector3f cutCenter, Vector3f cutSign,
+                                    float sliceAlpha) {
+        if (shader == null) return;
+        shader.bind();
+        shader.setUniform("lightDir", new Vector3f(0.6f, 1f, 0.4f).normalize());
+        shader.setUniform("ambient", 0.35f);
+        shader.setUniform("tintColor", tintColor);
+        shader.setUniform("tintAmt", 0f);
+        shader.setUniform("glow", 1f);
+        shader.setUniform("cutActive", 1);
+        shader.setUniform("cutCenter", cutCenter);
+        shader.setUniform("cutSign", cutSign);
+        shader.setUniform("sliceAlpha", sliceAlpha);
+
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
+        shader.setUniform("tex", 0);
+        shader.setUniform("useTexture", 0);
+
+        for (PartDef part : model.parts) {
+            Mesh mesh = getMesh(model, part);
+            if (mesh == null) continue;
+            Matrix4f partPose = pose.getOrDefault(part.id, new Matrix4f());
+            // gl_Position uses bodyFly (the half flies apart); clip uses partPose only.
+            Matrix4f mvp = new Matrix4f(projection).mul(view).mul(worldMat).mul(bodyFly).mul(partPose);
+            Matrix4f normalMat = new Matrix4f(worldMat).mul(bodyFly).mul(partPose).invert().transpose();
+
+            Texture tx = (part.geo != null && part.tex != null) ? getTexture(part.tex) : NONE;
+            if (tx != null) {
+                glActiveTexture(GL_TEXTURE0);
+                tx.bind();
+                shader.setUniform("useTexture", 1);
+            } else {
+                shader.setUniform("useTexture", 0);
+            }
+
+            shader.setUniform("mvp", mvp);
+            shader.setUniform("normalMat", normalMat);
+            shader.setUniform("clipPose", partPose);   // body-frame clip
+            mesh.render();
+        }
+
+        shader.setUniform("cutActive", 0);
+        shader.setUniform("useTexture", 0);
+        shader.unbind();
+    }
+
     private static Mesh getMesh(AnimModel model, PartDef part) {
         // Transform-only bone: no geometry to draw.
         if (part.geo == null && part.w <= 0 && part.h <= 0 && part.d <= 0) return null;

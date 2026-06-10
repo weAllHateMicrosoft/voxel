@@ -229,7 +229,6 @@ The game is built on a **custom 3D engine** (teacher-approved):
 | HUD / UI | `WindowHud.java`, `CutsceneManager.java`, `TutorialManager.java`, `BackpackUI.java` |
 
 ---
-
 ## Credits
 
 - **Engine:** Java 17 + LWJGL 3 (OpenGL 3.3)
@@ -238,3 +237,6 @@ The game is built on a **custom 3D engine** (teacher-approved):
 - **Audio:** OpenAL + Java Sound SPI
 - **3D Models & Animations:** Blockbench (`.bbmodel` → custom JSON pipeline)
 - **Star data:** Yale Bright Star Catalogue (BSC5)
+- **Procedural Spider Kinematics:** Inverse Kinematics (IK) and leg-gait algorithm principles adapted from [TheCymaera's Minecraft Spider](https://github.com/TheCymaera/minecraft-spider)
+- **Canyon Generation:** Sedimentary mesa noise algorithms adapted from [GelamiSalami's Hybrid SDF-Voxel Traversal](https://www.shadertoy.com/view/dtVSzw)
+- **Mountain Generation:** Analytical derivative FBM and terrain erosion algorithms adapted from [Inigo Quilez's Elevated](https://www.shadertoy.com/view/MdX3Rr)
