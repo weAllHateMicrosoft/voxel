@@ -1909,7 +1909,9 @@ public class Window {
                                 float adz = e.position.z - player.position.z;
                                 if (adx*adx + adz*adz > 80f * 80f) continue;
                                 if (e.type == Enemy.Type.INFERNO_TOWER) {
-                                    // Rising embers from the crown + molten shimmer at the moat
+                                    // Rising embers from the crown — subtle warm streaks, NOT
+                                    // HDR-bright (colours ≤ 0.25 keep peak < 1.0 in the FBO so
+                                    // bloom stays gentle rather than saturating the screen).
                                     float ang = (float)(Math.random() * Math.PI * 2);
                                     float rr  = 0.8f + (float) Math.random() * 1.6f;
                                     fxBolt(e.position.x + (float) Math.cos(ang) * rr,
@@ -1917,18 +1919,15 @@ public class Window {
                                            e.position.z + (float) Math.sin(ang) * rr,
                                            0f, 1f, 0f,
                                            1.2f + (float) Math.random() * 1.5f, 0.06f, 0.8f,
-                                           2.6f, 1.1f, 0.3f);
-                                    if (Math.random() < 0.25) {
-                                        fxRing(e.position.x, e.position.y + 0.25f, e.position.z,
-                                               2.5f, 4.5f, 0.7f, 1.8f, 0.7f, 0.2f);
-                                    }
+                                           0.20f, 0.09f, 0.025f);
                                 } else if (e.type == Enemy.Type.LAVA_SLIME && Math.random() < 0.5) {
                                     fxBolt(e.position.x, e.position.y + 0.6f, e.position.z,
-                                           0f, 1f, 0f, 0.7f, 0.05f, 0.5f, 2.4f, 1.0f, 0.3f);
+                                           0f, 1f, 0f, 0.7f, 0.05f, 0.5f, 0.18f, 0.08f, 0.025f);
                                 }
                             }
                             // Biome atmosphere around the player: drifting sakura petals /
-                            // rising volcanic embers. Cheap — a couple of soft fx streaks.
+                            // rising volcanic embers. Kept dim (colours < 0.25) so the
+                            // additive FX pass never saturates the FBO to white.
                             com.leaf.game.world.gen.biome.Biome hereBiome =
                                     worldGen.biomeAt((int) player.position.x, (int) player.position.z);
                             if (hereBiome == com.leaf.game.world.gen.biome.Biome.SAKURA) {
@@ -1939,7 +1938,7 @@ public class Window {
                                            player.position.y + 2.5f + (float) Math.random() * 5f,
                                            player.position.z + (float) Math.sin(ang) * rr,
                                            0.25f, -1f, 0.18f,
-                                           0.8f, 0.05f, 1.6f, 1.0f, 0.55f, 0.65f);
+                                           0.8f, 0.05f, 1.6f, 0.16f, 0.09f, 0.12f);
                                 }
                             } else if (hereBiome == com.leaf.game.world.gen.biome.Biome.VOLCANIC) {
                                 float ang = (float)(Math.random() * Math.PI * 2);
@@ -1947,7 +1946,7 @@ public class Window {
                                 fxBolt(player.position.x + (float) Math.cos(ang) * rr,
                                        player.position.y + (float) Math.random() * 3f,
                                        player.position.z + (float) Math.sin(ang) * rr,
-                                       0f, 1f, 0f, 1.0f, 0.05f, 1.2f, 2.2f, 0.8f, 0.25f);
+                                       0f, 1f, 0f, 1.0f, 0.05f, 1.2f, 0.18f, 0.07f, 0.022f);
                             }
                         }
 

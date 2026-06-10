@@ -42,7 +42,51 @@ public class CommandHandler {
                 win.chatHistory.add("  /god - Toggle invincibility.");
                 win.chatHistory.add("  /explore - Toggle free-explore (ambient spawns + tower sites).");
                 win.chatHistory.add("  /spawntower - Spawn an Inferno Tower just ahead of you.");
+                win.chatHistory.add("  /biome [name] - List biomes or teleport to one.");
                 break;
+
+            case "biome": {
+                if (parts.length < 2) {
+                    win.chatHistory.add("[System] Special biomes: volcanic, sakura, mushroom, crystal, autumn");
+                    win.chatHistory.add("[System] Common biomes: forest, plains, desert, savanna, taiga, snowy, tundra, ocean");
+                    win.chatHistory.add("[System] Usage: /biome <name>  (searches up to 3000 blocks)");
+                    break;
+                }
+                com.leaf.game.world.gen.biome.Biome target = parseBiomeName(parts[1].toLowerCase());
+                if (target == null) {
+                    win.chatHistory.add("[System]: Unknown biome '" + parts[1] + "'. Type /biome for list.");
+                    break;
+                }
+                win.chatHistory.add("[System]: Searching for " + parts[1] + " biome...");
+                int px = (int) win.player.position.x;
+                int pz = (int) win.player.position.z;
+                int step = 200, range = 3000;
+                int foundX = Integer.MIN_VALUE, foundZ = Integer.MIN_VALUE;
+                float bestDistSq = Float.MAX_VALUE;
+                for (int dx = -range; dx <= range; dx += step) {
+                    for (int dz = -range; dz <= range; dz += step) {
+                        if (win.worldGen.biomeAt(px + dx, pz + dz) == target) {
+                            float dSq = dx * dx + (float) dz * dz;
+                            if (dSq < bestDistSq) {
+                                bestDistSq = dSq;
+                                foundX = px + dx;
+                                foundZ = pz + dz;
+                            }
+                        }
+                    }
+                }
+                if (foundX == Integer.MIN_VALUE) {
+                    win.chatHistory.add("[System]: " + parts[1] + " not found within " + range + " blocks. Try exploring further first.");
+                    break;
+                }
+                float shape = win.worldGen.sampleHeight(foundX, foundZ);
+                int surfaceY = com.leaf.game.core.GameConfig.heightBase
+                        + (int)(shape * com.leaf.game.core.GameConfig.heightRange) + 3;
+                win.player.position.set(foundX + 0.5f, surfaceY, foundZ + 0.5f);
+                int dist = (int) Math.sqrt(bestDistSq);
+                win.chatHistory.add("[System]: Teleported to " + parts[1] + " biome, " + dist + " blocks away!");
+                break;
+            }
 
             case "explore":
                 win.enemyManager.freeExploreMode = !win.enemyManager.freeExploreMode;
@@ -238,5 +282,27 @@ public class CommandHandler {
                 win.chatHistory.add("[System]: Unknown command. Type '/help' for options.");
                 break;
         }
+    }
+
+    private static com.leaf.game.world.gen.biome.Biome parseBiomeName(String name) {
+        return switch (name) {
+            case "volcanic", "volcano", "lava", "ashlands"    -> com.leaf.game.world.gen.biome.Biome.VOLCANIC;
+            case "sakura", "cherry", "blossom", "pink"        -> com.leaf.game.world.gen.biome.Biome.SAKURA;
+            case "mushroom", "shroom", "mycelium", "glow"     -> com.leaf.game.world.gen.biome.Biome.MUSHROOM;
+            case "crystal", "amethyst", "geode", "crystals"   -> com.leaf.game.world.gen.biome.Biome.CRYSTAL_FIELDS;
+            case "autumn", "maple", "fall", "orange"          -> com.leaf.game.world.gen.biome.Biome.AUTUMN;
+            case "forest", "oak", "trees"                     -> com.leaf.game.world.gen.biome.Biome.FOREST;
+            case "plains", "grass", "flat"                    -> com.leaf.game.world.gen.biome.Biome.PLAINS;
+            case "desert", "sand", "dunes"                    -> com.leaf.game.world.gen.biome.Biome.DESERT;
+            case "savanna", "savannah"                        -> com.leaf.game.world.gen.biome.Biome.SAVANNA;
+            case "taiga", "spruce", "conifer"                 -> com.leaf.game.world.gen.biome.Biome.TAIGA;
+            case "snowy", "snow", "snowplains"                -> com.leaf.game.world.gen.biome.Biome.SNOWY_PLAINS;
+            case "tundra", "frozen", "icy"                    -> com.leaf.game.world.gen.biome.Biome.TUNDRA;
+            case "icypeaks", "icy_peaks", "peaks", "mountain" -> com.leaf.game.world.gen.biome.Biome.ICY_PEAKS;
+            case "ocean", "sea", "water"                      -> com.leaf.game.world.gen.biome.Biome.OCEAN;
+            case "beach", "shore"                             -> com.leaf.game.world.gen.biome.Biome.BEACH;
+            case "river"                                      -> com.leaf.game.world.gen.biome.Biome.RIVER;
+            default -> null;
+        };
     }
 }

@@ -61,10 +61,9 @@ public class SpiderEnemy extends Enemy {
             body.accelerateRotation(spinAxis, spinForce);
         }
 
-        hitFlashTimer = 0.18f;
-        com.leaf.game.core.AudioManager.playAt("seal_hit", position, (Vector3f) null, 35f);
-
-        return false;
+        // Delegate to parent: applies damage to health, sets hitFlashTimer, plays
+        // hit/death sound, and marks alive=false when HP reaches zero.
+        return super.applyDamage(amount);
     }
 
     private void scaleGaitFor120TPS(Gait g, float t) {
@@ -156,7 +155,7 @@ public class SpiderEnemy extends Enemy {
             if (attackCooldown > 0f) attackCooldown -= tickRate;
 
             if (mode == BehaviorMode.HOSTILE) {
-                body.gallop = false;
+                body.gallop = true;
                 Vector3f direction = new Vector3f(playerPos).sub(body.position);
                 direction.y = 0;
                 float dist = direction.length();
