@@ -182,6 +182,8 @@ public class EnemyManager {
         Enemy e;
         if (type == Enemy.Type.SPIDER) {
             e = new com.leaf.game.entity.spider.SpiderEnemy(x, y, z);
+        } else if (type == Enemy.Type.TREANT) {
+            e = new TreantEnemy(x, y, z);
         } else {
             e = new Enemy(x, y, z, type);
         }
@@ -647,8 +649,10 @@ public class EnemyManager {
         float r2  = r * r;
         for (Enemy e : enemies) {
             if (!e.alive) continue;
-            Vector3f centre = e.getCentre();
-            float dx = centre.x - cx, dy = centre.y - cy, dz = centre.z - cz;
+            // Clamp to the enemy's vertical span so tall targets like the Inferno Tower
+            // (halfHeight=6) still take hits from ground-level explosions.
+            float nearestY = Math.max(e.position.y, Math.min(e.position.y + 2f * e.halfHeight, cy));
+            float dx = e.position.x - cx, dy = nearestY - cy, dz = e.position.z - cz;
             if (dx*dx + dy*dy + dz*dz <= r2) {
                 e.applyDamage(damage);
             }

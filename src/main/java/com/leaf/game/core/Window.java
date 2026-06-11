@@ -167,8 +167,9 @@ public class Window {
     float digParticleTimer = 0f;
 
     final Block[] hotbar = {
-            Block.GRASS, Block.DIRT, Block.STONE, Block.WATER,
-            Block.GATLING_GUN, Block.TORCH, Block.TELESCOPE, Block.GRAPPLING_HOOK, Block.AIR
+            Block.GATLING_GUN, Block.WPN_VOID_SHARD, Block.WPN_ORBITAL,
+            Block.WPN_TIMESTOP, Block.WPN_STONE_CANNON,
+            Block.TORCH, Block.TELESCOPE, Block.GRAPPLING_HOOK, Block.GRASS
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -514,6 +515,7 @@ public class Window {
     private float   vlAmountNow = 0f;         // 0→1→0 fade envelope
     private float   vlSweepNow  = 0f;         // sweep-arm angle (radians)
     private boolean lastF10     = false;
+    private boolean lastRMB     = false;  // tracks RMB edge for ability-weapon one-shots
     private static final float VL_MAXR   = 200f;   // scope reach (blocks)
     private static final float VL_RAMP   = 1.0f;   // fade-in (s)
     private static final float VL_HOLD   = 6.0f;   // active scanning (s)
@@ -1794,6 +1796,43 @@ public class Window {
                             telescope.update(camera, dayNight);  // Always update compass and tracking math
                         }
 
+                        // ── ABILITY WEAPONS — RMB fires the equipped ability ───
+                        boolean rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+                        boolean rmbEdge = rmbNow && !lastRMB;
+                        Block heldWpn = hotbar[selectedSlot];
+
+                        // Void Shard (WPN_VOID_SHARD): hold RMB to charge, release fires
+                        player.attacks.weaponCHeld = (heldWpn == Block.WPN_VOID_SHARD) && rmbNow;
+
+                        // Orbital Annihilation (WPN_ORBITAL): one-shot on RMB press
+                        if (heldWpn == Block.WPN_ORBITAL && rmbEdge && !orbitalActive) {
+                            startOrbitalStrike(camera);
+                        }
+
+                        // Time Domain (WPN_TIMESTOP): toggle on RMB press
+                        if (heldWpn == Block.WPN_TIMESTOP && rmbEdge) {
+                            if (timeStopActive) stopTimeStop();
+                            else if (!timeStopActive) startTimeStop();
+                        }
+
+                        // Stone Cannon (WPN_STONE_CANNON): RMB acts as I key (handled below via iHeld)
+                        lastRMB = rmbNow;
+
+                        // Selected-weapon hint so the teacher always knows what RMB does
+                        if (hintTimer <= 0.1f) {
+                            String wpnHint = switch (heldWpn) {
+                                case WPN_ORBITAL     -> "Orbital Annihilation  —  RMB to fire";
+                                case WPN_VOID_SHARD  -> "Void Shard  —  hold RMB to charge, release to fire";
+                                case WPN_TIMESTOP    -> "Time Domain  —  RMB to toggle";
+                                case WPN_STONE_CANNON-> "Stone Cannon  —  hold RMB to charge, release to fire";
+                                case GATLING_GUN     -> "Gatling Gun  —  hold LMB to fire";
+                                case GRAPPLING_HOOK  -> "Grappling Hook  —  hold LMB to swing";
+                                case TELESCOPE       -> "Telescope  —  hold RMB to look";
+                                default -> null;
+                            };
+                            if (wpnHint != null) { hintText = wpnHint; hintTimer = 1.5f; }
+                        }
+
                         // ── GRAB SLAM IMPACT ───────────────────────────────────
                         // GrabController.tick() already polled pendingGrabImpact for
                         // the shake request; here we create the crater + ejecta.
@@ -2518,7 +2557,8 @@ public class Window {
 
                         // ── STONE CANON (I key) ───────────────────────────────
                         if (stoneCanonCooldownTimer > 0f) stoneCanonCooldownTimer -= deltaTime;
-                        boolean iHeld = glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS
+                        boolean iHeld = (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS
+                                || (hotbar[selectedSlot] == Block.WPN_STONE_CANNON && lastRMB))
                                 && player.can(Progression.Ability.STONE_CANON);
 
                         if (!isChargingStoneCanon && iHeld && !lastI
@@ -5585,6 +5625,12 @@ public class Window {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /** F8: anchor the domain, pause all world audio, start the ZA WARUDO sequence. */
+    private void stopTimeStop() {
+        timeStopActive = false; tsRadiusNow = 0f;
+        AudioManager.stopContinuous("clock_ticking");
+        AudioManager.resumeAll();
+    }
+
     private void startTimeStop() {
         tsCenterX = player.position.x;
         tsCenterY = player.position.y + 1.0f;

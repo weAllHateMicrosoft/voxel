@@ -175,7 +175,6 @@ public class SpiderEnemy extends Enemy {
                 if (dist <= 2.5f * 1.2f && attackCooldown <= 0f) {
                     framePlayerDamage = 25f;
                     attackCooldown = 1.2f;
-                    com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f)null, 30f);
                 }
 
             } else if (mode == BehaviorMode.IDLE) {

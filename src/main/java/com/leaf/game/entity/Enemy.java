@@ -36,7 +36,7 @@ public class Enemy {
     //  Enums
     // ═════════════════════════════════════════════════════════════════════════
 
-    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY, SPIDER, LAVA_SLIME, INFERNO_TOWER }
+    public enum Type  { GOLEM, THROWER, ZOMBIE, SLIME, GUARDIAN, DUMMY, SPIDER, LAVA_SLIME, INFERNO_TOWER , TREANT}
     public enum State { IDLE, ALERTED, CHASE, ATTACK, RETREATING, SLAMMING }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -77,11 +77,11 @@ public class Enemy {
 
     public  final float maxHealth;
     public        float health;
-    private final float speed;
-    private final float damagePerSec;
-    private final float aggroRange;
-    private final float attackRange;
-    private final float attackInterval;
+    public final float speed;
+    public final float damagePerSec;
+    public final float aggroRange;
+    public final float attackRange;
+    public final float attackInterval;
 
     // ═════════════════════════════════════════════════════════════════════════
     //  Per-instance hitbox
@@ -97,7 +97,7 @@ public class Enemy {
     public  final  Vector3f position;
     public         boolean  alive    = true;
     private        float    velocityY = 0f;
-    private        boolean  onGround  = false;
+    public       boolean  onGround  = false;
 
     public float knockbackVelX = 0f;
     public float knockbackVelZ = 0f;
@@ -240,6 +240,12 @@ public class Enemy {
                 atk_    = 0f;  atkI_  = 999f;
                 cr = 3.0f; hh = 6.0f;            // ~12-block-tall model footprint
             }
+            case TREANT -> {
+                health_ = 450f;  speed_ = 3.0f; // Slow, massive health
+                dps_    = 45f;   aggro_ = 0f;   // Won't auto-aggro, must be hit
+                atk_    = 3.5f;  atkI_  = 1.5f;
+                cr = 1.0f; hh = 2.5f;
+            }
             default -> {
                 health_ = GameConfig.throwerHealth; speed_ = GameConfig.throwerSpeed;
                 dps_    = GameConfig.throwerDamagePerSec; aggro_ = GameConfig.throwerAggroRange;
@@ -272,16 +278,18 @@ public class Enemy {
         hitFlashTimer = 0.18f;
         if (health <= 0f) {
             alive = false;
-            com.leaf.game.core.AudioManager.playAt("fall_smash", position, (Vector3f) null, 50f);
             return true;
         }
-        com.leaf.game.core.AudioManager.playAt("seal_hit", position, (Vector3f) null, 35f);
         return false;
     }
 
     public void applyKnockback(float kx, float ky, float kz) {
-        if (type == Type.INFERNO_TOWER) return; // Towers are rooted and ignore all knockback/forces
-        float resist = (type == Type.GOLEM) ? 0.15f : 1.0f;
+        if (type == Type.INFERNO_TOWER) return;
+        float resist = switch (type) {
+            case GOLEM -> 0.15f;
+            case SPIDER, TREANT -> 0.30f;
+            default -> 1.0f;
+        };
         knockbackVelX = kx * resist;
         knockbackVelZ = kz * resist;
         if (ky > 0f) velocityY = Math.max(velocityY, ky * resist);
@@ -393,7 +401,7 @@ public class Enemy {
                     state = State.ALERTED;
                     alertTimer = 0.6f;
                     patrolWalking = false;
-                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 40f);
+                    // (alert sound removed)
                 }
             }
             case ALERTED -> {
@@ -477,7 +485,6 @@ public class Enemy {
                 if (dist <= aggroRange) {
                     state = State.ALERTED;
                     alertTimer = 1.5f;
-                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 55f);
                 }
             }
             case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
@@ -487,7 +494,6 @@ public class Enemy {
                 if (dist <= GameConfig.golemSlamRange && slamCooldown <= 0f) {
                     state = State.SLAMMING;
                     slamWindUp = 0.6f;
-                    com.leaf.game.core.AudioManager.playAt("enemy_roar", position, (Vector3f) null, 60f);
                     break;
                 }
                 if (dist >= GameConfig.golemSlamRange && dist <= GameConfig.golemThrowRange
@@ -512,7 +518,6 @@ public class Enemy {
                 if (attackCooldown <= (attackInterval - 0.6f) && attackCooldown > (attackInterval - 0.65f)) {
                     if (dist <= attackRange * 1.1f) {
                         framePlayerDamage = damagePerSec * attackInterval;
-                        com.leaf.game.core.AudioManager.playAt("golem_punch", position, (Vector3f) null, 50f);
                     }
                 }
                 if (attackCooldown <= 0f) {
@@ -532,7 +537,6 @@ public class Enemy {
                 if (dist <= aggroRange) {
                     state = State.ALERTED;
                     alertTimer = 0.4f;
-                    com.leaf.game.core.AudioManager.playAt("enemy_alert", position, (Vector3f) null, 35f);
                 }
             }
             case ALERTED -> { alertTimer -= dt; if (alertTimer <= 0f) state = State.CHASE; }
@@ -559,7 +563,6 @@ public class Enemy {
                 if (attackCooldown <= (attackInterval - 0.6f) && attackCooldown > (attackInterval - 0.65f)) {
                     if (dist <= attackRange * 1.1f) {
                         framePlayerDamage = damagePerSec * attackInterval;
-                        com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f) null, 30f);
                     }
                 }
                 if (attackCooldown <= 0f) attackCooldown = attackInterval;
@@ -590,7 +593,6 @@ public class Enemy {
                 if (attackCooldown <= (attackInterval - 0.6f) && attackCooldown > (attackInterval - 0.65f)) {
                     if (dist <= attackRange * 1.1f) {
                         framePlayerDamage = damagePerSec * attackInterval;
-                        com.leaf.game.core.AudioManager.playAt("enemy_swing", position, (Vector3f) null, 30f);
                     }
                 }
                 if (attackCooldown <= 0f) attackCooldown = attackInterval;
@@ -928,14 +930,12 @@ public class Enemy {
                 // Single-block wall: all enemies can hop over it
                 velocityY = 7.5f;
                 currentPath.clear(); // recompute next tick so we don't run into it again
-                com.leaf.game.core.AudioManager.playAt("enemy_step", position, (Vector3f) null, 15f);
             } else if (wallHeight == 2 && type == Type.GOLEM) {
                 // Two-block wall: golem high-jump
                 if (!pendingHighJump) {
                     velocityY = 11.0f;
                     pendingHighJump = true;
                     currentPath.clear();
-                    com.leaf.game.core.AudioManager.playAt("golem_step", position, (Vector3f) null, 40f);
                 }
             } else {
                 stuckTimer += dt;
@@ -1126,7 +1126,6 @@ public class Enemy {
                 onGround   = true;
                 // Land sound for golem only (other enemies are too frequent)
                 if (type == Type.GOLEM && dy < -8f) {
-                    com.leaf.game.core.AudioManager.playAt("golem_step", position, (Vector3f) null, 45f);
                 }
             } else {
                 position.y += dy;
@@ -1170,6 +1169,7 @@ public class Enemy {
             case SPIDER   -> new float[]{ 1.0f,  1.0f,  1.0f  };
             case DUMMY    -> new float[]{ 0.75f, 0.88f, 0.75f };
             case LAVA_SLIME    -> new float[]{ 0.92f, 0.92f, 0.92f };   // slightly chunkier slime
+            case TREANT    -> new float[]{ 1.0f,  1.0f,  1.0f};
             case INFERNO_TOWER -> new float[]{ 3.0f,  3.0f,  3.0f  };   // ~12-block landmark
         };
     }

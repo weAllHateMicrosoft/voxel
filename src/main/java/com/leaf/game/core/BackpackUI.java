@@ -54,7 +54,10 @@ public class BackpackUI {
                 if (b == Block.AIR) continue;
 
                 int count = win.inventory.getCount(b);
-                boolean isTool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE || b == Block.GRAPPLING_HOOK);
+                boolean isTool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE
+                        || b == Block.GRAPPLING_HOOK
+                        || b == Block.WPN_ORBITAL || b == Block.WPN_VOID_SHARD
+                        || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON);
 
                 // Show block if player has a quantity of it, or if it is a tool
                 if (count > 0 || isTool) {

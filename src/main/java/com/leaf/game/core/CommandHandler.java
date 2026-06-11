@@ -102,15 +102,20 @@ public class CommandHandler {
                 win.showcaseMode = true;
                 win.immunityTimer = 99999f;
 
-                // Special tool items first so they're guaranteed a hotbar slot.
-                win.inventory.addBlockAmount(Block.GATLING_GUN, 1);   win.addBlockToHotbar(Block.GATLING_GUN);
-                win.inventory.addBlockAmount(Block.GRAPPLING_HOOK, 1); win.addBlockToHotbar(Block.GRAPPLING_HOOK);
-                win.inventory.addBlockAmount(Block.TELESCOPE, 1);     win.addBlockToHotbar(Block.TELESCOPE);
-                win.inventory.addBlockAmount(Block.TORCH, 256);       win.addBlockToHotbar(Block.TORCH);
+                // Hard-assign ability weapons to slots 1–5 so the teacher can just
+                // press 1–5 and RMB without hunting through the backpack.
+                win.hotbar[0] = Block.GATLING_GUN;
+                win.hotbar[1] = Block.WPN_VOID_SHARD;
+                win.hotbar[2] = Block.WPN_ORBITAL;
+                win.hotbar[3] = Block.WPN_TIMESTOP;
+                win.hotbar[4] = Block.WPN_STONE_CANNON;
+                win.hotbar[5] = Block.TORCH;
+                win.hotbar[6] = Block.TELESCOPE;
+                win.hotbar[7] = Block.GRAPPLING_HOOK;
+                win.hotbar[8] = Block.GRASS;
+                // Stock inventory with everything else
                 for (Block b : Block.values()) {
-                    if (b == Block.AIR) continue;
-                    win.inventory.addBlockAmount(b, 999);
-                    win.addBlockToHotbar(b);
+                    if (b != Block.AIR) win.inventory.addBlockAmount(b, 999);
                 }
 
                 // Skip onboarding & practice so nothing interrupts the demo.
@@ -129,9 +134,9 @@ public class CommandHandler {
                     win.enemyManager.freeExploreMode = true;
                 }
 
-                win.chatHistory.add("[SHOWCASE] ARMED: all abilities, infinite mana, godmode, all items.");
+                win.chatHistory.add("[SHOWCASE] ARMED: all abilities, godmode, infinite mana.");
+                win.chatHistory.add("[SHOWCASE] Slots 1-5: Gatling | VoidShard | Orbital | TimeStop | StoneCannon — RMB to fire");
                 win.chatHistory.add("[SHOWCASE] Scenes: /showcase combat | horde | volcanic | sakura | off");
-                win.chatHistory.add("[SHOWCASE] Wow keys: Z=Kamui  R=slow-mo  X=drone  dbl-Space=fly  C=charge bolt");
                 break;
             }
             case "treant": {

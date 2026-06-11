@@ -34,6 +34,15 @@ java -jar build/libs/game.jar
 Click **PLAY** on the title screen. The built-in tutorial will guide you through the controls
 step-by-step — teaching one mechanic at a time and waiting for you to do it before moving on.
 
+### Quick-Start (Teacher / Visitor)
+
+1. Load the game and press **Play**.
+2. Press `T` to open chat and type `/showcase` — this arms every ability, enables god-mode,
+   and fills the hotbar with all weapons. Press Enter.
+3. The **ability weapons are in hotbar slots 1–5**. Select any and press **RMB** to fire.
+4. Press `F1` at any time for the full in-game reference card.
+5. Skip the tutorial instantly with `/skip` in chat.
+
 ### Core Controls
 
 | Key | Action |
@@ -41,13 +50,27 @@ step-by-step — teaching one mechanic at a time and waiting for you to do it be
 | `W` `A` `S` `D` | Move |
 | `Space` | Jump |
 | Double-tap `W` | Sprint |
-| Double-tap `Space` | Toggle flight |
+| Double-tap `Space` | Toggle flight · `V` to cycle modes |
 | Mouse | Look around |
-| Left Click (hold) | Mine block |
-| Right Click | Place block |
+| Left Click (hold) | Mine block / fire Gatling Gun |
+| **Right Click** | **Fire the selected ability weapon** |
 | `1`–`9` | Select hotbar slot |
+| `Left Alt` | Open backpack (equip weapons to hotbar) |
 | `T` | Open chat (type commands) |
 | `F1` | Open the in-game Master Ability Guide |
+
+### Default Hotbar
+
+| Slot | Weapon | RMB Action |
+|---|---|---|
+| 1 | Gatling Gun | Hold LMB to fire |
+| 2 | **Void Shard** | Hold RMB to charge → release to fire crystal bolt |
+| 3 | **Orbital Annihilation** | RMB → cinematic laser strike |
+| 4 | **Time Domain** | RMB → freeze all enemies |
+| 5 | **Stone Cannon** | Hold RMB near stone → absorbs it → fires boulder |
+| 6 | Torch | Place or hold for light |
+| 7 | Telescope | Hold RMB to zoom |
+| 8 | Grappling Hook | Hold LMB to swing |
 
 ---
 
@@ -153,20 +176,32 @@ Use these to grade quickly without completing all 10 waves:
 
 | Key / Command | What it does |
 |---|---|
+| `/showcase` (chat) | **One-command demo mode** — arms every ability, fills hotbar with weapons, god-mode on |
+| `/showcase combat` (chat) | Spawn 7 enemies in a ring around you |
+| `/showcase horde` (chat) | Spawn 14 enemies |
+| `/showcase volcanic` (chat) | Warp to volcanic biome + erect Inferno Tower |
+| `/showcase sakura` (chat) | Warp to cherry-blossom grove |
+| `/showcase off` (chat) | Turn demo mode off |
+| `/biome <name>` (chat) | Warp to any biome (forest, desert, crystal, autumn, mushroom, volcanic…) |
 | `F9` | **Wave Skip** — instantly kills all enemies and advances the wave counter |
 | `F3` | Open debug overlay (FPS, player coords, time scale) |
 | `P` | Spawn a basic enemy at your crosshair |
 | `0` (zero) | Spawn a boss-tier Guardian Golem |
-| Hotbar slot 5 | **Gatling Gun** — hold Left Click to rapidly destroy terrain and enemies |
-| `F7` | **Orbital Annihilation** — volumetric cinematic laser strike |
-| `F8` | **The World** — freeze all enemies, invert screen colours |
-| `F10` | **Radar Sweep** — 3D radar pulse that sees enemies through walls |
-| `'` (apostrophe) | **Deprivation Domain** — golden hemisphere that auto-slashes any enemy that enters |
-| `,` (comma) | **Quantum Bullet** — fires a phase-shift projectile that passes through solid walls |
+| Hotbar slot 1 | **Gatling Gun** — hold Left Click to rapid-fire |
+| Hotbar slot 2 | **Void Shard** — hold RMB → charge, release → crystal bolt explosion |
+| Hotbar slot 3 | **Orbital Annihilation** — RMB → volumetric cinematic laser strike |
+| Hotbar slot 4 | **Time Domain** — RMB → freeze all enemies |
+| Hotbar slot 5 | **Stone Cannon** — hold RMB near stone → absorb → boulder |
+| `F7` | Same as Orbital Annihilation (old key still works) |
+| `F8` | Same as Time Domain (old key still works) |
+| `R` / `Y` | Slow / speed up time |
+| `'` (apostrophe) | **Deprivation Domain** — golden hemisphere auto-slasher |
+| `,` (comma) | **Quantum Bullet** — phase-shift projectile through walls |
 | `/skip` (chat) | Skip the full tutorial + all wave-unlock practice sessions |
 | `/god` (chat) | Toggle invincibility |
 | `/give all` (chat) | Fill hotbar with all building blocks |
-| `/spider spawn` (chat) | Spawn a procedural IK spider enemy |
+| `/spawn spider` (chat) | Spawn a procedural IK spider enemy |
+| `/spawn treant` (chat) | Spawn a Treant (disguised tree enemy) |
 
 ---
 

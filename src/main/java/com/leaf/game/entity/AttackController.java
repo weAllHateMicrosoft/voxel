@@ -106,6 +106,9 @@ public class AttackController {
      */
     public final List<float[]> pendingMeleeArcs = new ArrayList<>();
 
+    // ── Ability-weapon override: set by Window when WPN_VOID_SHARD is held + RMB ──
+    public boolean weaponCHeld = false;
+
     // ── Enemy Manager reference ───────────────────────────────────────────────
     private EnemyManager enemyManager = null;
     public void setEnemyManager(EnemyManager em) { this.enemyManager = em; }
@@ -386,7 +389,7 @@ public class AttackController {
     }
 
     private void tickRanged(long window, Camera camera, World world, float dt) {
-        boolean cHeld = glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS
+        boolean cHeld = (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS || weaponCHeld)
                 && player.can(com.leaf.game.core.Progression.Ability.SNIPE);
 
         if (!isCharging && meleePhase == MeleePhase.IDLE) {
@@ -571,10 +574,16 @@ public class AttackController {
                     }
                 }
 
-                // Check enemy collision first so we hit them directly
+                // Check enemy collision using cylinder hitbox so tall targets (tower) and
+                // wide targets (treant) register hits across their full body, not just near centre.
                 if (enemyManager != null) {
                     for (Enemy enemy : enemyManager.getEnemies()) {
-                        if (enemy.alive && new Vector3f(bolt.pos).distance(enemy.getCentre()) < 1.8f) {
+                        if (enemy.alive && enemy.isHitByPlayer(bolt.pos)) {
+                            // Direct damage so the target always takes the hit regardless of
+                            // whether the explosion sphere reaches the centre of a tall enemy.
+                            float dmg = GameConfig.voidShardMinDamage
+                                    + bolt.chargeF * (GameConfig.voidShardMaxDamage - GameConfig.voidShardMinDamage);
+                            enemy.applyDamage(dmg);
                             boltImpact(bolt, world, (int)Math.floor(bolt.pos.x), (int)Math.floor(bolt.pos.y), (int)Math.floor(bolt.pos.z));
                             bolt.alive = false;
                             hit = true;
