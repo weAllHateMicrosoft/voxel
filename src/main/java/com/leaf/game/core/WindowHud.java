@@ -229,6 +229,111 @@ class WindowHud {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  WEAPON FORGED REVEAL  — big dramatic overlay when a weapon is earned
+    // ─────────────────────────────────────────────────────────────────────────
+
+    void renderWeaponReveal(float screenW, float screenH) {
+        Progression.Ability a = win.weaponRevealAbility;
+        if (a == null) return;
+        float t = win.weaponRevealTimer;   // 5.5 → 0
+        // fade-in 0.4 s, full 4.5 s, fade-out 0.6 s
+        float alpha = t > 5.1f ? (5.5f - t) / 0.4f
+                    : t < 0.6f ? t / 0.6f
+                    : 1.0f;
+        alpha = Math.max(0f, Math.min(1f, alpha));
+
+        imgui.ImDrawList draw = ImGui.getForegroundDrawList();
+        int sh  = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f * alpha);
+        int bg  = ImGui.colorConvertFloat4ToU32(0.04f, 0.03f, 0.10f, 0.88f * alpha);
+        int bdr = ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.85f * alpha);
+        int gld = ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.25f, alpha);
+        int wht = ImGui.colorConvertFloat4ToU32(1.0f, 0.97f, 0.92f, alpha);
+        int dim = ImGui.colorConvertFloat4ToU32(0.75f, 0.82f, 0.95f, 0.9f * alpha);
+        int grn = ImGui.colorConvertFloat4ToU32(0.4f, 1.0f, 0.65f, alpha);
+        int acc = ImGui.colorConvertFloat4ToU32(0.55f, 0.85f, 1.0f, alpha);
+
+        float cardW = 460f, cardH = 220f;
+        float cx = screenW / 2f, cy = screenH / 2f;
+        float x0 = cx - cardW / 2f, y0 = cy - cardH / 2f;
+        float x1 = x0 + cardW,      y1 = y0 + cardH;
+
+        // Dark vignette
+        draw.addRectFilled(0, 0, screenW, screenH,
+                ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.45f * alpha));
+        // Card background + double border for drama
+        draw.addRectFilled(x0, y0, x1, y1, bg, 12f);
+        draw.addRect(x0, y0, x1, y1, bdr, 12f, 0, 2.5f);
+        draw.addRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.6f, 0.25f * alpha), 9f, 0, 1f);
+
+        float iy = y0 + 20f;
+
+        // WEAPON FORGED header
+        String header = "  ✦  WEAPON FORGED  ✦  ";
+        float hw = ImGui.calcTextSize(header).x;
+        draw.addText(cx - hw / 2 + 1, iy + 1, sh, header);
+        draw.addText(cx - hw / 2, iy, gld, header);
+        iy += 28f;
+
+        // Thin separator
+        draw.addLine(x0 + 24, iy, x1 - 24, iy,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.4f * alpha), 1f);
+        iy += 10f;
+
+        // Weapon icon — 48×48 centred
+        float iconSz = 48f;
+        float ix0 = cx - iconSz / 2f, iy0i = iy, ix1 = ix0 + iconSz, iy1i = iy0i + iconSz;
+        switch (a) {
+            case GATLING     -> drawGunIcon    (draw, ix0, iy0i, ix1, iy1i);
+            case SNIPE       -> drawSniperIcon (draw, ix0, iy0i, ix1, iy1i);
+            case ORBITAL     -> drawOrbitalIcon(draw, ix0, iy0i, ix1, iy1i);
+            case DOMAIN      -> drawTimeStopIcon(draw, ix0, iy0i, ix1, iy1i);
+            case STONE_CANON -> drawStoneCannonIcon(draw, ix0, iy0i, ix1, iy1i);
+            default -> {
+                draw.addCircleFilled(cx, iy0i + iconSz / 2, iconSz / 2.2f,
+                        ImGui.colorConvertFloat4ToU32(0.5f, 0.7f, 1f, 0.7f * alpha));
+            }
+        }
+        iy += iconSz + 10f;
+
+        // Weapon name
+        String name = a.label;
+        float nw = ImGui.calcTextSize(name).x;
+        draw.addText(cx - nw / 2 + 1, iy + 1, sh, name);
+        draw.addText(cx - nw / 2, iy, wht, name);
+        iy += 22f;
+
+        // Key hint
+        String key = "[ " + a.key + " ]  to activate";
+        float kw = ImGui.calcTextSize(key).x;
+        draw.addText(cx - kw / 2 + 1, iy + 1, sh, key);
+        draw.addText(cx - kw / 2, iy, acc, key);
+        iy += 20f;
+
+        // Hotbar slot arrow
+        int slot = win.weaponRevealSlot;
+        if (slot >= 0) {
+            String slotHint = "→  Added to hotbar slot  " + (slot + 1);
+            float sw = ImGui.calcTextSize(slotHint).x;
+            draw.addText(cx - sw / 2 + 1, iy + 1, sh, slotHint);
+            draw.addText(cx - sw / 2, iy, grn, slotHint);
+        }
+
+        // Draw a pulsing up-arrow above the hotbar slot so the eye finds it
+        if (slot >= 0) {
+            float slotSize = 40f, spacing = 5f, numSlots = 9;
+            float startX = screenW / 2f - (numSlots * slotSize + (numSlots - 1) * spacing) / 2f;
+            float slotX  = startX + slot * (slotSize + spacing) + slotSize / 2f;
+            float slotTop = screenH - slotSize - 10f;
+            float bounce = (float) Math.sin(win.weaponRevealTimer * 6.0) * 4f;
+            float ax = slotX, ay = slotTop - 14f + bounce;
+            int arrowCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.2f, alpha);
+            draw.addTriangleFilled(ax, ay + 10f, ax - 8f, ay - 6f, ax + 8f, ay - 6f, arrowCol);
+            draw.addRect(ax - 3f, ay + 10f, ax + 3f, ay + 20f, arrowCol, 0f, 0, 2f);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  PRACTICE OVERLAY  — multi-step hands-on ability tutorial
     // ─────────────────────────────────────────────────────────────────────────
     void renderPractice(float w, float h) {
@@ -2018,20 +2123,27 @@ class WindowHud {
         ImGui.separator();
         ImGui.spacing();
 
+        // ── EASTER EGGS ───────────────────────────────────────────────────────
+        ImGui.textColored(1.0f, 0.55f, 0.9f, 1.0f, "EASTER EGGS  ✦  (hidden secrets)");
+        ImGui.separator();
+        helpRow("[ ` ] (Tilde)", "FLAPPY BIRD MODE — press ` at any time to instantly transform DESCENT into a full 2D side-scrolling Flappy Bird arcade! Press [TAB] to toggle 3D/2D view. How high can you score?");
+        helpRow("[ F4 ]", "METEOR STORM — rains flaming meteorites from the sky. Each one dynamically carves a crater into the terrain on impact. The mountain will never be the same.");
+        helpRow("[ \\ ] (Backslash)", "MEGA METEOR — drops one colossal, mountain-erasing meteor onto the map. Stand clear.");
+        helpRow("[ F6 ]", "NON-EUCLIDEAN SPACE — teleports you into an impossible, infinitely looping 4D layered room. Find your way out.");
+        ImGui.spacing();
+
         // ── MARKER / SHOWCASE FEATURES ────────────────────────────────────────
         ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "SHOWCASE / SANDBOX (For Marking & Testing)");
         ImGui.separator();
-        helpRow("[ ` ] (Tilde)", "Flappy Bird Mode: Instantly transforms the game into a 2D side-scrolling Flappy Bird arcade game. Press [TAB] while in it to toggle 3D/2D perspective.");
-        helpRow("[ F7 ]", "Orbital Annihilation: A 12-second cinematic 3D orbital strike that carves a massive crater and destroys everything in its radius.");
-        helpRow("[ F8 ]", "The World (Time Stop): DIO's time stop. Inverts colors, freezes all enemies and projectiles in place for several seconds.");
-        helpRow("[ F4 ]", "Meteor Storm: Rains down flaming meteorites from the sky that dynamically carve craters into the terrain upon impact.");
-        helpRow("[ \\ ] (Backslash)", "Mega Meteor: Drops a single colossal, mountain-erasing meteor onto the map.");
-        helpRow("[ . ] (Period)", "Chocolate Disco: Spawns a 9x9 tactical grid. Click cells to mark them, press [.] again to detonate marked cells.");
-        helpRow("[ ' ] (Quote)", "Deprivation Domain (Water God Stance): A golden absolute-defense hemisphere. Any enemy entering is instantly sliced into 8 physical pieces.");
-        helpRow("[ , ] (Comma)", "Quantum Bullet: Fires a projectile that phases through walls, creating visual ripple distortions on the surfaces it passes through.");
-        helpRow("[ F10 ]", "Radar Sweep: Turns the terrain into a 3D radar scope, pinging enemies through walls with wireframe highlights.");
-        helpRow("[ F12 ]", "Parkour Movement: Toggles standard survival physics into the frictionless, Quake-style momentum physics engine.");
-        helpRow("Chat [/skip]", "Type '/skip' in chat (press T) to instantly bypass all tutorials and jump straight to infinite waves.");
+        helpRow("[ F7 ] / Slot 3", "Orbital Annihilation (RMB): cinematic 3D orbital strike — earn it in the Ashlands.");
+        helpRow("[ F8 ] / Slot 4", "The World / Time Stop (RMB): freeze all enemies in place — earned by completing the Voyage.");
+        helpRow("[ F10 ]", "Radar Sweep: 3D ping — enemies glow through walls with wireframe highlights — earn it in the Glowing Groves.");
+        helpRow("[ . ] (Period)", "Chocolate Disco: Spawns a 9×9 tactical grid. Mark cells with LMB, press [.] again to detonate.");
+        helpRow("[ ' ] (Quote)", "Deprivation Domain: Golden absolute-defence hemisphere — any enemy entering is instantly sliced.");
+        helpRow("[ , ] (Comma)", "Quantum Bullet: Phases through walls, leaving visual ripple distortions on every surface hit.");
+        helpRow("[ F12 ]", "Parkour Mode: Toggles Quake-style momentum physics (frictionless, high-speed).");
+        helpRow("[ T ] → /skip", "Skip the tutorial and jump straight to wave 1.");
+        helpRow("[ T ] → /showcase", "Instantly unlock every ability and arm all 5 weapons — for grading/testing.");
         ImGui.spacing();
 
         // ── YOUR ABILITIES (unlocked vs. still locked) ────────────────────────
@@ -2046,7 +2158,10 @@ class WindowHud {
                 ImGui.textDisabled("  [ ? ]");
                 ImGui.sameLine(230f);
                 ImGui.pushTextWrapPos(0f);
-                ImGui.textDisabled("Locked  -  survive wave " + wv + " to unlock.");
+                String lockMsg = (wv <= Progression.VOYAGE_START_WAVE)
+                        ? "Locked  -  defeat wave " + wv + " at spawn to unlock."
+                        : "Locked  -  forge on the Voyage (follow the beam after wave 6).";
+                ImGui.textDisabled(lockMsg);
                 ImGui.popTextWrapPos();
             }
         }
@@ -2273,6 +2388,8 @@ class WindowHud {
         }
 
         if (win.voyage == null || !win.voyageStarted || !win.voyage.active || !win.voyage.beaconReady()) return;
+        // Suppress the objective banner while the forge/directive message is dominating the screen
+        if (win.voyageMsgTimer > 3.5f) return;
 
         org.joml.Vector3f beacon = win.voyage.beaconPos();
         float[] col = win.voyage.beaconColor();

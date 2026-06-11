@@ -139,6 +139,12 @@ public class Window {
     // ── THE VOYAGE — guided exploration quest (replaces wave grinding) ──────────
     Voyage  voyage        = null;
     boolean voyageStarted = false;
+    // Weapon-reveal overlay (fancy WEAPON FORGED card)
+    Progression.Ability weaponRevealAbility = null;
+    int                 weaponRevealSlot    = -1;
+    float               weaponRevealTimer   = 0f;
+    // Night-time torch hint (shown once)
+    boolean shownNightHint = false;
     /** Big centred reveal/directive banner the Voyage pushes (forge moments, next step). */
     String  voyageMsg     = null;
     float   voyageMsgTimer = 0f;
@@ -1145,6 +1151,10 @@ public class Window {
         }
         inventory.addBlockAmount(w, 1);
         hotbar[slot] = w;
+        // Trigger the fancy weapon-reveal card
+        weaponRevealAbility = a;
+        weaponRevealSlot    = slot;
+        weaponRevealTimer   = 5.5f;
         return w;
     }
 
@@ -1632,6 +1642,7 @@ public class Window {
                             // Telescope, and a small stack of building blocks.
                             inventory.addBlockAmount(Block.WPN_SNIPER, 1);
                             inventory.addBlockAmount(Block.TELESCOPE, 1);
+                            inventory.addBlockAmount(Block.TORCH, 10);
                             inventory.addBlockAmount(Block.GRASS, 20);
                             inventory.addBlockAmount(Block.DIRT, 20);
                             inventory.addBlockAmount(Block.STONE, 20);
@@ -2182,6 +2193,15 @@ public class Window {
                         if (voyageStarted && voyage.active) voyage.update(deltaTime);
                         if (voyageStarted) renderVoyageBeacon(rawDeltaTime);
                         if (voyageMsgTimer > 0f) voyageMsgTimer = Math.max(0f, voyageMsgTimer - rawDeltaTime);
+                        if (weaponRevealTimer > 0f) weaponRevealTimer = Math.max(0f, weaponRevealTimer - rawDeltaTime);
+
+                        // Night-time hint: show once when it first gets dark
+                        if (!shownNightHint && world != null && player != null
+                                && dayNight.ambientStrength < 0.30f) {
+                            shownNightHint = true;
+                            hintText  = "It's getting dark!  Open your backpack [Left Alt] and equip a Torch, then place it with RMB.";
+                            hintTimer = 7f;
+                        }
 
                         // ── WAVE CLEARED → ending / unlock card ───────────────
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
@@ -2229,19 +2249,15 @@ public class Window {
                             }
                         }
 
-                        // Dismiss the card with ENTER → queue practice (complex abilities) or next wave.
+                        // Dismiss the card with ENTER — no forced practice, straight to next wave.
                         if (showUnlockCard) {
                             boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
                                     || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                             if (en && !lastCardSpace) {
                                 showUnlockCard = false;
-                                // Every wave unlocked gets a practice session now.
-                                practiceQueue.clear();
-                                for (Progression.Ability a : unlockCardAbilities) {
-                                    practiceQueue.add(a);
-                                }
                                 lastPracticeEnter = true;
-                                startNextPractice();
+                                enemyManager.beginNextWave();
+                                enemyManager.wavesEnabled = true;
                             }
                             lastCardSpace = en;
                         }
@@ -4840,6 +4856,8 @@ public class Window {
                     if (showHelp)         hud.renderHelpScreen((float)ww[0], (float)wh[0]);
                     if (showUnlockCard)         hud.renderUnlockCard((float)ww[0], (float)wh[0]);
                     if (practiceAbility != null) hud.renderPractice((float)ww[0], (float)wh[0]);
+                    if (weaponRevealTimer > 0f && weaponRevealAbility != null)
+                        hud.renderWeaponReveal((float)ww[0], (float)wh[0]);
                     if (showDeathScreen)         hud.renderDeathScreen((float)ww[0], (float)wh[0]);
                     hud.renderChocolateDiscoConsole();
                     // (The Orbital Annihilation cinematic is now drawn as real 3D

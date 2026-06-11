@@ -1,8 +1,8 @@
 # DESCENT
 
-**Survive. Learn. Escape.**
+**Fight. Fly. Forge.**
 
-DESCENT is a 3D high-mobility voxel survival game. You awaken in a procedurally generated world and must survive escalating waves of enemies. As you clear each wave, a mysterious Chakra Crystal bonds with you and unlocks a new anime-inspired combat ability — culminating in time-manipulation, inter-dimensional phases, and high-speed parkour.
+DESCENT is a 3D high-mobility voxel survival game. You awaken in a procedurally generated world. Survive 6 waves of enemies at spawn — each wave unlocks a new combat ability from the Chakra Crystal bonded to you. Once you're armed, the crystal shatters: shards scattered across the land. You gain FLIGHT and follow beams of light to claim each one. Every shard you gather is forged into a weapon — culminating in orbital lasers, time-stopping, and parkour at impossible speed.
 
 ---
 
@@ -31,29 +31,38 @@ java -jar build/libs/game.jar
 
 ## How to Play
 
-Click **PLAY** on the title screen. The built-in tutorial will guide you through the controls
-step-by-step — teaching one mechanic at a time and waiting for you to do it before moving on.
+Click **PLAY** on the title screen and the game guides you from there — no explanation needed.
 
 ### Quick-Start
 
 1. Load the game and press **Play**.
-2. A short tutorial teaches movement and your first weapon — the **Sniper** (hold `C` or
-   Right-Click to charge, release to fire) — then grants **FLIGHT**.
-3. **Follow the beam of light.** The crystal shattered and its shards scattered across the
-   land. A glowing beacon always marks your next shard, with an on-screen waypoint and a
-   "fly here" banner — you can never get lost. Fly to it, claim the shard, and the crystal
-   **forges it into a weapon**:
-   - **Crystal Fields** → Gatling Gun
-   - **Glowing Groves** → Radar Sweep
-   - **Floating Isles** (fly up!) → Stone Cannon
-   - **The Ashlands** → defeat the **Inferno Tower**, then claim the Molten Core → **Orbital
-     Annihilation** (the laser)
-   - Reunite all shards → **The World** (stop time itself)
-4. Press `F1` at any time for the full in-game reference card.
+2. A **5-step tutorial** (about 1 minute) teaches: movement, Slash (`F`), Dash (`Q`), and the Sniper (`C` / RMB hold-to-charge).
+3. **Survive 6 waves** at spawn. Each wave clears, an unlock card appears, press `ENTER` to continue:
 
-> **For grading / testing:** type `/showcase` in chat (`T`) to instantly unlock everything,
-> `/skip` to skip the tutorial, or `/biome <name>` to warp to any biome. See *Developer
-> Cheat Codes* below.
+   | Wave | New abilities |
+   |---|---|
+   | 1 | Slash, Dash |
+   | 2 | Quagmire, Heal |
+   | 3 | Lightning, Grab |
+   | 4 | Blink, Position Swap, Time Dilation |
+   | 5 | Stone Pillar, Cannonball |
+   | 6 | Stand, Substitute, Seal — **the crystal shatters; the Voyage begins** |
+
+4. **FLIGHT is granted.** Double-tap `Space` to fly. A glowing beam marks your first shard. Follow it — each shard forges a weapon, shown with a full **WEAPON FORGED** reveal card that tells you exactly which hotbar slot it landed in:
+
+   | Destination | What to do | Forges |
+   |---|---|---|
+   | **Crystal Fields** | fly into the violet beam | **Gatling Gun** |
+   | **Glowing Groves** | follow the green beam | **Radar Sweep** (`F10`) |
+   | **Floating Isles** | fly **UP** into the sky beam | **Stone Cannon** |
+   | **The Ashlands** | destroy the **Inferno Tower**, then claim the core | **Orbital Annihilation** |
+   | all shards reunited | automatic | **The World** — stop time |
+
+5. Press `F1` at any time for the full ability reference.
+
+> **Easter eggs (try them):** `` ` `` = Flappy Bird mode &nbsp;·&nbsp; `F4` = meteor storm &nbsp;·&nbsp; `\` = mega meteor &nbsp;·&nbsp; `F6` = non-Euclidean space
+
+> **For grading / testing:** `/showcase` (unlock everything instantly), `/skip` (skip tutorial), `/biome <name>` (warp to any biome).
 
 ### Core Controls
 
@@ -62,36 +71,14 @@ step-by-step — teaching one mechanic at a time and waiting for you to do it be
 | `W` `A` `S` `D` | Move |
 | `Space` | Jump |
 | Double-tap `W` | Sprint |
-| Double-tap `Space` | Toggle flight · `V` to cycle modes (after FLIGHT unlocks) |
+| Double-tap `Space` | Toggle flight (after wave 6) · `V` cycles modes |
 | Mouse | Look around |
 | Left Click (hold) | Mine block / fire Gatling Gun |
 | **Right Click** | **Fire the selected weapon** (Sniper, Orbital, Time Stop, Stone Cannon) |
 | `1`–`9` | Select hotbar slot |
-| `Left Alt` | Open backpack (re-equip earned weapons to hotbar) |
+| `Left Alt` | Open backpack (drag weapons to hotbar) |
 | `T` | Open chat (type commands) |
-| `F1` | Open the in-game Master Ability Guide |
-
-### The Voyage — gather shards, forge your arsenal
-
-The crystal shattered; its shards fused to far-off places. You fly out, follow the beam of
-light to each one, and the crystal forges it into a weapon. The route is strictly ordered and
-always sign-posted (beacon + on-screen waypoint + "fly here" banner) so the journey feels
-purposeful, never aimless:
-
-| Destination | What to do | Forges |
-|---|---|---|
-| Start | Quick tutorial → **Flight** + Sniper, Slash, Dash | your travelling kit |
-| **Crystal Fields** | follow the violet beam, fly into it | **Gatling Gun** (the gun) |
-| **Glowing Groves** | follow the green beam | **Radar Sweep** (`F10`, see through walls) |
-| **Floating Isles** | **fly UP** into the sky beam | **Stone Cannon** |
-| **The Ashlands** | destroy the **Inferno Tower**, then claim the core | **Orbital Annihilation** (the laser) |
-| — all shards reunited — | automatic | **The World** — stop time itself |
-
-The Inferno Tower is deliberately the late, hard fight — you'll have the Gatling, Radar, and
-Stone Cannon before you face it. Each weapon appears in your hotbar with a screen-flash and a
-lore line the moment it's forged. Enemies roam the world freely as you travel — fight or fly
-past them, your choice.
-
+| `F1` | Full ability reference card |
 ---
 
 ## Rubric Checklist
