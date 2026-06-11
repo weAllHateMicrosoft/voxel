@@ -253,6 +253,8 @@ class WindowHud {
     void renderWeaponReveal(float screenW, float screenH) {
         Progression.Ability a = win.weaponRevealAbility;
         if (a == null) return;
+        // Wait until the wave unlock card is dismissed — never stack the two.
+        if (win.showUnlockCard) return;
         float t = win.weaponRevealTimer;   // 5.5 → 0
         // fade-in 0.4 s, full 4.5 s, fade-out 0.6 s
         float alpha = t > 5.1f ? (5.5f - t) / 0.4f
@@ -1635,8 +1637,13 @@ class WindowHud {
         }
 
         // ── SEAL COUNT DISPLAY ────────────────────────────────────────────────
-        // Show placed seal count + place cooldown tick only when NOT in drone view.
-        if (!win.player.stand.isInStandPerspective() && !win.player.debugMode) {
+        // Only once the SEAL ability is unlocked AND at least one seal is out —
+        // it used to render "[H] Place [B] Teleport…" from the very first frame
+        // of the game, overlapping everything (playtest complaint).
+        if (!win.player.stand.isInStandPerspective() && !win.player.debugMode
+                && win.player.progression.isUnlocked(Progression.Ability.SEAL)
+                && (win.player.seals.getSealCount() > 0
+                    || !win.player.seals.inFlightSeals.isEmpty())) {
             int placed = win.player.seals.getSealCount();
             int maxSeals = GameConfig.sealMaxCount;
             // Pip row: filled diamond = placed, hollow = available slot
@@ -1909,7 +1916,7 @@ class WindowHud {
         // ── TRY IT prompt — big key chip for the ability just unlocked ───────
         if (!win.showHelp && !win.isPaused && !win.showUnlockCard
                 && win.weaponRevealTimer <= 0f
-                && (win.tryAbility != null || win.tryDoneAbility != null)) {
+                && (win.tryStep != null || win.tryDoneAbility != null)) {
             renderTryPrompt(draw, screenW, screenH);
         }
 
@@ -2013,19 +2020,20 @@ class WindowHud {
     // ─────────────────────────────────────────────────────────────────────────
 
     void renderAbilityHUD(imgui.ImDrawList draw, float screenW, float screenH) {
-        // ── Ability icon layout: two rows, bottom-right ───────────────────────
-        // Row 1 (top): Q  E  F  G  Z  K  J    -  combat abilities + swap
-        // Row 2 (bot): X  H  B  V              -  Stand + Seal + Substitute
-        float iconSize = 28f;
-        float spacing = 6f;
+        // ── Ability icon layout: up to three rows, bottom-right ──────────────
+        // Bigger icons with full label clearance per row — the old 28px grid
+        // had row labels colliding with the icons below (playtest complaint).
+        float iconSize = 38f;
+        float spacing  = 10f;
+        float rowPitch = iconSize + 24f;   // icon + centred label + gap
         int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
         int grey = ImGui.colorConvertFloat4ToU32(0.2f, 0.2f, 0.2f, 0.8f);
 
         // Row 1  -  only show abilities the player has unlocked
         {
             Progression prog = win.player.progression;
-            String[] labels   = {"Q",    "F",     "M",        "O",    "L"   };
-            String[] tooltips = {"Dash", "Slash", "Quagmire", "Grab", "Heal"};
+            String[] labels   = {"Q",    "F",     "M",    "O",    "L"   };
+            String[] tooltips = {"Dash", "Slash", "Mud",  "Grab", "Heal"};
             Progression.Ability[] gates = {
                 Progression.Ability.DASH, Progression.Ability.SLASH,
                 Progression.Ability.QUAGMIRE, Progression.Ability.GRAB,
@@ -2054,19 +2062,13 @@ class WindowHud {
             for (int i = 0; i < labels.length; i++) if (prog.isUnlocked(gates[i])) vis.add(i);
             if (!vis.isEmpty()) {
                 float totalW = vis.size() * iconSize + (vis.size() - 1) * spacing;
-                float startX = screenW - totalW - 14f;
-                float startY = screenH - iconSize * 3f - spacing * 2f - 14f;
+                float startX = screenW - totalW - 16f;
+                float startY = screenH - rowPitch * 3f - 10f;
                 for (int slot = 0; slot < vis.size(); slot++) {
                     int i = vis.get(slot);
                     float x = startX + slot * (iconSize + spacing);
-                    draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                    float fillH = iconSize * fracs[i];
-                    if (fillH > 0.5f)
-                        draw.addRectFilled(x, startY + iconSize - fillH, x + iconSize, startY + iconSize, colors[i], 5f);
-                    draw.addRect(x, startY, x + iconSize, startY + iconSize, black, 5f, 0, 1.5f);
-                    draw.addText(x + 9f, startY + 7f, black, labels[i]);
-                    draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.9f), labels[i]);
-                    draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 0.7f), tooltips[i]);
+                    drawAbilityIcon(draw, x, startY, iconSize, labels[i], tooltips[i],
+                            fracs[i], colors[i], false, black, grey);
                 }
             }
         }
@@ -2086,8 +2088,8 @@ class WindowHud {
             float lightA = win.player.lightning.isCharging()
                     ? 0.6f + (float) Math.sin(glfwGetTime() * 12) * 0.4f : 1.0f;
 
-            String[] labelsR   = {"C",     "I",            "U",         "X"     };
-            String[] tooltipsR = {"Snipe", "Stone Canon",  "Lightning", "Drone" };
+            String[] labelsR   = {"C",     "I",       "U",     "X"     };
+            String[] tooltipsR = {"Snipe", "Cannon",  "Bolt",  "Drone" };
             Progression.Ability[] gatesR = {
                 Progression.Ability.SNIPE, Progression.Ability.STONE_CANON,
                 Progression.Ability.LIGHTNING, Progression.Ability.STAND,
@@ -2108,19 +2110,13 @@ class WindowHud {
             for (int i = 0; i < labelsR.length; i++) if (prog.isUnlocked(gatesR[i])) visR.add(i);
             if (!visR.isEmpty()) {
                 float totalW = visR.size() * iconSize + (visR.size() - 1) * spacing;
-                float startX = screenW - totalW - 14f;
-                float startY = screenH - iconSize * 2f - spacing - 14f;
+                float startX = screenW - totalW - 16f;
+                float startY = screenH - rowPitch * 2f - 10f;
                 for (int slot = 0; slot < visR.size(); slot++) {
                     int i = visR.get(slot);
                     float x = startX + slot * (iconSize + spacing);
-                    boolean g = glowR[i];
-                    draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                    float fillH = iconSize * Math.max(0f, Math.min(1f, fracsR[i]));
-                    if (fillH > 0.5f) draw.addRectFilled(x, startY + iconSize - fillH, x + iconSize, startY + iconSize, colorsR[i], 5f);
-                    draw.addRect(x, startY, x + iconSize, startY + iconSize, g ? colorsR[i] : black, 5f, 0, g ? 2.5f : 1.5f);
-                    draw.addText(x + 9f, startY + 7f, black, labelsR[i]);
-                    draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f,1f,1f,0.9f), labelsR[i]);
-                    draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f,0.8f,0.8f,0.7f), tooltipsR[i]);
+                    drawAbilityIcon(draw, x, startY, iconSize, labelsR[i], tooltipsR[i],
+                            fracsR[i], colorsR[i], glowR[i], black, grey);
                 }
             }
         }
@@ -2161,22 +2157,45 @@ class WindowHud {
             for (int i = 0; i < labelsS.length; i++) if (prog.isUnlocked(gatesS[i])) visS.add(i);
             if (!visS.isEmpty()) {
                 float totalW = visS.size() * iconSize + (visS.size() - 1) * spacing;
-                float startX = screenW - totalW - 14f;
-                float startY = screenH - iconSize - 14f;
+                float startX = screenW - totalW - 16f;
+                float startY = screenH - rowPitch - 10f;
                 for (int slot = 0; slot < visS.size(); slot++) {
                     int i = visS.get(slot);
                     float x = startX + slot * (iconSize + spacing);
-                    boolean g = glowS[i];
-                    draw.addRectFilled(x, startY, x + iconSize, startY + iconSize, grey, 5f);
-                    float fillH = iconSize * Math.max(0f, Math.min(1f, fracsS[i]));
-                    if (fillH > 0.5f) draw.addRectFilled(x, startY + iconSize - fillH, x + iconSize, startY + iconSize, colorsS[i], 5f);
-                    draw.addRect(x, startY, x + iconSize, startY + iconSize, g ? colorsS[i] : black, 5f, 0, g ? 2.5f : 1.5f);
-                    draw.addText(x + 9f, startY + 7f, black, labelsS[i]);
-                    draw.addText(x + 9f, startY + 7f, ImGui.colorConvertFloat4ToU32(1f,1f,1f,0.9f), labelsS[i]);
-                    draw.addText(x, startY + iconSize + 2f, ImGui.colorConvertFloat4ToU32(0.8f,0.8f,0.8f,0.7f), tooltipsS[i]);
+                    drawAbilityIcon(draw, x, startY, iconSize, labelsS[i], tooltipsS[i],
+                            fracsS[i], colorsS[i], glowS[i], black, grey);
                 }
             }
         }
+    }
+
+    /**
+     * One ability icon: rounded slot with cooldown fill, the key letter LARGE
+     * and centred inside, and the ability name centred underneath with full
+     * clearance (nothing overlaps the row below).
+     */
+    private void drawAbilityIcon(imgui.ImDrawList draw, float x, float y, float size,
+                                 String key, String name, float frac, int color,
+                                 boolean glow, int black, int grey) {
+        ImFont font = ImGui.getFont();
+        float base = ImGui.getFontSize();
+        draw.addRectFilled(x, y, x + size, y + size, grey, 6f);
+        float fillH = size * Math.max(0f, Math.min(1f, frac));
+        if (fillH > 0.5f)
+            draw.addRectFilled(x, y + size - fillH, x + size, y + size, color, 6f);
+        draw.addRect(x, y, x + size, y + size, glow ? color : black, 6f, 0, glow ? 3f : 1.5f);
+        // Key letter — large, centred
+        float keySize = base * 1.45f;
+        float kw = ImGui.calcTextSize(key).x * (keySize / base);
+        float kx = x + (size - kw) / 2f, ky = y + (size - keySize) / 2f;
+        draw.addText(font, keySize, kx + 1, ky + 1, black, key);
+        draw.addText(font, keySize, kx, ky,
+                ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.95f), key);
+        // Name — centred below, white with shadow for readability
+        float nw = ImGui.calcTextSize(name).x;
+        float nx = x + (size - nw) / 2f, ny = y + size + 4f;
+        draw.addText(nx + 1, ny + 1, black, name);
+        draw.addText(nx, ny, ImGui.colorConvertFloat4ToU32(0.95f, 0.95f, 0.95f, 0.95f), name);
     }
 
     /** Draws one horizontal row of ability cooldown icons. glow[i] = bright outline (active state). */
@@ -2251,8 +2270,9 @@ class WindowHud {
         ImGui.separator();
         Progression prog = win.player.progression;
         for (Progression.Ability a : prog.allAbilities()) {
-            // TIME and HEAL are showcase-only now — don't advertise locked rows.
-            if ((a == Progression.Ability.TIME || a == Progression.Ability.HEAL)
+            // TIME, HEAL and SWAP are showcase-only now — don't advertise locked rows.
+            if ((a == Progression.Ability.TIME || a == Progression.Ability.HEAL
+                    || a == Progression.Ability.SWAP)
                     && !prog.isUnlocked(a)) continue;
             if (prog.isUnlocked(a)) {
                 helpRow(a.key, a.label + "  -  " + a.desc);
@@ -2513,30 +2533,34 @@ class WindowHud {
         }
 
         // ── Prompt phase ──────────────────────────────────────────────────────
-        Progression.Ability a = win.tryAbility;
-        if (a == null) return;
+        Window.TryStep st = win.tryStep;
+        if (st == null) return;
         float pulse = 0.70f + 0.30f * (float) Math.sin(glfwGetTime() * 4.5);
 
         String header = "NEW POWER  -  TRY IT!";
-        float headerSize = base * 1.3f;
+        float headerSize = base * 1.35f;
         float hw = ImGui.calcTextSize(header).x * (headerSize / base);
 
-        String key = a.key;
-        float keySize = base * 1.9f;
+        String key = st.chip;
+        float keySize = base * 2.4f;
         float keyTxtW = ImGui.calcTextSize(key).x * (keySize / base);
-        float chipW = keyTxtW + 40f, chipH = keySize + 18f;
+        float chipW = keyTxtW + 52f, chipH = keySize + 22f;
 
-        String name = a.label;
-        float nameSize = base * 1.5f;
+        String name = st.headline;
+        float nameSize = base * 1.7f;
         float nw = ImGui.calcTextSize(name).x * (nameSize / base);
 
-        float maxW = Math.max(hw, Math.max(chipW, nw));
-        float pad = 26f;
-        float panelH = 14f + headerSize + 10f + chipH + 10f + nameSize + 14f;
+        String det = st.detail;
+        float detSize = base * 1.15f;
+        float dw = ImGui.calcTextSize(det).x * (detSize / base);
+
+        float maxW = Math.max(Math.max(hw, dw), Math.max(chipW, nw));
+        float pad = 30f;
+        float panelH = 14f + headerSize + 10f + chipH + 12f + nameSize + 8f + detSize + 16f;
         draw.addRectFilled(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
-                ImGui.colorConvertFloat4ToU32(0.03f, 0.05f, 0.10f, 0.72f), 12f);
+                ImGui.colorConvertFloat4ToU32(0.03f, 0.05f, 0.10f, 0.80f), 12f);
         draw.addRect(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
-                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 0.4f * pulse + 0.2f), 12f, 0, 2f);
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 0.4f * pulse + 0.2f), 12f, 0, 2.5f);
 
         float yy = top + 14f;
         draw.addText(font, headerSize, cx - hw / 2 + 1, yy + 1, shadow, header);
@@ -2545,19 +2569,24 @@ class WindowHud {
         yy += headerSize + 10f;
 
         float x0 = cx - chipW / 2f;
-        draw.addRectFilled(x0, yy + 4f, x0 + chipW, yy + chipH + 4f,
-                ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.06f, 0.95f), 9f);
+        draw.addRectFilled(x0, yy + 5f, x0 + chipW, yy + chipH + 5f,
+                ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.06f, 0.95f), 10f);
         draw.addRectFilled(x0, yy, x0 + chipW, yy + chipH,
-                ImGui.colorConvertFloat4ToU32(0.12f, 0.14f, 0.24f, 0.97f), 9f);
+                ImGui.colorConvertFloat4ToU32(0.12f, 0.14f, 0.24f, 0.97f), 10f);
         draw.addRect(x0, yy, x0 + chipW, yy + chipH,
-                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.30f, pulse), 9f, 0, 2.5f);
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.30f, pulse), 10f, 0, 3f);
         draw.addText(font, keySize, cx - keyTxtW / 2, yy + (chipH - keySize) / 2f,
                 ImGui.colorConvertFloat4ToU32(1.0f, 0.96f, 0.80f, 1f), key);
-        yy += chipH + 10f;
+        yy += chipH + 12f;
 
         draw.addText(font, nameSize, cx - nw / 2 + 1, yy + 1, shadow, name);
         draw.addText(font, nameSize, cx - nw / 2, yy,
                 ImGui.colorConvertFloat4ToU32(0.92f, 0.95f, 1.0f, 1f), name);
+        yy += nameSize + 8f;
+
+        draw.addText(font, detSize, cx - dw / 2 + 1, yy + 1, shadow, det);
+        draw.addText(font, detSize, cx - dw / 2, yy,
+                ImGui.colorConvertFloat4ToU32(0.75f, 0.88f, 1.0f, 1f), det);
     }
 
     /**
@@ -2630,6 +2659,9 @@ class WindowHud {
      * is what makes the voyage impossible to get lost on.
      */
     void renderVoyageHUD(imgui.ImDrawList draw, Camera camera, float screenW, float screenH) {
+        // The FLIGHT lesson owns the screen — all voyage messaging waits until
+        // the player is actually airborne (focused "learn to fly" round).
+        if (win.tryStep != null && win.tryStep.ability == Progression.Ability.FLIGHT) return;
         int shadow = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f);
 
         // ── Forge / directive reveal (big, centred, fades over its last second) ──

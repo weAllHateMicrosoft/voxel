@@ -173,19 +173,19 @@ public class TutorialManager {
         steps.add(new Step("SLASH",
             "Your blade. Swing it!", "F",
             c -> c.player.progression.unlock(Progression.Ability.SLASH),
-            c -> usedCooldown(c, c.player.attacks.getMeleeCooldownFrac()), 15f));
+            c -> usedCooldown(c, c.player.attacks.getMeleeCooldownFrac()), 8f));
 
         // 3 ── DASH  —  grants on enter
         steps.add(new Step("DASH",
             "A burst of speed. Try it!", "Q",
             c -> c.player.progression.unlock(Progression.Ability.DASH),
-            c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 12f));
+            c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 8f));
 
         // 4 ── SNIPER  —  the ranged weapon already in slot 1
         steps.add(new Step("SNIPER",
             "Hold to charge...  release to FIRE!", "HOLD LEFT-CLICK",
             null,
-            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 14f));
+            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 10f));
 
         // 5 ── BATTLE BEGINS — auto-advances and lets finish() turn waves on.
         // FLIGHT is granted later, when the Voyage opens after wave 6.

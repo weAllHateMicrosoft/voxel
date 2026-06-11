@@ -71,9 +71,9 @@ public class Progression {
         // HEAL (hold L) is out of the natural run — enemies drop HOTDOGS now;
         // walking over one heals +25. Still available via /showcase.
         /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
-        /* wave 4 */ { Ability.BLINK, Ability.SWAP },               // escape kit
-        // TIME (dilation, R/Y) is deliberately out of the natural run — too many
-        // keybinds overwhelmed playtesters. Still available via /showcase.
+        /* wave 4 */ { Ability.BLINK },                             // escape
+        // TIME (dilation) and SWAP (position swap) are deliberately out of the
+        // natural run — too many keybinds overwhelmed playtesters. /showcase only.
         /* wave 5 */ { Ability.PILLAR, Ability.CANNONBALL },        // launch yourself
         /* wave 6 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL }, // tactician's toolkit
         // ── THE ASCENSION — the crystal stops holding back. God-tier weapons. ──

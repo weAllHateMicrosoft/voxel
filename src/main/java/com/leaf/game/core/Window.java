@@ -145,11 +145,35 @@ public class Window {
     float               weaponRevealTimer   = 0f;
     private final java.util.ArrayDeque<Progression.Ability> weaponRevealQueue = new java.util.ArrayDeque<>();
 
-    // ── TRY IT prompts — after each unlock card, one big non-blocking prompt per
-    //    new ability. Completes (chime + flash + NICE!) the moment the player
-    //    actually uses the ability; times out quietly otherwise. ──────────────
-    private final java.util.ArrayDeque<Progression.Ability> tryQueue = new java.util.ArrayDeque<>();
-    Progression.Ability tryAbility    = null;   // currently prompted ability
+    // ── TRY IT prompts — after each unlock card, big non-blocking guided steps
+    //    per new ability. Each completes (chime + flash + NICE!) the moment the
+    //    player actually does it; times out quietly otherwise. Hard-to-grasp
+    //    abilities (drone / seal / substitute) get multi-step mini-tutorials. ──
+    static final class TryStep {
+        final Progression.Ability ability;  // owning power (celebration label)
+        final String chip;                  // big key chip text ("HOLD G", "X"…)
+        final String headline;              // main instruction (large)
+        final String detail;                // one line of guidance (smaller)
+        final int    detect;                // detector id — see tryStepDone()
+        final float  timeout;
+        TryStep(Progression.Ability ability, String chip, String headline,
+                String detail, int detect, float timeout) {
+            this.ability = ability; this.chip = chip; this.headline = headline;
+            this.detail = detail; this.detect = detect; this.timeout = timeout;
+        }
+    }
+    // Detector ids for TryStep.detect
+    static final int TRY_COOLDOWN_DIP = 0;  // ability's ready-fraction dipped
+    static final int TRY_STAND_OUT    = 1;  // drone deployed
+    static final int TRY_STAND_PILOT  = 2;  // entered drone perspective
+    static final int TRY_SEAL_PLACED  = 3;  // a seal is out
+    static final int TRY_SEAL_WARP    = 4;  // teleported to a seal
+    static final int TRY_SUB_PRIMED   = 5;  // substitute held primed
+    static final int TRY_FLYING       = 6;  // flight mode entered
+    static final int TRY_INFO_ONLY    = 7;  // no detection — timeout advances
+
+    private final java.util.ArrayDeque<TryStep> tryQueue = new java.util.ArrayDeque<>();
+    TryStep             tryStep       = null;   // currently shown step
     float               tryTimer      = 0f;     // countdown until silent skip
     Progression.Ability tryDoneAbility = null;  // shows the NICE! celebration
     float               tryDoneTimer  = 0f;
@@ -1205,8 +1229,6 @@ public class Window {
             case LIGHTNING  -> player.lightning.getCooldownFrac();
             case GRAB       -> player.grab.getCooldownFrac();
             case BLINK      -> player.abilities.getBlinkCooldownFrac();
-            case SWAP       -> todoSwapCooldown <= 0f ? 1f
-                    : 1f - todoSwapCooldown / GameConfig.todoCooldown;
             case PILLAR     -> player.abilities.getPillarCooldownFrac();
             case CANNONBALL -> player.abilities.getCannonCooldownFrac();
             case SNIPE      -> player.attacks.getSnipeIconFrac();
@@ -1214,18 +1236,90 @@ public class Window {
         };
     }
 
-    /** True the moment the prompted ability is actually used. */
-    private boolean tryUsedDetect(Progression.Ability a, float liveFrac) {
-        // Boolean-state abilities first.
+    /** Live "watched value" for a step (snapshot-dip detectors). */
+    private float tryLiveFrac(TryStep s) {
+        if (s.detect == TRY_SEAL_WARP) return player.seals.getTeleportCooldownFrac();
+        return tryFracFor(s.ability);
+    }
+
+    /** True the moment the step's goal is achieved. */
+    private boolean tryStepDone(TryStep s, float liveFrac) {
+        return switch (s.detect) {
+            case TRY_STAND_OUT   -> player.stand.isDeployed();
+            case TRY_STAND_PILOT -> player.stand.isInStandPerspective();
+            case TRY_SEAL_PLACED -> player.seals.getSealCount() > 0
+                                 || !player.seals.inFlightSeals.isEmpty();
+            case TRY_SUB_PRIMED  -> substitutePrimed;
+            case TRY_FLYING      -> player.debugMode;   // debugMode == flight mode
+            case TRY_INFO_ONLY   -> false;              // timeout advances it
+            default              -> liveFrac < trySnapshot - 0.15f;  // cooldown dip
+        };
+    }
+
+    /**
+     * Build the guided TRY IT steps for a freshly unlocked ability.
+     * SLASH and DASH are skipped — the opening tutorial already taught them.
+     * Hard-to-explain powers get short multi-step walkthroughs.
+     */
+    private void queueTryStepsFor(Progression.Ability a) {
         switch (a) {
-            case STAND:      return player.stand.isDeployed();
-            case SEAL:       return player.seals.getSealCount() > 0
-                                  || !player.seals.inFlightSeals.isEmpty();
-            case SUBSTITUTE: return false;  // no clean signal — timeout advances it
-            default: break;
+            case SLASH, DASH -> { /* already taught in the opening tutorial */ }
+            case QUAGMIRE -> tryQueue.add(new TryStep(a, "M",
+                    "MUD WAVE  —  press  M",
+                    "Aim at an enemy on the ground  —  the mud TRAPS them.",
+                    TRY_COOLDOWN_DIP, 9f));
+            case LIGHTNING -> tryQueue.add(new TryStep(a, "U",
+                    "LIGHTNING  —  press  U",
+                    "A full-power bolt strikes the enemy in your crosshair.",
+                    TRY_COOLDOWN_DIP, 9f));
+            case GRAB -> tryQueue.add(new TryStep(a, "O",
+                    "GRAB & SLAM  —  press  O",
+                    "GET CLOSE to an enemy first  —  then grab and SLAM them!",
+                    TRY_COOLDOWN_DIP, 12f));
+            case BLINK -> tryQueue.add(new TryStep(a, "E",
+                    "BLINK  —  press  E",
+                    "You teleport to WHERE YOU ARE LOOKING. Aim far, then blink.",
+                    TRY_COOLDOWN_DIP, 9f));
+            case PILLAR -> tryQueue.add(new TryStep(a, "K",
+                    "STONE PILLAR  —  press  K",
+                    "Stand on ROCKY / STONE ground  —  a pillar launches you up!",
+                    TRY_COOLDOWN_DIP, 12f));
+            case CANNONBALL -> tryQueue.add(new TryStep(a, "HOLD  G",
+                    "CANNONBALL  —  hold  G",
+                    "Hold to charge... release to LAUNCH yourself like a cannonball!",
+                    TRY_COOLDOWN_DIP, 12f));
+            case STAND -> {
+                tryQueue.add(new TryStep(a, "X",
+                        "COMBAT DRONE  —  press  X",
+                        "Your drone deploys beside you and fires at enemies on its own.",
+                        TRY_STAND_OUT, 12f));
+                tryQueue.add(new TryStep(a, "TAB",
+                        "PILOT IT  —  press  TAB",
+                        "See through the drone's eyes. Press TAB again to come back.",
+                        TRY_STAND_PILOT, 9f));
+            }
+            case SEAL -> {
+                tryQueue.add(new TryStep(a, "H",
+                        "MINATO'S SEAL  —  press  H",
+                        "Throw a glowing seal  —  it sticks wherever it lands.",
+                        TRY_SEAL_PLACED, 12f));
+                tryQueue.add(new TryStep(a, "B",
+                        "NOW press  B",
+                        "You TELEPORT straight to your seal. Place them anywhere!",
+                        TRY_SEAL_WARP, 9f));
+            }
+            case SUBSTITUTE -> {
+                tryQueue.add(new TryStep(a, "HOLD  V",
+                        "SUBSTITUTE  —  hold  V",
+                        "Keep holding  —  you are braced for the next enemy hit.",
+                        TRY_SUB_PRIMED, 9f));
+                tryQueue.add(new TryStep(a, "HOLD  V",
+                        "NOW LET AN ENEMY HIT YOU",
+                        "The hit is absorbed  —  you blink away and your decoy EXPLODES.",
+                        TRY_INFO_ONLY, 6f));
+            }
+            default -> { /* weapons get the WEAPON FORGED card instead */ }
         }
-        // Cooldown-dip detection: ready fraction fell below the entry snapshot.
-        return liveFrac < trySnapshot - 0.15f;
     }
 
     /**
@@ -2264,14 +2358,27 @@ public class Window {
                             enemyManager.wavesEnabled    = false;  // training done — free to explore
                             enemyManager.freeExploreMode = true;   // ambient enemies roam the world
                             voyageStarted = true;
-                            // Don't carry stale ground-combat TRY IT prompts into the sky.
+                            // Drop stale ground-combat prompts; this round is ALL
+                            // about flying. One huge unmissable prompt until the
+                            // player actually takes off.
                             tryQueue.clear();
-                            tryAbility = null;
+                            tryStep = null;
+                            tryQueue.add(new TryStep(Progression.Ability.FLIGHT,
+                                    "SPACE  x2",
+                                    "DOUBLE-TAP  SPACE  —  FLY!",
+                                    "Hold SPACE to climb. Then follow the BEAM OF LIGHT to the shard.",
+                                    TRY_FLYING, 90f));
                         }
                         if (voyageStarted && voyage.active) voyage.update(deltaTime);
                         if (voyageStarted) renderVoyageBeacon(rawDeltaTime);
-                        if (voyageMsgTimer > 0f) voyageMsgTimer = Math.max(0f, voyageMsgTimer - rawDeltaTime);
-                        if (weaponRevealTimer > 0f) {
+                        // Voyage directives hold while the FLIGHT lesson is on screen,
+                        // so the "fly to X" message still plays AFTER takeoff.
+                        if (voyageMsgTimer > 0f
+                                && !(tryStep != null && tryStep.ability == Progression.Ability.FLIGHT))
+                            voyageMsgTimer = Math.max(0f, voyageMsgTimer - rawDeltaTime);
+                        // The reveal waits its turn while the wave unlock card is up,
+                        // so the two full-screen cards never stack on each other.
+                        if (weaponRevealTimer > 0f && !showUnlockCard) {
                             weaponRevealTimer = Math.max(0f, weaponRevealTimer - rawDeltaTime);
                             // Current card done → show the next queued reveal (if any)
                             if (weaponRevealTimer <= 0f && !weaponRevealQueue.isEmpty()) {
@@ -2308,11 +2415,13 @@ public class Window {
                                 enemyManager.beginNextWave();        // clear the awaiting flag
                                 gameEnded = true;
                             } else {
-                                // Normal wave: unlock this tier and ALWAYS show the card
-                                // (abilities reset each run, so there's always something new).
+                                // Normal wave: unlock this tier. Card only when something
+                                // is genuinely NEW — wave 1 (Slash/Dash, already taught by
+                                // the tutorial) flows straight into the next wave.
                                 java.util.List<Progression.Ability> gained =
                                         player.progression.unlockForWave(waveJustCleared);
-                                if (gained.isEmpty()) gained = player.progression.abilitiesForWave(waveJustCleared);
+                                gained.removeIf(g -> g == Progression.Ability.SLASH
+                                                  || g == Progression.Ability.DASH);
                                 if (gained.isEmpty()) {
                                     enemyManager.beginNextWave();   // no tier (shouldn't happen ≤ ending)
                                 } else {
@@ -2343,41 +2452,47 @@ public class Window {
                             if (en && !lastCardSpace) {
                                 showUnlockCard = false;
                                 lastPracticeEnter = true;
-                                // Queue a big TRY IT prompt for each fresh power —
+                                // Queue guided TRY IT steps for each fresh power —
                                 // the next wave is already coming, so they get to
                                 // try it on live targets immediately.
                                 tryQueue.clear();
-                                tryQueue.addAll(unlockCardAbilities);
+                                tryStep = null;
+                                for (Progression.Ability ab : unlockCardAbilities)
+                                    queueTryStepsFor(ab);
                                 enemyManager.beginNextWave();
                                 enemyManager.wavesEnabled = true;
                             }
                             lastCardSpace = en;
                         }
 
-                        // ── TRY IT prompt tick ───────────────────────────────
+                        // ── TRY IT step tick ─────────────────────────────────
                         if (tryDoneTimer > 0f) {
                             tryDoneTimer -= rawDeltaTime;
                             if (tryDoneTimer <= 0f) tryDoneAbility = null;
                         }
-                        if (tryAbility == null && tryDoneTimer <= 0f && !tryQueue.isEmpty()
+                        if (tryStep == null && tryDoneTimer <= 0f && !tryQueue.isEmpty()
                                 && !showUnlockCard && practiceAbility == null) {
-                            tryAbility  = tryQueue.poll();
-                            tryTimer    = 14f;
+                            tryStep     = tryQueue.poll();
+                            tryTimer    = tryStep.timeout;
                             trySnapInit = false;
                         }
-                        if (tryAbility != null) {
+                        if (tryStep != null) {
                             tryTimer -= rawDeltaTime;
-                            float frac = tryFracFor(tryAbility);
+                            float frac = tryLiveFrac(tryStep);
                             if (!trySnapInit) { trySnapshot = frac; trySnapInit = true; }
-                            boolean used = tryUsedDetect(tryAbility, frac);
-                            if (used) {
+                            if (tryStepDone(tryStep, frac)) {
                                 AudioManager.play("cystal_click", 0.9f);
                                 ScreenEffectManager.INSTANCE.flash(0.45f, 1.0f, 0.6f, 0.30f, 0.35f);
-                                tryDoneAbility = tryAbility;
-                                tryDoneTimer   = 1.4f;
-                                tryAbility     = null;
+                                // Celebrate only when this was the LAST step of its
+                                // ability (multi-step walkthroughs flow straight on).
+                                TryStep peek = tryQueue.peek();
+                                if (peek == null || peek.ability != tryStep.ability) {
+                                    tryDoneAbility = tryStep.ability;
+                                    tryDoneTimer   = 1.4f;
+                                }
+                                tryStep = null;
                             } else if (tryTimer <= 0f) {
-                                tryAbility = null;   // timed out — move on quietly
+                                tryStep = null;   // timed out — move on quietly
                             }
                         }
 
@@ -6153,12 +6268,13 @@ public class Window {
     /** The whole 3D set-piece: gyroscope, implosion rings, core, embers, laser. */
     private void renderOrbital3D(com.leaf.game.render.Shader shader,
                                  Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
-        if (orbTorus == null) {
-            orbTorus  = orbBuildTorus(0.05f, 72, 8);
-            orbSphere = orbBuildSphere(14, 20);
-            orbCyl    = orbBuildCylinder(28);
-            orbCube   = orbBuildCube();
-        }
+        // Each mesh is checked individually: other effects (beacon, radar,
+        // domain) lazily build SOME of these first, and a combined null-check
+        // on orbTorus alone used to skip orbCyl/orbCube → NPE mid-laser.
+        if (orbTorus  == null) orbTorus  = orbBuildTorus(0.05f, 72, 8);
+        if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
+        if (orbCyl    == null) orbCyl    = orbBuildCylinder(28);
+        if (orbCube   == null) orbCube   = orbBuildCube();
         float t  = orbitalT;
         float ex = orbEpiX, ey = orbEpiY, ez = orbEpiZ;
         Matrix4f pv = new Matrix4f(projection).mul(view);
