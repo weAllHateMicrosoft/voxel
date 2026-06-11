@@ -35,16 +35,120 @@ public class CommandHandler {
         switch (cmd) {
             case "help":
                 win.chatHistory.add("[System] Commands:");
+                win.chatHistory.add("  /showcase - DEMO MODE: all abilities, godmode, infinite mana, all items.");
+                win.chatHistory.add("  /showcase <combat|horde|volcanic|sakura|off> - Stage a demo scene.");
                 win.chatHistory.add("  /skip - Skip onboarding AND all wave practices.");
-                win.chatHistory.add("  /spider [spawn|ride|laser] - Spawn, mount, or target spiders.");
+                win.chatHistory.add("  /spawn <spider|tower|treant> - Spawn an entity.");
+                win.chatHistory.add("  /spider [ride|laser] - Mount or target spiders.");
                 win.chatHistory.add("  /give <block_name> [amt] - Give specific block.");
                 win.chatHistory.add("  /give all [amt] - Fill hotbar with all building blocks.");
                 win.chatHistory.add("  /god - Toggle invincibility.");
                 win.chatHistory.add("  /explore - Toggle free-explore (ambient spawns + tower sites).");
-                win.chatHistory.add("  /spawntower - Spawn an Inferno Tower just ahead of you.");
                 win.chatHistory.add("  /biome [name] - List biomes or teleport to one.");
                 break;
 
+            case "showcase": {
+                String scene = parts.length >= 2 ? parts[1].toLowerCase() : "";
+
+                if (scene.equals("off")) {
+                    win.showcaseMode = false;
+                    win.immunityTimer = 0f;
+                    win.chatHistory.add("[SHOWCASE] Demo mode OFF.");
+                    break;
+                }
+
+                if (scene.equals("combat") || scene.equals("horde")) {
+                    int count = scene.equals("horde") ? 14 : 7;
+                    float radius = 12f;
+                    Enemy.Type[] mix = { Enemy.Type.ZOMBIE, Enemy.Type.THROWER,
+                                         Enemy.Type.SLIME, Enemy.Type.GOLEM };
+                    for (int i = 0; i < count; i++) {
+                        double ang = (Math.PI * 2 * i) / count;
+                        int bx = (int) Math.round(win.player.position.x + Math.cos(ang) * radius);
+                        int bz = (int) Math.round(win.player.position.z + Math.sin(ang) * radius);
+                        win.enemyManager.spawnAt(bx + 0.5f, surfaceYAt(bx, bz) + 0.5f,
+                                                 bz + 0.5f, mix[i % mix.length]);
+                    }
+                    win.chatHistory.add("[SHOWCASE] Spawned " + count + " enemies around you - go wild.");
+                    break;
+                }
+
+                // A biome name → warp there (+ stage a tower in volcanic).
+                com.leaf.game.world.gen.biome.Biome bScene = parseBiomeName(scene);
+                if (bScene != null) {
+                    int dist = teleportToBiome(bScene);
+                    if (dist < 0) {
+                        win.chatHistory.add("[SHOWCASE] No " + scene + " biome within range.");
+                        break;
+                    }
+                    win.chatHistory.add("[SHOWCASE] Warped to " + scene + " (" + dist + " blocks).");
+                    if (bScene == com.leaf.game.world.gen.biome.Biome.VOLCANIC) {
+                        int bx = (int) win.player.position.x + 9;
+                        int bz = (int) win.player.position.z;
+                        win.enemyManager.spawnAt(bx + 0.5f, surfaceYAt(bx, bz) + 0.5f,
+                                                 bz + 0.5f, Enemy.Type.INFERNO_TOWER);
+                        win.chatHistory.add("[SHOWCASE] Inferno Tower erected - it erupts lava slimes.");
+                    }
+                    break;
+                }
+
+                if (!scene.isEmpty() && !scene.equals("on") && !scene.equals("arm")) {
+                    win.chatHistory.add("[SHOWCASE] Usage: /showcase [combat|horde|volcanic|sakura|<biome>|off]");
+                    break;
+                }
+
+                // Default (no arg / "on" / "arm") → arm the whole demo loadout.
+                win.player.progression.unlockAll();
+                win.showcaseMode = true;
+                win.immunityTimer = 99999f;
+
+                // Special tool items first so they're guaranteed a hotbar slot.
+                win.inventory.addBlockAmount(Block.GATLING_GUN, 1);   win.addBlockToHotbar(Block.GATLING_GUN);
+                win.inventory.addBlockAmount(Block.GRAPPLING_HOOK, 1); win.addBlockToHotbar(Block.GRAPPLING_HOOK);
+                win.inventory.addBlockAmount(Block.TELESCOPE, 1);     win.addBlockToHotbar(Block.TELESCOPE);
+                win.inventory.addBlockAmount(Block.TORCH, 256);       win.addBlockToHotbar(Block.TORCH);
+                for (Block b : Block.values()) {
+                    if (b == Block.AIR) continue;
+                    win.inventory.addBlockAmount(b, 999);
+                    win.addBlockToHotbar(b);
+                }
+
+                // Skip onboarding & practice so nothing interrupts the demo.
+                if (win.tutorial != null) win.tutorial.skip();
+                win.practiceQueue.clear();
+                win.practiceAbility = null;
+                win.practiceSteps = null;
+                win.practiceStepDone = false;
+                win.practiceCelebration = 0f;
+                win.showUnlockCard = false;
+                if (win.enemyManager != null) {
+                    win.enemyManager.getEnemies().removeIf(e -> e.type == Enemy.Type.DUMMY);
+                    // Waves OFF so nothing piles on mid-demo; you control fights via
+                    // /showcase combat. Free-explore keeps the world feeling alive.
+                    win.enemyManager.wavesEnabled = false;
+                    win.enemyManager.freeExploreMode = true;
+                }
+
+                win.chatHistory.add("[SHOWCASE] ARMED: all abilities, infinite mana, godmode, all items.");
+                win.chatHistory.add("[SHOWCASE] Scenes: /showcase combat | horde | volcanic | sakura | off");
+                win.chatHistory.add("[SHOWCASE] Wow keys: Z=Kamui  R=slow-mo  X=drone  dbl-Space=fly  C=charge bolt");
+                break;
+            }
+            case "treant": {
+                // Find the surface slightly ahead of the player to spawn the tree
+                int bx = (int) Math.floor(win.player.position.x) + 6;
+                int bz = (int) Math.floor(win.player.position.z) + 6;
+                int sy = (int) Math.floor(win.player.position.y);
+                for (int y = Math.min((int) win.player.position.y + 16, com.leaf.game.world.Chunk.HEIGHT - 2); y >= 2; y--) {
+                    if (win.world.getBlock(bx, y, bz).isSolid()) {
+                        sy = y + 1;
+                        break;
+                    }
+                }
+                win.enemyManager.spawnAt(bx + 0.5f, sy, bz + 0.5f, Enemy.Type.TREANT);
+                win.chatHistory.add("[System]: Disguised Treant spawned! It looks like an ordinary Oak Tree. Attack or walk near it to provoke it!");
+                break;
+            }
             case "biome": {
                 if (parts.length < 2) {
                     win.chatHistory.add("[Biomes] volcanic sakura mushroom crystal autumn");
@@ -94,20 +198,46 @@ public class CommandHandler {
                         : "[System]: Free-explore DISABLED.");
                 break;
 
-            case "spawntower": {
-                // Drop a tower on the surface ~12 blocks ahead (+X) of the player.
-                int bx = (int) Math.floor(win.player.position.x) + 12;
-                int bz = (int) Math.floor(win.player.position.z);
+            case "spawn": {
+                if (parts.length < 2) {
+                    win.chatHistory.add("[System]: Usage: /spawn <tower|treant|spider>");
+                    break;
+                }
+                String entity = parts[1].toLowerCase();
+
+                int bx = (int) Math.floor(win.player.position.x) + 6;
+                int bz = (int) Math.floor(win.player.position.z) + 6;
                 int sy = -1;
-                for (int y = Math.min((int) win.player.position.y + 24, com.leaf.game.world.Chunk.HEIGHT - 2);
-                     y >= 2; y--) {
+                for (int y = Math.min((int) win.player.position.y + 24, com.leaf.game.world.Chunk.HEIGHT - 2); y >= 2; y--) {
                     if (win.world.getBlock(bx, y, bz).isSolid()) { sy = y + 1; break; }
                 }
-                if (sy < 0) {
-                    win.chatHistory.add("[System]: No solid ground found nearby - move and retry.");
-                } else {
+                if (sy < 0) sy = (int) win.player.position.y; // fallback
+
+                if (entity.equals("tower")) {
                     win.enemyManager.spawnAt(bx + 0.5f, sy, bz + 0.5f, Enemy.Type.INFERNO_TOWER);
-                    win.chatHistory.add("[System]: Inferno Tower erected! It spawns lava slimes until destroyed.");
+                    win.chatHistory.add("[System]: Inferno Tower erected!");
+                } else if (entity.equals("treant")) {
+                    win.enemyManager.spawnAt(bx + 0.5f, sy, bz + 0.5f, Enemy.Type.TREANT);
+                    win.chatHistory.add("[System]: Disguised Treant spawned! It looks like an ordinary tree until disturbed.");
+                } else if (entity.equals("spider")) {
+                    int legs = 6;
+                    float scale = 1.0f;
+                    if (parts.length >= 3) {
+                        try { legs = Integer.parseInt(parts[2]); } catch (Exception ignored) {}
+                    }
+                    if (parts.length >= 4) {
+                        try { scale = Float.parseFloat(parts[3]); } catch (Exception ignored) {}
+                    }
+                    Enemy e = win.enemyManager.spawnAt(bx + 0.5f, sy, bz + 0.5f, Enemy.Type.SPIDER);
+                    if (e instanceof com.leaf.game.entity.spider.SpiderEnemy) {
+                        com.leaf.game.entity.spider.SpiderEnemy se = (com.leaf.game.entity.spider.SpiderEnemy) e;
+                        se.customLegCount = legs;
+                        se.customScale = scale;
+                        se.mode = com.leaf.game.entity.spider.SpiderEnemy.BehaviorMode.IDLE;
+                    }
+                    win.chatHistory.add("[System]: Spawned a friendly spider.");
+                } else {
+                    win.chatHistory.add("[System]: Unknown entity. Use /spawn <tower|treant|spider>");
                 }
                 break;
             }
@@ -281,6 +411,37 @@ public class CommandHandler {
                 win.chatHistory.add("[System]: Unknown command. Type '/help' for options.");
                 break;
         }
+    }
+
+    /** Highest solid surface +1 at (bx,bz), scanning down from just above the player. */
+    private int surfaceYAt(int bx, int bz) {
+        for (int y = Math.min((int) win.player.position.y + 24, com.leaf.game.world.Chunk.HEIGHT - 2);
+             y >= 2; y--) {
+            if (win.world.getBlock(bx, y, bz).isSolid()) return y + 1;
+        }
+        return (int) win.player.position.y;
+    }
+
+    /** Warp the player to the nearest patch of {@code target}. Returns the distance in
+     *  blocks, or -1 if none was found within range. Mirrors the {@code /biome} search. */
+    private int teleportToBiome(com.leaf.game.world.gen.biome.Biome target) {
+        int px = (int) win.player.position.x;
+        int pz = (int) win.player.position.z;
+        int step = 160, range = 4000;
+        int foundX = Integer.MIN_VALUE, foundZ = Integer.MIN_VALUE;
+        float bestDistSq = Float.MAX_VALUE;
+        for (int dx = -range; dx <= range; dx += step) {
+            for (int dz = -range; dz <= range; dz += step) {
+                if (win.worldGen.biomeAt(px + dx, pz + dz) == target) {
+                    float dSq = dx * dx + (float) dz * dz;
+                    if (dSq < bestDistSq) { bestDistSq = dSq; foundX = px + dx; foundZ = pz + dz; }
+                }
+            }
+        }
+        if (foundX == Integer.MIN_VALUE) return -1;
+        int surfaceY = (int) win.worldGen.surfaceYEstimate(foundX, foundZ) + 4;
+        win.player.position.set(foundX + 0.5f, surfaceY, foundZ + 0.5f);
+        return (int) Math.sqrt(bestDistSq);
     }
 
     private static com.leaf.game.world.gen.biome.Biome parseBiomeName(String name) {

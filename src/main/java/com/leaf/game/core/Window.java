@@ -123,6 +123,11 @@ public class Window {
     float        immunityTimer = 0f;
     static final float REVIVAL_IMMUNITY_SECS = 4f;
 
+    /** Showcase / demo mode (toggled by {@code /showcase}). While on: mana is kept
+     *  topped, health stays full and the player is invincible, so every ability can
+     *  be demoed back-to-back without fizzling or dying. Set in CommandHandler. */
+    public boolean showcaseMode = false;
+
     // ── PRACTICE SESSION — multi-step hands-on ability tutorial ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
@@ -1424,6 +1429,13 @@ public class Window {
             }
             // Tick immunity — block incoming damage while it's active.
             if (immunityTimer > 0f) immunityTimer -= rawDeltaTime;
+            // Showcase/demo mode: never run out of mana, never die — so the user can
+            // chain every ability for the teacher without interruption.
+            if (showcaseMode && player != null) {
+                player.mana   = player.maxMana;
+                player.health = player.maxHealth;
+                immunityTimer = Math.max(immunityTimer, 5f);
+            }
             if (damageFlashTimer > 0f) damageFlashTimer -= rawDeltaTime;
             float deltaTime = rawDeltaTime * tc.getScale()
                     * ScreenEffectManager.INSTANCE.getHitStopScale();
@@ -4164,6 +4176,11 @@ public class Window {
                                 }
                                 continue; // Skip the humanoid animation rendering below!
                             }
+                            if (enemy.type == Enemy.Type.TREANT) {
+                                TreantRenderer.render((TreantEnemy) enemy, shader, projection, view);
+                                continue;
+                            }
+                            
                             float flashF = enemy.hitFlashTimer > 0f ? (enemy.hitFlashTimer / 0.18f) : 0f;
                             float alpha  = enemy.alive ? 1.0f : flashF;
                             if (alpha < 0.02f) {
@@ -4176,9 +4193,11 @@ public class Window {
                             com.leaf.game.anim.AnimModel targetModel =
                                     (enemy.type == Enemy.Type.SLIME    && slimeAnimModel != null) ? slimeAnimModel
                                             : (enemy.type == Enemy.Type.LAVA_SLIME    && lavaSlimeAnimModel    != null) ? lavaSlimeAnimModel
-                                            : (enemy.type == Enemy.Type.INFERNO_TOWER && infernoTowerAnimModel != null) ? infernoTowerAnimModel
-                                            : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
-                                              : enemyAnimModel;
+                                              : (enemy.type == Enemy.Type.INFERNO_TOWER && infernoTowerAnimModel != null) ? infernoTowerAnimModel
+                                                : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
+                                                  : null; // Removed choppy enemy model fallback
+
+                            if (targetModel == null) continue; // Skip rendering if no model exists (falls through to the capsule fallback)
 
                             com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
                                     enemy.id, id -> {
@@ -5025,7 +5044,7 @@ public class Window {
                 && pz + 0.3f > bz && pz - 0.3f < bz + 1;
     }
 
-    private Mesh getItemMesh(Block block) {
+    public Mesh getItemMesh(Block block) {
         return itemMeshes.computeIfAbsent(block, b -> {
             List<Float>   verts   = new ArrayList<>();
             List<Integer> idx     = new ArrayList<>();
@@ -6492,100 +6511,108 @@ public class Window {
 
         float range = GameConfig.gatlingRange;
         Vector3f hit = null;
-        com.leaf.game.entity.Enemy target =
-                (enemyManager != null) ? enemyManager.findMostAligned(world, eye, dir, range) : null;
-        if (target != null) {
-            target.applyDamage(GameConfig.gatlingDamage);
-            target.applyKnockback(dir.x * 1.4f, 0.25f, dir.z * 1.4f);
-            target.hitFlashTimer = 0.12f;
-            hit = target.getCentre();
-            fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.9f, 0.16f, 2.8f*fxDim, 1.3f*fxDim, 0.45f*fxDim);  // blood/spark
-        } else {
-            // We need to raycast block-by-block to find exactly which voxel we hit
-            float step = 0.2f, d = 0f;
-            float rx = eye.x, ry = eye.y, rz = eye.z;
-            boolean hitBlock = false;
 
-            while (d < range) {
-                rx += dir.x * step; ry += dir.y * step; rz += dir.z * step; d += step;
-                int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
+        // Gatling gun auto-aim removed! Pure raycast block-by-block.
+        float step = 0.2f, d = 0f;
+        float rx = eye.x, ry = eye.y, rz = eye.z;
+        boolean hitBlock = false;
 
-                if (by < 0 || by >= com.leaf.game.world.Chunk.HEIGHT) break;
+        while (d < range) {
+            rx += dir.x * step; ry += dir.y * step; rz += dir.z * step; d += step;
+            int bx = (int)Math.floor(rx), by = (int)Math.floor(ry), bz = (int)Math.floor(rz);
 
-                Block b = world.getBlock(bx, by, bz);
-                if (b.isSolid()) {
-                    hit = new Vector3f(rx, ry, rz);
-                    fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.55f, 0.12f, 2.4f*fxDim, 1.7f*fxDim, 0.8f*fxDim);
+            if (by < 0 || by >= com.leaf.game.world.Chunk.HEIGHT) break;
 
-                    // ── TUNABLE GATLING POWER ──
-                    int radius = 1; // 1 = tight punch, 2 = massive blast
+            // ── NEW: ENEMY HITBOX CHECK DURING RAYCAST (No Auto-Aim) ──
+            if (enemyManager != null) {
+                boolean enemyHit = false;
+                for (Enemy e : enemyManager.getEnemies()) {
+                    if (e.alive && e.isHitByPlayer(new Vector3f(rx, ry, rz))) {
+                        e.applyDamage(GameConfig.gatlingDamage);
+                        e.applyKnockback(dir.x * 1.4f, 0.25f, dir.z * 1.4f);
+                        e.hitFlashTimer = 0.12f;
+                        hit = new Vector3f(rx, ry, rz);
+                        fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.9f, 0.16f, 2.8f*fxDim, 1.3f*fxDim, 0.45f*fxDim);
+                        enemyHit = true;
+                        hitBlock = true;
+                        break;
+                    }
+                }
+                if (enemyHit) break;
+            }
 
-                    java.util.Set<com.leaf.game.world.Chunk> dirtyChunks = new java.util.HashSet<>();
+            Block b = world.getBlock(bx, by, bz);
+            if (b.isSolid()) {
+                hit = new Vector3f(rx, ry, rz);
+                fxBurst(hit.x, hit.y, hit.z, 0.1f, 0.55f, 0.12f, 2.4f*fxDim, 1.7f*fxDim, 0.8f*fxDim);
 
-                    for (int dx = -radius; dx <= radius; dx++) {
-                        for (int dy = -radius; dy <= radius; dy++) {
-                            for (int dz = -radius; dz <= radius; dz++) {
-                                // Spherical mask constraint
-                                if (dx*dx + dy*dy + dz*dz > radius*radius + 0.5f) continue;
+                // ── TUNABLE GATLING POWER ──
+                int radius = 1; // 1 = tight punch, 2 = massive blast
 
-                                int targetX = bx + dx;
-                                int targetY = by + dy;
-                                int targetZ = bz + dz;
+                java.util.Set<com.leaf.game.world.Chunk> dirtyChunks = new java.util.HashSet<>();
 
-                                if (targetY <= 1 || targetY >= com.leaf.game.world.Chunk.HEIGHT) continue;
+                for (int dx = -radius; dx <= radius; dx++) {
+                    for (int dy = -radius; dy <= radius; dy++) {
+                        for (int dz = -radius; dz <= radius; dz++) {
+                            // Spherical mask constraint
+                            if (dx*dx + dy*dy + dz*dz > radius*radius + 0.5f) continue;
 
-                                Block targetBlock = world.getBlock(targetX, targetY, targetZ);
-                                if (targetBlock.isSolid() && targetBlock != Block.STAR_IRON && targetBlock != Block.MEGALITH && targetBlock != Block.MEGALITH_CARVED) {
-                                    world.setBlock(targetX, targetY, targetZ, Block.AIR);
+                            int targetX = bx + dx;
+                            int targetY = by + dy;
+                            int targetZ = bz + dz;
 
-                                    // Collect chunk coordinate for a single batched rebuild
-                                    int cx = Math.floorDiv(targetX, Chunk.SIZE);
-                                    int cy = Math.floorDiv(targetY, Chunk.HEIGHT);
-                                    int cz = Math.floorDiv(targetZ, Chunk.SIZE);
-                                    com.leaf.game.world.Chunk c = world.getChunk(cx, cy, cz);
-                                    if (c != null) dirtyChunks.add(c);
+                            if (targetY <= 1 || targetY >= com.leaf.game.world.Chunk.HEIGHT) continue;
 
-                                    // Handle chunk boundary neighbor dirtying
-                                    int lx = Math.floorMod(targetX, Chunk.SIZE);
-                                    int lz = Math.floorMod(targetZ, Chunk.SIZE);
-                                    if (lx == 0)             { com.leaf.game.world.Chunk n = world.getChunk(cx - 1, cy, cz); if (n != null) dirtyChunks.add(n); }
-                                    if (lx == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(cx + 1, cy, cz); if (n != null) dirtyChunks.add(n); }
-                                    if (lz == 0)             { com.leaf.game.world.Chunk n = world.getChunk(cx, cy, cz - 1); if (n != null) dirtyChunks.add(n); }
-                                    if (lz == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(cx, cy, cz + 1); if (n != null) dirtyChunks.add(n); }
+                            Block targetBlock = world.getBlock(targetX, targetY, targetZ);
+                            if (targetBlock.isSolid() && targetBlock != Block.STAR_IRON && targetBlock != Block.MEGALITH && targetBlock != Block.MEGALITH_CARVED) {
+                                world.setBlock(targetX, targetY, targetZ, Block.AIR);
 
-                                    // DEBRIS SWARM REMOVED TO PREVENT TRYPOPHOBIA & CLUTTER
-                                }
+                                // Collect chunk coordinate for a single batched rebuild
+                                int cx = Math.floorDiv(targetX, Chunk.SIZE);
+                                int cy = Math.floorDiv(targetY, Chunk.HEIGHT);
+                                int cz = Math.floorDiv(targetZ, Chunk.SIZE);
+                                com.leaf.game.world.Chunk c = world.getChunk(cx, cy, cz);
+                                if (c != null) dirtyChunks.add(c);
+
+                                // Handle chunk boundary neighbor dirtying
+                                int lx = Math.floorMod(targetX, Chunk.SIZE);
+                                int lz = Math.floorMod(targetZ, Chunk.SIZE);
+                                if (lx == 0)             { com.leaf.game.world.Chunk n = world.getChunk(cx - 1, cy, cz); if (n != null) dirtyChunks.add(n); }
+                                if (lx == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(cx + 1, cy, cz); if (n != null) dirtyChunks.add(n); }
+                                if (lz == 0)             { com.leaf.game.world.Chunk n = world.getChunk(cx, cy, cz - 1); if (n != null) dirtyChunks.add(n); }
+                                if (lz == Chunk.SIZE - 1) { com.leaf.game.world.Chunk n = world.getChunk(cx, cy, cz + 1); if (n != null) dirtyChunks.add(n); }
                             }
                         }
                     }
-
-                    // Rebuild every modified chunk EXACTLY once
-                    for (com.leaf.game.world.Chunk c : dirtyChunks) {
-                        world.buildChunkMeshes(c);
-                    }
-
-                    // Spawn exactly ONE clean dropped item at the center of the impact (if we destroyed a solid block)
-                    if (b != Block.AIR && b.isSolid()) {
-                        Vector3f ejectVel = new Vector3f(
-                                (float)(Math.random() - 0.5) * 2f,
-                                3f,
-                                (float)(Math.random() - 0.5) * 2f
-                        );
-                        droppedItems.add(new DroppedItem(bx, by, bz, b, ejectVel));
-                    }
-
-                    // Play break sound at impact center
-                    String breakSnd = blockBreakSound(b);
-                    if (breakSnd != null) AudioManager.playVaried(breakSnd, 0.6f, 0.1f);
-
-                    hitBlock = true;
-                    break;
                 }
-            }
-            if (!hitBlock) {
-                hit = new Vector3f(eye).fma(range, dir);
+
+                // Rebuild every modified chunk EXACTLY once
+                for (com.leaf.game.world.Chunk c : dirtyChunks) {
+                    world.buildChunkMeshes(c);
+                }
+
+                // Spawn exactly ONE clean dropped item at the center of the impact (if we destroyed a solid block)
+                if (b != Block.AIR && b.isSolid()) {
+                    Vector3f ejectVel = new Vector3f(
+                            (float)(Math.random() - 0.5) * 2f,
+                            3f,
+                            (float)(Math.random() - 0.5) * 2f
+                    );
+                    droppedItems.add(new DroppedItem(bx, by, bz, b, ejectVel));
+                }
+
+                // Play break sound at impact center
+                String breakSnd = blockBreakSound(b);
+                if (breakSnd != null) AudioManager.playVaried(breakSnd, 0.6f, 0.1f);
+
+                hitBlock = true;
+                break;
             }
         }
+        if (!hitBlock) {
+            hit = new Vector3f(eye).fma(range, dir);
+        }
+
         // tracer: a thin, bright streak from the muzzle to the hit point
         Vector3f td = new Vector3f(hit).sub(muzzle);
         float len = td.length();
