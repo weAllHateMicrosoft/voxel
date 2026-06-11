@@ -649,9 +649,16 @@ public class AbilityController {
             int cx = Math.floorDiv(bx, 16), cz = Math.floorDiv(bz, 16);
             if (world.getChunk(cx, 0, cz) == null) break;
             if (world.getBlock(bx, by, bz).isSolid()) break;
-            lastFX = rx;
-            lastFY = ry - 1.6f;
-            lastFZ = rz;
+            // Only save position if the full 2-block player body fits (feet + standing height).
+            // This prevents landing inside a slab/ceiling when the eye-level block is clear
+            // but the floor or the block above it is solid.
+            int fby = (int) Math.floor(ry - 1.6f);
+            if (!world.getBlock(bx, fby, bz).isSolid()
+                    && !world.getBlock(bx, fby + 1, bz).isSolid()) {
+                lastFX = rx;
+                lastFY = ry - 1.6f;
+                lastFZ = rz;
+            }
         }
 
         // Super-fast TRAVEL instead of an instant teleport: zip along the clear

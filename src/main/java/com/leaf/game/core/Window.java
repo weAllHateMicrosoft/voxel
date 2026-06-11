@@ -4571,8 +4571,9 @@ public class Window {
                     getItemMesh(Block.CRYSTAL_CITRINE).render();
                 }
 
-                // 5. Placed Seals (Normal Pass & Ghost Pass)
+                // 5. Placed Seals (Normal Pass & Ghost Pass) — always lit so they're visible at night
                 if (!player.seals.placedSeals.isEmpty()) {
+                    shader.setUniform("ambientStrength", Math.max(dayNight.ambientStrength, 0.80f));
                     com.leaf.game.render.Texture sealTex = com.leaf.game.render.AssetManager.get().getTexture("seal");
                     if (sealTex != null) {
                         shader.setUniform("useTexture", 1);
@@ -4613,6 +4614,7 @@ public class Window {
                     }
                     glEnable(GL_DEPTH_TEST);
                     shader.setUniform("alphaMultiplier", 1.0f);
+                    shader.setUniform("ambientStrength", dayNight.ambientStrength); // restore
                 }
 
                 // 6. Render Enemies
@@ -4957,7 +4959,8 @@ public class Window {
                     }
                 }
 
-                // 7. Render Items
+                // 7. Render Items — always adequately lit so items visible day and night
+                shader.setUniform("ambientStrength", Math.max(dayNight.ambientStrength, 0.75f));
                 for (DroppedItem item : droppedItems) {
                     float bob = (float) Math.sin(item.age * 3.0f) * 0.05f;
                     Matrix4f itemModel = new Matrix4f()
@@ -4981,6 +4984,7 @@ public class Window {
                     shader.setUniform("mvp", itemMvp);
                     itemMesh.render();
                 }
+                shader.setUniform("ambientStrength", dayNight.ambientStrength); // restore
 
                 // 8. Render Remote Player
                 if (network != null && network.connected) {

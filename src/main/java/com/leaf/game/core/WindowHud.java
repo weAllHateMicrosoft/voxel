@@ -549,46 +549,30 @@ class WindowHud {
             return; // Completely bypass the standard survival death screen
         }
 
-        // Heavy dark overlay  -  the world is barely visible (Normal death screen continues below)
-        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
-        // Heavy dark overlay  -  the world is barely visible
+        // Heavy dark overlay
         draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.82f));
 
-        float cy = h * 0.5f - 90f;
-        // Title
-        String title = "YOU FELL";
-        float tw = ImGui.calcTextSize(title).x * 2.4f;
+        float cy = h * 0.5f - 60f;
+
+        // Title — big, red
+        String title = "YOU DIED";
+        ImFont font = ImGui.getFont();
+        float titleSz = ImGui.getFontSize() * 2.8f;
+        float tw = ImGui.calcTextSize(title).x * (titleSz / ImGui.getFontSize());
         float tx = (w - tw) * 0.5f;
-        draw.addText(ImGui.getFont(), ImGui.getFontSize() * 2.4f, tx + 2, cy + 2,
-                ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), title);
-        draw.addText(ImGui.getFont(), ImGui.getFontSize() * 2.4f, tx, cy,
-                ImGui.colorConvertFloat4ToU32(0.95f, 0.25f, 0.15f, 1f), title);
-        cy += 60f;
+        draw.addText(font, titleSz, tx + 2, cy + 2, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), title);
+        draw.addText(font, titleSz, tx, cy, ImGui.colorConvertFloat4ToU32(0.95f, 0.18f, 0.12f, 1f), title);
+        cy += titleSz + 30f;
 
-        // Stat lines
-        if (win.deathScreenLines != null) {
-            int bestIdx = win.deathScreenLines.length - 1;
-            for (int i = 0; i < win.deathScreenLines.length; i++) {
-                String line = win.deathScreenLines[i];
-                float lw = ImGui.calcTextSize(line).x;
-                float lx = (w - lw) * 0.5f;
-                boolean isBest = i == bestIdx;
-                int col = isBest
-                        ? ImGui.colorConvertFloat4ToU32(1f, 0.85f, 0.3f, 1f)
-                        : ImGui.colorConvertFloat4ToU32(0.88f, 0.88f, 0.95f, 0.95f);
-                draw.addText(lx + 1, cy + 1, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f), line);
-                draw.addText(lx, cy, col, line);
-                cy += 28f;
-            }
-        }
-
-        cy += 16f;
-        // Prompt  -  blink
-        String prompt = "[ ENTER ]  Try again";
-        float pa = 0.5f + 0.5f * (float) Math.abs(Math.sin(glfwGetTime() * 2.8f));
-        float pw = ImGui.calcTextSize(prompt).x;
-        draw.addText((w - pw) * 0.5f, cy,
-                ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.9f, pa), prompt);
+        // Single blinking respawn prompt
+        String prompt = "[ ENTER ]   RESPAWN";
+        float pa = 0.55f + 0.45f * (float) Math.abs(Math.sin(glfwGetTime() * 2.5f));
+        float promptSz = ImGui.getFontSize() * 1.6f;
+        float pw = ImGui.calcTextSize(prompt).x * (promptSz / ImGui.getFontSize());
+        draw.addText(font, promptSz, (w - pw) * 0.5f + 1, cy + 1,
+                ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, pa * 0.9f), prompt);
+        draw.addText(font, promptSz, (w - pw) * 0.5f, cy,
+                ImGui.colorConvertFloat4ToU32(0.85f, 0.88f, 1.0f, pa), prompt);
     }
 
     void renderChatBox(int screenHeight) {
@@ -1112,8 +1096,9 @@ class WindowHud {
             float ndcY = clipPos.y / Math.abs(clipPos.w);
             boolean onScreen = inFront && Math.abs(ndcX) <= 1.0f && Math.abs(ndcY) <= 1.0f;
 
-            // 2. Draw the edge arrow ONLY if it is off-screen
-            if (!onScreen) {
+            // 2. Draw the edge arrow ONLY if off-screen and not during Voyage (it would
+            //    overlap the voyage objective banner at the top of the screen).
+            if (!onScreen && !win.voyageStarted) {
                 // To avoid matrix flipping bugs, we use simple Dot Products with
                 // the camera's local axes to find the true, stable direction.
                 Vector3f toDrone = new Vector3f(dronePos).sub(camera.position).normalize();
@@ -1675,16 +1660,7 @@ class WindowHud {
                 }
             }
 
-            // Label: seal key hints on first and last slot
-            float placeF = win.player.seals.getPlaceCooldownFrac();
-            float teleportF = win.player.seals.getTeleportCooldownFrac();
-            String sealLabel = String.format("[H] Place  [B] Teleport  [N] Reclaim   %d/%d",
-                    placed, maxSeals);
-            int labelCol = (placeF >= 1f)
-                    ? ImGui.colorConvertFloat4ToU32(0.6f, 0.95f, 0.95f, 0.75f)
-                    : ImGui.colorConvertFloat4ToU32(0.45f, 0.6f, 0.6f, 0.55f);
-            draw.addText(cx - 95f, pipY + 10f, black, sealLabel);
-            draw.addText(cx - 96f, pipY + 9f, labelCol, sealLabel);
+            // Label removed — the pip row alone is enough visual feedback
         }
 
         // ── SEAL HUD MARKERS ─────────────────────────────────────────────────
@@ -2706,7 +2682,7 @@ class WindowHud {
 
         // ── Persistent objective banner (top-centre) ─────────────────────────
         float cx = screenW * 0.5f;
-        float y  = 44f;
+        float y  = 96f;  // lower than 44 — leaves room for MT off-screen arrow at ~54
         String dir = win.voyage.directive();
         String rew = win.voyage.rewardLine();
         org.joml.Vector3f pp = win.player.position;
