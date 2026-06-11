@@ -49,7 +49,7 @@ class WindowHud {
         ImGui.textDisabled("        Survive. Learn. Escape.");
         ImGui.spacing(); ImGui.separator(); ImGui.spacing(); ImGui.spacing();
 
-        // ── The one shipping button — starts the guided, story-paced run ─────────
+        // ── The one shipping button  -  starts the guided, story-paced run ─────────
         if (ImGui.button("PLAY", 320, 44)) {
             win.network = null;
             win.playIntroOnSpawn   = true;
@@ -201,7 +201,7 @@ class WindowHud {
         ImGui.spacing(); ImGui.separator(); ImGui.spacing();
 
         for (Progression.Ability a : win.unlockCardAbilities) {
-            // The key IS the lesson — render the key + name line big.
+            // The key IS the lesson  -  render the key + name line big.
             cardCenterBig(a.key + "   " + a.label, 1.35f, 0.45f, 0.95f, 1.0f);
             ImGui.spacing();
             ImGui.pushTextWrapPos(ImGui.getWindowWidth() - 24f);
@@ -231,7 +231,7 @@ class WindowHud {
 
     /**
      * Centre a line at {@code scale}× the base font size in the current ImGui
-     * window (drawn via the window draw list — the binding has no static
+     * window (drawn via the window draw list  -  the binding has no static
      * setWindowFontScale). Advances the layout cursor past the text.
      */
     private void cardCenterBig(String text, float scale, float r, float g, float b) {
@@ -247,15 +247,15 @@ class WindowHud {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  WEAPON FORGED REVEAL  — big dramatic overlay when a weapon is earned
+    //  WEAPON FORGED REVEAL   -  big dramatic overlay when a weapon is earned
     // ─────────────────────────────────────────────────────────────────────────
 
     void renderWeaponReveal(float screenW, float screenH) {
         Progression.Ability a = win.weaponRevealAbility;
         if (a == null) return;
-        // Wait until the wave unlock card is dismissed — never stack the two.
+        // Wait until the wave unlock card is dismissed  -  never stack the two.
         if (win.showUnlockCard) return;
-        float t = win.weaponRevealTimer;   // 5.5 → 0
+        float t = win.weaponRevealTimer;   // 5.5 -> 0
         // fade-in 0.4 s, full 4.5 s, fade-out 0.6 s
         float alpha = t > 5.1f ? (5.5f - t) / 0.4f
                     : t < 0.6f ? t / 0.6f
@@ -301,7 +301,7 @@ class WindowHud {
                 ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.4f * alpha), 1f);
         iy += 10f;
 
-        // Weapon icon — 48×48 centred
+        // Weapon icon  -  48×48 centred
         float iconSz = 48f;
         float ix0 = cx - iconSz / 2f, iy0i = iy, ix1 = ix0 + iconSz, iy1i = iy0i + iconSz;
         switch (a) {
@@ -361,7 +361,7 @@ class WindowHud {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    //  PRACTICE OVERLAY  — multi-step hands-on ability tutorial
+    //  PRACTICE OVERLAY   -  multi-step hands-on ability tutorial
     // ─────────────────────────────────────────────────────────────────────────
     void renderPractice(float w, float h) {
         if (win.practiceAbility == null || win.practiceSteps == null) return;
@@ -373,7 +373,7 @@ class WindowHud {
         ImFont font = ImGui.getFont();
         float base = ImGui.getFontSize();
 
-        // Dim background — world stays visible so the player can act
+        // Dim background  -  world stays visible so the player can act
         draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.50f));
 
         // Card sits at the bottom quarter of the screen
@@ -428,7 +428,7 @@ class WindowHud {
             ty += lineH;
         }
 
-        // Warning text (e.g. "HOLD it! Don't click!") — shown in red above skip row
+        // Warning text (e.g. "HOLD it! Don't click!")  -  shown in red above skip row
         if (win.practiceWarnText != null && win.practiceWarnTimer > 0f) {
             float pulse = 0.75f + 0.25f * (float) Math.sin(glfwGetTime() * 10f);
             float ww = ImGui.calcTextSize(win.practiceWarnText).x;
@@ -554,7 +554,7 @@ class WindowHud {
 
         float cy = h * 0.5f - 60f;
 
-        // Title — big, red
+        // Title  -  big, red
         String title = "YOU DIED";
         ImFont font = ImGui.getFont();
         float titleSz = ImGui.getFontSize() * 2.8f;
@@ -573,6 +573,86 @@ class WindowHud {
                 ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, pa * 0.9f), prompt);
         draw.addText(font, promptSz, (w - pw) * 0.5f, cy,
                 ImGui.colorConvertFloat4ToU32(0.85f, 0.88f, 1.0f, pa), prompt);
+    }
+
+    void renderVictoryScreen(float w, float h, int kills, float elapsed, int deaths) {
+        imgui.ImDrawList draw = ImGui.getForegroundDrawList();
+        ImFont font = ImGui.getFont();
+
+        // Deep semi-transparent dark overlay with gold tint at edges
+        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0.02f, 0.05f, 0.88f));
+        // Gold border vignette
+        draw.addRect(20, 20, w - 20, h - 20,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.55f), 12f, 0, 2.5f);
+
+        float cy = h * 0.5f - 140f;
+
+        // Title line  -  DESCENT COMPLETE
+        String title = "DESCENT  COMPLETE";
+        float tsz = font.getFontSize() * 3.0f;
+        float tw = ImGui.calcTextSize(title).x * (tsz / font.getFontSize());
+        float tx = (w - tw) * 0.5f;
+        // Shadow
+        draw.addText(font, tsz, tx + 3, cy + 3, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), title);
+        // Gold text with pulsing brightness
+        float pulse = 0.85f + 0.15f * (float) Math.abs(Math.sin(ImGui.getTime() * 1.8));
+        draw.addText(font, tsz, tx, cy, ImGui.colorConvertFloat4ToU32(1.0f, 0.88f * pulse, 0.25f * pulse, 1f), title);
+        cy += tsz + 16f;
+
+        // Sub-line
+        String sub = "You survived 11 waves. Every hunter. Everything it sent.";
+        float subW = ImGui.calcTextSize(sub).x;
+        draw.addText((w - subW) * 0.5f + 1, cy + 1, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.9f), sub);
+        draw.addText((w - subW) * 0.5f, cy, ImGui.colorConvertFloat4ToU32(0.8f, 0.9f, 1.0f, 0.9f), sub);
+        cy += 36f;
+
+        // Divider
+        draw.addLine(w * 0.25f, cy, w * 0.75f, cy,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.4f), 1.5f);
+        cy += 20f;
+
+        // Stats block
+        int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
+        String[] stats = {
+            String.format("ENEMIES DEFEATED   %d", kills),
+            String.format("TIME               %d:%02d", em, es),
+            String.format("DEATHS             %d", deaths),
+        };
+        // Grade based on deaths
+        String grade = deaths == 0 ? "S" : deaths <= 2 ? "A" : deaths <= 5 ? "B" : "C";
+        int gradeCol = switch (grade) {
+            case "S" -> ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.2f, 1f);
+            case "A" -> ImGui.colorConvertFloat4ToU32(0.4f, 1.0f, 0.5f, 1f);
+            case "B" -> ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, 1f);
+            default  -> ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 1f);
+        };
+
+        for (String stat : stats) {
+            float sw = ImGui.calcTextSize(stat).x;
+            draw.addText((w - sw) * 0.5f + 1, cy + 1, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.9f), stat);
+            draw.addText((w - sw) * 0.5f, cy, ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 0.85f, 0.9f), stat);
+            cy += 26f;
+        }
+        cy += 8f;
+
+        // Grade display
+        String gradeLabel = "GRADE   " + grade;
+        float gsz = font.getFontSize() * 2.2f;
+        float gw = ImGui.calcTextSize(gradeLabel).x * (gsz / font.getFontSize());
+        float gx = (w - gw) * 0.5f;
+        draw.addText(font, gsz, gx + 2, cy + 2, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), gradeLabel);
+        draw.addText(font, gsz, gx, cy, gradeCol, gradeLabel);
+        cy += gsz + 28f;
+
+        // Blinking prompt
+        float pa = 0.55f + 0.45f * (float) Math.abs(Math.sin(ImGui.getTime() * 2.5));
+        String prompt = "[ ENTER ]   TAKE FLIGHT";
+        float psz = font.getFontSize() * 1.6f;
+        float pw = ImGui.calcTextSize(prompt).x * (psz / font.getFontSize());
+        draw.addText(font, psz, (w - pw) * 0.5f + 1, cy + 1,
+                ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, pa * 0.9f), prompt);
+        draw.addText(font, psz, (w - pw) * 0.5f, cy,
+                ImGui.colorConvertFloat4ToU32(0.9f, 1.0f, 0.6f, pa), prompt);
     }
 
     void renderChatBox(int screenHeight) {
@@ -681,7 +761,7 @@ class WindowHud {
         draw.addCircleFilled(x1 - w * 0.2f, y0 + h * 0.2f, 4f, glass, 8);
     }
 
-    /** Sniper glyph — a scope reticle with crosshairs over a faint purple charge glow. */
+    /** Sniper glyph  -  a scope reticle with crosshairs over a faint purple charge glow. */
     private void drawSniperIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
         float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
         float r = Math.min(x1 - x0, y1 - y0) * 0.40f;
@@ -696,7 +776,7 @@ class WindowHud {
         draw.addCircleFilled(cx, cy, r * 0.16f, dot);          // centre pip
     }
 
-    /** Orbital Annihilation glyph — satellite dot raining a beam onto a target ring. */
+    /** Orbital Annihilation glyph  -  satellite dot raining a beam onto a target ring. */
     private void drawOrbitalIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
         float w = x1 - x0, h = y1 - y0, cx = (x0 + x1) * 0.5f;
         int sat   = ImGui.colorConvertFloat4ToU32(1.0f, 0.92f, 0.55f, 1f);
@@ -708,7 +788,7 @@ class WindowHud {
         draw.addCircle(cx, y1 - h * 0.18f, w * 0.26f, ring, 16, 2.2f);      // target ring
     }
 
-    /** Time Domain glyph — a clock face with hands. */
+    /** Time Domain glyph  -  a clock face with hands. */
     private void drawTimeStopIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
         float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
         float r = Math.min(x1 - x0, y1 - y0) * 0.40f;
@@ -721,7 +801,7 @@ class WindowHud {
         draw.addLine(cx, cy, cx + r * 0.5f, cy, hand, 2.0f);              // hour hand (3)
     }
 
-    /** Stone Cannon glyph — a stone barrel firing a boulder. */
+    /** Stone Cannon glyph  -  a stone barrel firing a boulder. */
     private void drawStoneCannonIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
         float w = x1 - x0, h = y1 - y0;
         int stone = ImGui.colorConvertFloat4ToU32(0.45f, 0.42f, 0.38f, 1f);
@@ -828,7 +908,7 @@ class WindowHud {
         var draw = ImGui.getForegroundDrawList();
         float cx = screenW / 2.0f, cy = screenH / 2.0f;
 
-        // ── MULTIPLAYER STATUS — confirm sync at a glance ─────────────────────
+        // ── MULTIPLAYER STATUS  -  confirm sync at a glance ─────────────────────
         // Shows the live link + the peer's synced HP (drops when you damage them) +
         // troop counts, so it's obvious whether syncing actually works.
         if (win.network != null) {
@@ -839,12 +919,12 @@ class WindowHud {
                         win.remotePlayer != null ? win.remotePlayer.health : 0f,
                         win.remotePlayer != null ? win.remotePlayer.maxHealth : 0f,
                         win.mySummons.size(), foeTroops)
-                : "MP LINK DOWN — check Host IP / firewall, or a desync dropped it (see console)";
+                : "MP LINK DOWN  -  check Host IP / firewall, or a desync dropped it (see console)";
             int col = up ? ImGui.colorConvertFloat4ToU32(0.4f, 1f, 0.5f, 0.95f)
                          : ImGui.colorConvertFloat4ToU32(1f, 0.4f, 0.3f, 0.95f);
             draw.addText(14f, 40f, col, line);
 
-            // ── KILL BANNER — big and clear when you eliminate the opponent ──
+            // ── KILL BANNER  -  big and clear when you eliminate the opponent ──
             if (win.killBannerTimer > 0f) {
                 float a = Math.min(1f, win.killBannerTimer / 1.5f);
                 String txt = "ENEMY ELIMINATED";
@@ -1293,7 +1373,7 @@ class WindowHud {
         // Health bar and win.hotbar  -  hidden while piloting the drone
         if (!win.player.stand.isInStandPerspective()) {
 
-            // Revival immunity indicator — pulsing golden border around the whole screen.
+            // Revival immunity indicator  -  pulsing golden border around the whole screen.
             if (win.immunityTimer > 0f) {
                 float t = win.immunityTimer / win.REVIVAL_IMMUNITY_SECS;
                 float flicker = 0.3f + 0.55f * (float) Math.abs(Math.sin(glfwGetTime() * 10f));
@@ -1529,6 +1609,13 @@ class WindowHud {
             draw.addText(cx - 35, cy - 90, black, "\\/ SMASHING \\/");
             draw.addText(cx - 36, cy - 91,
                     ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.1f, 1.0f), "\\/ SMASHING \\/");
+        } else if (win.showSmashHint) {
+            float pulse = 0.7f + 0.3f * (float) Math.abs(Math.sin(ImGui.getTime() * 3.0));
+            int hintCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.2f, pulse);
+            String hint = "[SHIFT]  GROUND SMASH";
+            float hw = ImGui.calcTextSize(hint).x;
+            draw.addText(cx - hw / 2 + 1, cy - 92, black, hint);
+            draw.addText(cx - hw / 2, cy - 93, hintCol, hint);
         }
 
         // ── STAND PERSPECTIVE OVERLAY ────────────────────────────────────────
@@ -1628,7 +1715,7 @@ class WindowHud {
         }
 
         // ── SEAL COUNT DISPLAY ────────────────────────────────────────────────
-        // Only once the SEAL ability is unlocked AND at least one seal is out —
+        // Only once the SEAL ability is unlocked AND at least one seal is out  - 
         // it used to render "[H] Place [B] Teleport…" from the very first frame
         // of the game, overlapping everything (playtest complaint).
         if (!win.player.stand.isInStandPerspective() && !win.player.debugMode
@@ -1666,7 +1753,7 @@ class WindowHud {
                 }
             }
 
-            // Label removed — the pip row alone is enough visual feedback
+            // Label removed  -  the pip row alone is enough visual feedback
         }
 
         // ── SEAL HUD MARKERS ─────────────────────────────────────────────────
@@ -1785,7 +1872,7 @@ class WindowHud {
 
             for (Enemy enemy : win.enemyManager.getEnemies()) {
                 if (!enemy.alive) continue;
-                if (enemy == win.mpProxy) continue;   // invisible PvP hitbox — never show its 999 HP bar
+                if (enemy == win.mpProxy) continue;   // invisible PvP hitbox  -  never show its 999 HP bar
 
                 Vector3f headPos = new Vector3f(
                         enemy.position.x,
@@ -1887,7 +1974,7 @@ class WindowHud {
             renderObjectiveBanner(draw, screenW, screenH);
         }
 
-        // ── COMBAT KEY STRIP — always-on key reminders above the hotbar.
+        // ── COMBAT KEY STRIP  -  always-on key reminders above the hotbar.
         // Playtest feedback: nobody remembers keybinds after one tutorial pass.
         if (!win.showHelp && !win.playtestMode && !win.isPaused
                 && win.tutorial != null && win.tutorial.isFinished()
@@ -1895,7 +1982,7 @@ class WindowHud {
             renderCombatKeyStrip(draw, screenW, screenH);
         }
 
-        // ── TRY IT prompt — big key chip for the ability just unlocked ───────
+        // ── TRY IT prompt  -  big key chip for the ability just unlocked ───────
         if (!win.showHelp && !win.isPaused && !win.showUnlockCard
                 && win.weaponRevealTimer <= 0f
                 && (win.tryStep != null || win.tryDoneAbility != null)) {
@@ -1909,7 +1996,7 @@ class WindowHud {
             renderPlaytestLegend(draw, screenW, screenH);
         }
 
-        // ── THE VOYAGE — objective banner, world waypoint + forge reveals ─────
+        // ── THE VOYAGE  -  objective banner, world waypoint + forge reveals ─────
         if (!win.showHelp && !win.player.stand.isInStandPerspective()) {
             renderVoyageHUD(draw, camera, screenW, screenH);
         }
@@ -1922,7 +2009,7 @@ class WindowHud {
 
         // ── WAVE COUNTER ──────────────────────────────────────────────────────
         // Top-left: "WAVE N  -  next in Xs" or "MAX ENEMIES REACHED".
-        // Hidden in playtest mode — waves are off, so a wave timer would mislead.
+        // Hidden in playtest mode  -  waves are off, so a wave timer would mislead.
         if (!win.player.stand.isInStandPerspective() && !win.player.debugMode && !win.playtestMode
                 && !win.voyageStarted) {
             int waveNum = win.enemyManager.getWaveNumber();
@@ -2003,7 +2090,7 @@ class WindowHud {
 
     void renderAbilityHUD(imgui.ImDrawList draw, float screenW, float screenH) {
         // ── Ability icon layout: up to three rows, bottom-right ──────────────
-        // Bigger icons with full label clearance per row — the old 28px grid
+        // Bigger icons with full label clearance per row  -  the old 28px grid
         // had row labels colliding with the icons below (playtest complaint).
         float iconSize = 38f;
         float spacing  = 10f;
@@ -2166,14 +2253,14 @@ class WindowHud {
         if (fillH > 0.5f)
             draw.addRectFilled(x, y + size - fillH, x + size, y + size, color, 6f);
         draw.addRect(x, y, x + size, y + size, glow ? color : black, 6f, 0, glow ? 3f : 1.5f);
-        // Key letter — large, centred
+        // Key letter  -  large, centred
         float keySize = base * 1.45f;
         float kw = ImGui.calcTextSize(key).x * (keySize / base);
         float kx = x + (size - kw) / 2f, ky = y + (size - keySize) / 2f;
         draw.addText(font, keySize, kx + 1, ky + 1, black, key);
         draw.addText(font, keySize, kx, ky,
                 ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.95f), key);
-        // Name — centred below, white with shadow for readability
+        // Name  -  centred below, white with shadow for readability
         float nw = ImGui.calcTextSize(name).x;
         float nx = x + (size - nw) / 2f, ny = y + size + 4f;
         draw.addText(nx + 1, ny + 1, black, name);
@@ -2228,23 +2315,23 @@ class WindowHud {
         // ── EASTER EGGS ───────────────────────────────────────────────────────
         ImGui.textColored(1.0f, 0.55f, 0.9f, 1.0f, "EASTER EGGS  **  (hidden secrets)");
         ImGui.separator();
-        helpRow("[ ` ] (Tilde)", "FLAPPY BIRD MODE — press ` at any time to instantly transform DESCENT into a full 2D side-scrolling Flappy Bird arcade! Press [TAB] to toggle 3D/2D view. How high can you score?");
-        helpRow("[ F4 ]", "METEOR STORM — rains flaming meteorites from the sky. Each one dynamically carves a crater into the terrain on impact. The mountain will never be the same.");
-        helpRow("[ F6 ]", "NON-EUCLIDEAN SPACE — teleports you into an impossible, infinitely looping 4D layered room. Find your way out.");
+        helpRow("[ ` ] (Tilde)", "FLAPPY BIRD MODE  -  press ` at any time to instantly transform DESCENT into a full 2D side-scrolling Flappy Bird arcade! Press [TAB] to toggle 3D/2D view. How high can you score?");
+        helpRow("[ F4 ]", "METEOR STORM  -  rains flaming meteorites from the sky. Each one dynamically carves a crater into the terrain on impact. The mountain will never be the same.");
+        helpRow("[ F6 ]", "NON-EUCLIDEAN SPACE  -  teleports you into an impossible, infinitely looping 4D layered room. Find your way out.");
         ImGui.spacing();
 
         // ── MARKER / SHOWCASE FEATURES ────────────────────────────────────────
         ImGui.textColored(1.0f, 0.4f, 0.4f, 1.0f, "SHOWCASE / SANDBOX (For Marking & Testing)");
         ImGui.separator();
-        helpRow("[ F7 ] / Slot 3", "Orbital Annihilation (RMB): cinematic 3D orbital strike — earn it in the Ashlands.");
-        helpRow("[ F8 ] / Slot 4", "The World / Time Stop (RMB): freeze all enemies in place — earned by completing the Voyage.");
-        helpRow("[ F10 ]", "Radar Sweep: 3D ping — enemies glow through walls with wireframe highlights. Yours from the very start!");
+        helpRow("[ F7 ] / Slot 3", "Orbital Annihilation (RMB): cinematic 3D orbital strike  -  earn it in the Ashlands.");
+        helpRow("[ F8 ] / Slot 4", "The World / Time Stop (RMB): freeze all enemies in place  -  earned by completing the Voyage.");
+        helpRow("[ F10 ]", "Radar Sweep: 3D ping  -  enemies glow through walls with wireframe highlights. Yours from the very start!");
         helpRow("[ . ] (Period)", "Chocolate Disco (showcase mode only): Spawns a 9×9 tactical grid. Mark cells with LMB, press [.] again to detonate.");
-        helpRow("[ ' ] (Quote)", "Deprivation Domain: Golden absolute-defence hemisphere — any enemy entering is instantly sliced. Forged in the Glowing Groves.");
+        helpRow("[ ' ] (Quote)", "Deprivation Domain: Golden absolute-defence hemisphere  -  any enemy entering is instantly sliced. Forged in the Glowing Groves.");
         helpRow("[ , ] (Comma)", "Quantum Bullet (showcase mode only): Phases through walls, leaving ripple distortions on every surface hit.");
         helpRow("[ F12 ]", "Parkour Mode: Toggles Quake-style momentum physics (frictionless, high-speed).");
         helpRow("[ T ] -> /skip", "Skip the tutorial and jump straight to wave 1.");
-        helpRow("[ T ] -> /showcase", "Instantly unlock every ability and arm all 5 weapons — for grading/testing.");
+        helpRow("[ T ] -> /showcase", "Instantly unlock every ability and arm all 5 weapons  -  for grading/testing.");
         ImGui.spacing();
 
         // ── YOUR ABILITIES (unlocked vs. still locked) ────────────────────────
@@ -2252,7 +2339,7 @@ class WindowHud {
         ImGui.separator();
         Progression prog = win.player.progression;
         for (Progression.Ability a : prog.allAbilities()) {
-            // TIME, HEAL and SWAP are showcase-only now — don't advertise locked rows.
+            // TIME, HEAL and SWAP are showcase-only now  -  don't advertise locked rows.
             if ((a == Progression.Ability.TIME || a == Progression.Ability.HEAL
                     || a == Progression.Ability.SWAP)
                     && !prog.isUnlocked(a)) continue;
@@ -2343,7 +2430,7 @@ class WindowHud {
         ImGui.textColored(0.75f, 0.75f, 0.75f, 1.0f, "WORLD & UI");
         ImGui.separator();
         helpRow("LMB / RMB", "Break block (hold) / Place selected block.");
-        helpRow("1 – 9", "Select hotbar slot.");
+        helpRow("1 - 9", "Select hotbar slot.");
         helpRow("Left ALT", "Open Backpack menu to swap out blocks/tools.");
         helpRow("[P]", "Debug: Spawn a test slime at your crosshair.");
         helpRow("[F3]", "Debug overlay (position, FPS, time scale, render distance).");
@@ -2423,7 +2510,7 @@ class WindowHud {
             draw.addRect(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
                     ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 0.35f), 14f, 0, 1.5f);
 
-            // Progress pips — one dot per step, current one glows
+            // Progress pips  -  one dot per step, current one glows
             int   n = t.stepCount();
             float pipR = 4f, pipGap = 16f;
             float pipX = cx - (n - 1) * pipGap / 2f;
@@ -2437,12 +2524,12 @@ class WindowHud {
             }
             yy += 12f;
 
-            // Title — huge gold
+            // Title  -  huge gold
             draw.addText(font, titleSize, cx - titleW / 2 + 2, yy + 2, shadow, title);
             draw.addText(font, titleSize, cx - titleW / 2, yy, titleCol, title);
             yy += titleSize + 12f;
 
-            // Giant key chip — looks like a physical keyboard key, pulsing border
+            // Giant key chip  -  looks like a physical keyboard key, pulsing border
             if (key != null) {
                 float x0 = cx - chipW / 2f;
                 int chipEdge = ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.06f, 0.95f);
@@ -2456,7 +2543,7 @@ class WindowHud {
                 yy += chipH + 14f;
             }
 
-            // Instruction — short, readable
+            // Instruction  -  short, readable
             draw.addText(font, instrSize, cx - instrW / 2 + 1, yy + 1, shadow, instr);
             draw.addText(font, instrSize, cx - instrW / 2, yy, bodyCol, instr);
 
@@ -2484,7 +2571,7 @@ class WindowHud {
 
     /**
      * Big TRY IT prompt for a freshly unlocked ability: gold header, giant
-     * pulsing key chip, ability name — then a green NICE! burst on success.
+     * pulsing key chip, ability name  -  then a green NICE! burst on success.
      * Non-blocking: the wave keeps running underneath.
      */
     void renderTryPrompt(imgui.ImDrawList draw, float screenW, float screenH) {
@@ -2496,7 +2583,7 @@ class WindowHud {
 
         // ── Celebration phase ─────────────────────────────────────────────────
         if (win.tryDoneAbility != null) {
-            float t = win.tryDoneTimer;                 // 1.4 → 0
+            float t = win.tryDoneTimer;                 // 1.4 -> 0
             float a = Math.min(1f, t / 0.4f);           // fade out at the end
             float size = base * (2.6f + 0.25f * (float) Math.sin(t * 18f));  // excited jitter
             String nice = "NICE!";
@@ -2574,7 +2661,7 @@ class WindowHud {
     /**
      * Always-on key reminders, centred just above the hotbar.
      * Shows the three core combat keys during the wave phase, and the flight
-     * keys once the Voyage opens — because nobody remembers a keybind they
+     * keys once the Voyage opens  -  because nobody remembers a keybind they
      * read once in a tutorial.
      */
     void renderCombatKeyStrip(imgui.ImDrawList draw, float screenW, float screenH) {
@@ -2614,7 +2701,7 @@ class WindowHud {
         float chipH = keySize + 10f;
         float x = screenW / 2f - total / 2f;
         // Sits ABOVE the health bar (HP bar top edge = screenH - 80) so the
-        // strip never overlaps HP/MP — that overlap was a playtest complaint.
+        // strip never overlaps HP/MP  -  that overlap was a playtest complaint.
         float yTop = screenH - 80f - 14f - chipH;
 
         int chipBg  = ImGui.colorConvertFloat4ToU32(0.07f, 0.09f, 0.16f, 0.82f);
@@ -2641,7 +2728,7 @@ class WindowHud {
      * is what makes the voyage impossible to get lost on.
      */
     void renderVoyageHUD(imgui.ImDrawList draw, Camera camera, float screenW, float screenH) {
-        // The FLIGHT lesson owns the screen — all voyage messaging waits until
+        // The FLIGHT lesson owns the screen  -  all voyage messaging waits until
         // the player is actually airborne (focused "learn to fly" round).
         if (win.tryStep != null && win.tryStep.ability == Progression.Ability.FLIGHT) return;
         int shadow = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f);
@@ -2688,7 +2775,7 @@ class WindowHud {
 
         // ── Persistent objective banner (top-centre) ─────────────────────────
         float cx = screenW * 0.5f;
-        float y  = 96f;  // lower than 44 — leaves room for MT off-screen arrow at ~54
+        float y  = 96f;  // lower than 44  -  leaves room for MT off-screen arrow at ~54
         String dir = win.voyage.directive();
         String rew = win.voyage.rewardLine();
         org.joml.Vector3f pp = win.player.position;
@@ -2792,7 +2879,7 @@ class WindowHud {
         draw.addRect(bX, bY, bX + bW, bY + bH, border, 8f, 0, 1.8f);
 
         String line1 = win.playtestMode
-                ? "Everything's unlocked — just explore and have fun!"
+                ? "Everything's unlocked  -  just explore and have fun!"
                 : "A crystal has bonded to you.";
         String line2 = win.playtestMode
                 ? "Slots 1-5 = weapons (Right-Click to fire).   [F1] = full guide."

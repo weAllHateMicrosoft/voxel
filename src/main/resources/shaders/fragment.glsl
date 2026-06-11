@@ -1,7 +1,7 @@
 #version 330 core
 in vec4  vertexColor;
 in vec3  vertexNormal;
-in float vWorldY;        // world-space Y of this fragment (from vertex shader)
+in float vWorldY;        // world-space Y (unused after abyss fog removed; kept for ABI compat)
 in vec2  vertexUV;       // texture coordinates (zero when not a ModelMesh)
 in vec3  vWorldPos;      // full world-space position (orbital scan)
 uniform vec3  skyHorizonCol;
@@ -22,7 +22,6 @@ uniform vec3  torchPos[MAX_TORCH];   // world-space positions
 uniform vec3  torchCol[MAX_TORCH];   // colour × intensity
 uniform float torchRad[MAX_TORCH];   // reach in blocks
 uniform int   isUnderwater;
-uniform float cameraY;        // camera eye world-Y, set each frame from Java
 
 // ── ORBITAL ANNIHILATION: lidar/topographic scan + environmental flash ────────
 // An expanding wavefront that traces the 90° voxel edges in pitch darkness, plus
@@ -185,15 +184,6 @@ void main() {
 
     vec3 color          = baseColor.rgb * lit;
     vec3 gammaCorrected = pow(clamp(color, 0.0, 1.0), vec3(1.0 / 1.2));
-
-    // ── ABYSS DEPTH DARKNESS ──────────────────────────────────────────────────
-    float distBelow = cameraY - vWorldY;
-    if (distBelow > 80.0) {
-        float t         = (distBelow - 80.0) * 0.0055;
-        float abyssFog  = clamp(1.0 - exp(-t), 0.0, 0.92);
-        vec3  abyssColor = vec3(0.012, 0.006, 0.022);
-        gammaCorrected  = mix(gammaCorrected, abyssColor, abyssFog);
-    }
 
     // ── UNDERWATER FOG ────────────────────────────────────────────────────────
     if (isUnderwater == 1) {

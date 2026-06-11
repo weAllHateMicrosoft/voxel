@@ -172,7 +172,7 @@ public class AbilityPractice {
 
     /**
      * True when any alive non-DUMMY enemy is standing on a MUD block.
-     * Quagmire doesn't set mudTrapTimer — it actually paints MUD on the ground.
+     * Quagmire doesn't set mudTrapTimer  -  it actually paints MUD on the ground.
      * Enemies standing on MUD are "trapped" (massively slowed).
      */
     public static boolean anyEnemyOnMud(StepCtx ctx) {
@@ -203,12 +203,12 @@ public class AbilityPractice {
         // ── WAVE 0: SNIPE ─────────────────────────────────────────────────────
         case SNIPE -> {
             s.add(Step.of("SNIPE  -  HOLD [ C ]  to charge, release to fire")
-                .instr("HOLD  [ C ]  — keep it pressed. Do NOT tap and release.\n" +
+                .instr("HOLD  [ C ]   -  keep it pressed. Do NOT tap and release.\n" +
                        "A crystal bolt charges while you hold. Release to fire.\n" +
                        "Longer hold = bigger blast.\n\n" +
                        "MANA bar (blue) drains while charging.\n" +
                        "Fire  3  charged shots.")
-                .key("HOLD C → release")
+                .key("HOLD C -> release")
                 .need(3)
                 .manaArrow().cooldownArrow()
                 .setup(ctx -> spawnDummies(ctx, 2))
@@ -225,7 +225,7 @@ public class AbilityPractice {
                             ctx.flag = false; ctx.snapshot = icon;
                         } else { ctx.snapshot = icon; }
                     } else {
-                        ctx.flag = false; // currently charging — reset
+                        ctx.flag = false; // currently charging  -  reset
                     }
                 })
                 .when(ctx -> {
@@ -274,7 +274,7 @@ public class AbilityPractice {
             s.add(Step.of("QUAGMIRE  -  enemies approaching!")
                 .instr("Enemies are closing in!\n" +
                        "Press  [ M ]  to fire a mud wave along the ground.\n" +
-                       "Aim at the enemies — the wave travels forward and traps them in mud.")
+                       "Aim at the enemies  -  the wave travels forward and traps them in mud.")
                 .key("M")
                 .need(1)
                 .setup(ctx -> spawnZombies(ctx, 3))
@@ -298,11 +298,11 @@ public class AbilityPractice {
         // ── WAVE 3: LIGHTNING ────────────────────────────────────────────────
         case LIGHTNING -> {
             s.add(Step.of("LIGHTNING  -  HOLD [ U ] to charge, release to strike")
-                .instr("HOLD  [ U ]  — keep it held to charge a storm.\n" +
+                .instr("HOLD  [ U ]   -  keep it held to charge a storm.\n" +
                        "Release to call a lightning strike on the aimed enemy.\n" +
                        "Do NOT just click  -  hold until you hear the thunder build up.\n" +
                        "Strike  2  times.")
-                .key("HOLD U → release")
+                .key("HOLD U -> release")
                 .need(2)
                 .cooldownArrow()
                 .setup(ctx -> spawnDummies(ctx, 2))
@@ -367,7 +367,7 @@ public class AbilityPractice {
                 .win("In range!")
                 .tout(40f).build());
             s.add(Step.of("GRAB  -  HOLD to slam")
-                .instr("HOLD  [ O ]  — keep it held to grab the enemy,\n" +
+                .instr("HOLD  [ O ]   -  keep it held to grab the enemy,\n" +
                        "hoist it up, and slam it into the ground.\n" +
                        "Do this  2 times.")
                 .key("HOLD O")
@@ -416,7 +416,7 @@ public class AbilityPractice {
                 .key("K")
                 .need(1)
                 .tick(ctx -> {
-                    // Check if pillar failed — player pressed K but didn't launch
+                    // Check if pillar failed  -  player pressed K but didn't launch
                     // Detect: no pillar cooldown started, player is grounded, K recently pressed
                     // (The ability itself doesn't expose a failure flag, so watch for K press + no launch)
                     if (!ctx.win.player.abilities.isPillaring

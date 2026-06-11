@@ -104,6 +104,10 @@ public class Window {
     /** Counts down after the player takes damage; HUD pulses the health bar red. */
     float damageFlashTimer = 0f;
 
+    // ── SMASH HINT (first 3 high falls, PILLAR must be unlocked) ─────────────
+    boolean showSmashHint   = false;
+    int     smashHintCount  = 0;   // how many separate fall events have shown the hint
+
     // ── DEATH SCREEN ──────────────────────────────────────────────────────────
     boolean      showDeathScreen     = false;
     String[]     deathScreenLines    = null;
@@ -132,11 +136,11 @@ public class Window {
      *  moment the world finishes loading (all abilities, weapons in the hotbar,
      *  free-explore enemies, no tutorial walls). Consumed once at spawn. */
     public boolean armPlaytestOnSpawn = false;
-    /** True for the whole session once a playtest run begins — drives the
+    /** True for the whole session once a playtest run begins  -  drives the
      *  always-on controls legend so the player never needs to be told anything. */
     public boolean playtestMode = false;
 
-    // ── THE VOYAGE — guided exploration quest (replaces wave grinding) ──────────
+    // ── THE VOYAGE  -  guided exploration quest (replaces wave grinding) ──────────
     Voyage  voyage        = null;
     boolean voyageStarted = false;
     // Weapon-reveal overlay (fancy WEAPON FORGED card) + queue for back-to-back grants
@@ -145,7 +149,7 @@ public class Window {
     float               weaponRevealTimer   = 0f;
     private final java.util.ArrayDeque<Progression.Ability> weaponRevealQueue = new java.util.ArrayDeque<>();
 
-    // ── TRY IT prompts — after each unlock card, big non-blocking guided steps
+    // ── TRY IT prompts  -  after each unlock card, big non-blocking guided steps
     //    per new ability. Each completes (chime + flash + NICE!) the moment the
     //    player actually does it; times out quietly otherwise. Hard-to-grasp
     //    abilities (drone / seal / substitute) get multi-step mini-tutorials. ──
@@ -154,7 +158,7 @@ public class Window {
         final String chip;                  // big key chip text ("HOLD G", "X"…)
         final String headline;              // main instruction (large)
         final String detail;                // one line of guidance (smaller)
-        final int    detect;                // detector id — see tryStepDone()
+        final int    detect;                // detector id  -  see tryStepDone()
         final float  timeout;
         TryStep(Progression.Ability ability, String chip, String headline,
                 String detail, int detect, float timeout) {
@@ -170,7 +174,7 @@ public class Window {
     static final int TRY_SEAL_WARP    = 4;  // teleported to a seal
     static final int TRY_SUB_PRIMED   = 5;  // substitute held primed
     static final int TRY_FLYING       = 6;  // flight mode entered
-    static final int TRY_INFO_ONLY    = 7;  // no detection — timeout advances
+    static final int TRY_INFO_ONLY    = 7;  // no detection  -  timeout advances
 
     private final java.util.ArrayDeque<TryStep> tryQueue = new java.util.ArrayDeque<>();
     TryStep             tryStep       = null;   // currently shown step
@@ -190,7 +194,7 @@ public class Window {
     public void showVoyageForge(String msg) { voyageMsg = msg; voyageMsgTimer = 7.5f; }
 
     /**
-     * Emit the in-world beam of light marking the current Voyage objective — a tall,
+     * Emit the in-world beam of light marking the current Voyage objective  -  a tall,
      * glowing column visible from across the map so the player always knows where to go.
      */
     private void renderVoyageBeacon(float dt) {
@@ -210,7 +214,7 @@ public class Window {
         fxBurst(b.x, b.y + 1.2f, b.z, 0.2f, 2.2f, 0.6f, c[0], c[1], c[2]);
     }
 
-    // ── PRACTICE SESSION — multi-step hands-on ability tutorial ──────────────
+    // ── PRACTICE SESSION  -  multi-step hands-on ability tutorial ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
     /** Per-step list for the active tutorial; null = not running. */
@@ -236,6 +240,11 @@ public class Window {
     private boolean lastPracticeEnter = false;
     /** Set after the wave-9 ending cutscene fires; stops further waves. */
     boolean gameEnded = false;
+    /** True while the victory screen (stats + grade) is showing between wave-clear and ending cutscene. */
+    boolean showVictoryScreen = false;
+    private boolean lastVictoryEnter = false;
+    /** Firework timer — fires particle bursts every 0.4s during victory screen and ending cutscene. */
+    private float fireworkTimer = 0f;
     /** Camera yaw snapped each frame for AbilityPractice.spawnDummy. */
     float lastCameraYaw = 0f;
 
@@ -248,7 +257,7 @@ public class Window {
     Block selectedBlock = Block.AIR;
     float digParticleTimer = 0f;
 
-    // Starting kit — basic. Slots 1-4 are RESERVED (empty) for the god-tier weapons
+    // Starting kit  -  basic. Slots 1-4 are RESERVED (empty) for the god-tier weapons
     // earned through the progression; each drops into its own fixed slot on unlock
     // (see grantWeaponForAbility). Block selectors fill in as the player mines.
     final Block[] hotbar = {
@@ -322,7 +331,7 @@ public class Window {
     }
 
     // ── PAPER FIGURINE SUBSTITUTE (V hold) ────────────────────────────────────
-    /** True while V is held and the ability is ready — next hit will be negated. */
+    /** True while V is held and the ability is ready  -  next hit will be negated. */
     boolean substitutePrimed   = false;
     float   substituteCooldown = 0f;
     /**
@@ -371,10 +380,10 @@ public class Window {
     private int  kamuiFboTex     = 0;
     private int  kamuiFboRbo     = 0;   // depth renderbuffer
     private int  kamuiScreenQuad = 0;   // VAO for the full-screen triangle pair
-    private int  kamuiFboW       = 0;   // last known FBO size — recreate on resize
+    private int  kamuiFboW       = 0;   // last known FBO size  -  recreate on resize
     private int  kamuiFboH       = 0;
     private com.leaf.game.render.Shader distortShader = null;
-    /** All ImGui HUD rendering — see WindowHud.java */
+    /** All ImGui HUD rendering  -  see WindowHud.java */
     WindowHud hud;
 
     // ── PRE-GENERATION STATE ──────────────────────────────────────────────────
@@ -390,8 +399,8 @@ public class Window {
     // ── TIME CONTROLLER ───────────────────────────────────────────────────────
     // Accessed every frame: TimeController.getInstance().
     // Keybindings:
-    //   Hold R → slow motion  (GameConfig.timeSlowScale ≈ 0.15)
-    //   Hold Y → fast time    (GameConfig.timeFastScale  ≈ 4.0)
+    //   Hold R -> slow motion  (GameConfig.timeSlowScale ≈ 0.15)
+    //   Hold Y -> fast time    (GameConfig.timeFastScale  ≈ 4.0)
     // (T is reserved for chat; R was chosen as the slow-time key.)
 
     // ── SCREEN SHAKE (Ground Smash landing effect) ────────────────────────────
@@ -405,19 +414,19 @@ public class Window {
 
     // ── METEOR EFFECT (Smash visual) ─────────────────────────────────────────
     // When a ground smash begins, a STAR_IRON DroppedItem is spawned high above
-    // the player and falls at high speed — giving the descent a "meteor crashing
+    // the player and falls at high speed  -  giving the descent a "meteor crashing
     // from the sky" visual without requiring a particle system.
     private boolean wasSmashing      = false;
     private boolean wasCannonballing = false;
     private boolean wasCharging      = false;   // edge-detect for preload trigger
     /** Last-frame mana, used to detect the moment mana hits zero. */
     private float   lastMana         = -1f;
-    /** Last-frame camera position — lets us derive listener velocity for Doppler. */
+    /** Last-frame camera position  -  lets us derive listener velocity for Doppler. */
     private final Vector3f lastListenerPos = new Vector3f();
     private boolean listenerPosInit = false;
     /** Last muffle amount sent to OpenAL; only re-sent when it moves meaningfully. */
     private float   lastMuffle       = 0f;
-    /** Last reverb environment — only call setEnvironment when this changes. */
+    /** Last reverb environment  -  only call setEnvironment when this changes. */
     private int     lastEnv          = AudioManager.ENV_NONE;
 
     // ── Water sound state ────────────────────────────────────────────────────
@@ -429,7 +438,7 @@ public class Window {
     // caveWindCooldown: wind_cemetery eerie stinger, fires slowly in cave env.
     private float windStingerCooldown = 0f;
     private float caveWindCooldown    = 5f;   // start at 5 s so it doesn't fire on room entry
-    // windFade: 0→1 multiplier that smoothly fades wind beds in/out instead of
+    // windFade: 0->1 multiplier that smoothly fades wind beds in/out instead of
     // abruptly starting/stopping them (avoids pops and sudden silence on landing).
     private float windFade            = 0f;
 
@@ -439,12 +448,12 @@ public class Window {
     private float snowIntensity    = 0f;  // 0..1, updated each frame from altitude
     // Gust system: fires randomly, audible even when standing still, tilts snow.
     private float windGustStrength = 0f;   // smoothed 0..1 current strength
-    private float windGustAngle    = 0f;   // radians — which way the gust blows
+    private float windGustAngle    = 0f;   // radians  -  which way the gust blows
     private float windGustTimer    = 10f + (float)(Math.random() * 18f); // until next gust
     private float windGustDuration = 0f;   // remaining seconds of current gust
 
     // ── Footstep state ───────────────────────────────────────────────────────
-    // Walking/running files are long loops — we keep one looping continuously
+    // Walking/running files are long loops  -  we keep one looping continuously
     // rather than re-triggering them as one-shots.
     private String  activeStepLoop    = null; // which step loop is currently running
 
@@ -452,7 +461,7 @@ public class Window {
     private boolean lastFlightMode    = false; // player.debugMode last frame (before update)
 
     // ── Crystal dig sequence (plays clank1..4 in shuffled random order) ─────
-    // cystal_clank2 has a typo in the filename on disk — keep it to match the file.
+    // cystal_clank2 has a typo in the filename on disk  -  keep it to match the file.
     static final String[] CRYSTAL_CLANKS  = {
             "crystal_clank1", "cystal_clank2", "crystal_clank3", "crystal_clank4"
     };
@@ -460,8 +469,8 @@ public class Window {
     private int     crystalClankIdx   = 4;    // force a shuffle on first use
 
     // ── Dig sound timer (fires while holding break key) ────────────────────
-    float digSoundTimer = 0f;   // package-private — reset from WindowHud.updateBreaking()
-    float digPreDelay   = 0f;   // how long break key has been held — sounds start after a brief delay
+    float digSoundTimer = 0f;   // package-private  -  reset from WindowHud.updateBreaking()
+    float digPreDelay   = 0f;   // how long break key has been held  -  sounds start after a brief delay
     float   pathReadiness    = 0f;      // 0..1 shown in HUD during charging
     private boolean clientSpawnedAtHost = false;
 
@@ -469,7 +478,7 @@ public class Window {
     // Tracked as instance fields so portal/kamui FBO code can read them without
     // needing them passed as parameters.  Updated once per frame via
     // glfwGetFramebufferSize inside loop().  On Retina/HiDPI displays these are
-    // 2× the logical window size — the portal viewportSize uniform MUST use
+    // 2× the logical window size  -  the portal viewportSize uniform MUST use
     // these values, not the hardcoded PORTAL_FBO_W/H, to avoid UV tiling.
     private final int[] fw = {1280};
     private final int[] fh = {720};
@@ -479,7 +488,7 @@ public class Window {
     // ═══════════════════════════════════════════════════════════════════════════
     // A 2×2 quadrant complex with a solid central cross-pillar. Walk CLOCKWISE
     // around the pillar and you pass through an unbounded sequence of distinct
-    // rooms (1→2→3→4→5→6…) instead of looping back after four. The trick: the
+    // rooms (1->2->3->4->5->6…) instead of looping back after four. The trick: the
     // solid centre fully occludes the diagonal quadrant, so each time you round a
     // corner we silently re-skin the now-hidden diagonal room to be the NEXT room
     // in the sequence. You never see the swap; the space feels infinite.
@@ -495,7 +504,7 @@ public class Window {
     private static final int NER_CX     = NER_X0 + NER_SPAN / 2; // centre column (rel 6)
     private static final int NER_CZ     = NER_Z0 + NER_SPAN / 2; // centre row    (rel 6)
     // Distinct OPAQUE blocks (transparent ones would break the occlusion). One per
-    // room, cycled — so even far-apart rooms read as clearly different spaces.
+    // room, cycled  -  so even far-apart rooms read as clearly different spaces.
     private static final Block[] NER_PALETTE = {
         Block.RED_SAND, Block.CRYSTAL_BASE, Block.SNOW, Block.GRASS,
         Block.STAR_IRON, Block.SAND, Block.BONE, Block.SCORCHED_STONE,
@@ -520,18 +529,18 @@ public class Window {
     private float   canyonReturnX, canyonReturnY, canyonReturnZ; // where to warp back to
 
     // ═══════════════════════════════════════════════════════════════════════════
-    //  "ORBITAL ANNIHILATION"  — fully-3D cinematic strike (fire with F7)
+    //  "ORBITAL ANNIHILATION"   -  fully-3D cinematic strike (fire with F7)
     // ═══════════════════════════════════════════════════════════════════════════
     // Everything is real 3D geometry + the terrain "lidar" scan shader; the only
     // remaining 2D is nothing (no decals/rain). Phases:
-    //   CHARGE  (0.0–3.0): gyroscope torus rings spin up + pulsing core; the world
+    //   CHARGE  (0.0-3.0): gyroscope torus rings spin up + pulsing core; the world
     //                      darkens; flat ground rings spawn and creep outward.
-    //   IMPLODE (3.0–4.2): all rings whip inward (exp ease-in), collide at the core
-    //                      → detonation flash, and the lidar wavefront fires OUT.
-    //   SCANOUT (4.2–6.6): wavefront sweeps the terrain (glowing voxel wireframe);
+    //   IMPLODE (3.0-4.2): all rings whip inward (exp ease-in), collide at the core
+    //                      -> detonation flash, and the lidar wavefront fires OUT.
+    //   SCANOUT (4.2-6.6): wavefront sweeps the terrain (glowing voxel wireframe);
     //                      anti-gravity green embers float up filling the volume.
-    //   CARVE   (6.6–7.2): wavefront implodes back → the crater is carved → a beat.
-    //   LASER   (7.2–11.5): volumetric core beam + helix satellites + 3D shockwave
+    //   CARVE   (6.6-7.2): wavefront implodes back -> the crater is carved -> a beat.
+    //   LASER   (7.2-11.5): volumetric core beam + helix satellites + 3D shockwave
     //                      + voxel debris + environmental flash + violent shake.
     private boolean orbitalActive  = false;
     private float   orbitalT       = 0f;     // seconds since fire
@@ -544,7 +553,7 @@ public class Window {
     private float   orbScanRadiusW  = 0f;   // wavefront radius in WORLD units
     private float   orbScanIntensity= 0f;   // emissive gain for the lidar scan
     private float   orbFlashAmt     = 0f;   // environmental white flash (0..~1.7)
-    private boolean orbDark         = false;// true = real lighting blackout (sun/ambient/sky → black)
+    private boolean orbDark         = false;// true = real lighting blackout (sun/ambient/sky -> black)
     private com.leaf.game.render.Shader bloomShader = null; // searing-bloom post-process
     private com.leaf.game.render.Shader skyShader   = null; // procedural day/night sky
     private com.leaf.game.render.Shader moonShader  = null; // 3D moon sphere
@@ -559,7 +568,7 @@ public class Window {
     String  constellName       = null;   // name to show in HUD
     // 3D effect meshes (unit-sized, built once, drawn emissive with per-object MVP).
     private com.leaf.game.render.Mesh orbTorus, orbSphere, orbCyl, orbCube;
-    private com.leaf.game.render.Mesh radarFan;   // flat afterglow wedge (angular bright→0 fade)
+    private com.leaf.game.render.Mesh radarFan;   // flat afterglow wedge (angular bright->0 fade)
     private Shader meteorShader = null;
     private MeteorSystem meteorSystem = null;
     /** Lightweight 3D particles for embers (float up) and debris (burst out). */
@@ -577,7 +586,7 @@ public class Window {
     private static final float TINNITUS_DUR = 7.0f;   // seconds
 
     // ═══════════════════════════════════════════════════════════════════════════
-    //  "THE WORLD" — time-stop domain (F8)
+    //  "THE WORLD"  -  time-stop domain (F8)
     // ═══════════════════════════════════════════════════════════════════════════
     // An expanding sphere of photographic-negative reality bursts from the player's
     // feet; everything inside is inverted + shifted to electric blue, enemies and
@@ -588,15 +597,15 @@ public class Window {
     private float   tsRadiusNow    = 0f;               // live radius (world units)
     private boolean lastF8         = false;
     private boolean lastF4         = false;            // meteor storm edge-detect
-    // ── RADAR SWEEP (F10) — one-shot scan over the REAL world ────────────────────
+    // ── RADAR SWEEP (F10)  -  one-shot scan over the REAL world ────────────────────
     // A 3D radar scope projects onto the terrain (rings + spokes + rotating sweep
-    // arm with an opaque→transparent afterglow), enemies light up in wireframe and
+    // arm with an opaque->transparent afterglow), enemies light up in wireframe and
     // "ping" as the arm passes them, then it all fades back to normal.
     private boolean vlActive   = false;
     private float   vlT        = 0f;          // seconds into the scan
     private float   vlCx, vlCy, vlCz;         // scope origin (player position at trigger)
     private float   vlRadiusNow = 0f;         // scope radius (world units)
-    private float   vlAmountNow = 0f;         // 0→1→0 fade envelope
+    private float   vlAmountNow = 0f;         // 0->1->0 fade envelope
     private float   vlSweepNow  = 0f;         // sweep-arm angle (radians)
     private boolean lastF10     = false;
     private boolean lastRMB     = false;  // tracks RMB edge for ability-weapon one-shots
@@ -611,19 +620,19 @@ public class Window {
     static final int   CD_ROWS    = 9;
     static final int   CD_COLS    = 9;
     static final int   CD_CELL    = 3;     // blocks per cell side (27×27 footprint)
-    static final int   CD_SPAN    = CD_ROWS * CD_CELL;   // 27 — full footprint
+    static final int   CD_SPAN    = CD_ROWS * CD_CELL;   // 27  -  full footprint
     static final float CD_HALF    = CD_SPAN * 0.5f;      // 13.5
     static final float CD_LW      = 0.16f; // grid-line glow width
     static final float CD_WALL    = 5.0f;  // wireframe box height
     static final float CD_SPAWN   = 0.22f; // spawn-in animation seconds (snappy)
-    static final float CD_DET_DUR = 0.32f; // detonation flash duration (s) — quick
+    static final float CD_DET_DUR = 0.32f; // detonation flash duration (s)  -  quick
     static final float CD_RING_DUR = 0.6f; // ground shockwave ring lifetime (s)
     static final int   CD_CRUSH_H = 22;    // blocks above grid crushed on detonation
     static final float CD_LIFT    = 0.08f; // glow lift above terrain (anti z-fight)
 
     boolean cdActive   = false;
     boolean showDiscoUI = false;
-    float   cdSpawnT   = 0f;               // 0→1 spawn animation (then negative = despawn countdown)
+    float   cdSpawnT   = 0f;               // 0->1 spawn animation (then negative = despawn countdown)
     private boolean lastDisco  = false;
     float   cdGridX, cdGridY, cdGridZ;     // world-space grid centre (Y = aim point)
     final boolean[][] cdMarked  = new boolean[CD_ROWS][CD_COLS];
@@ -634,7 +643,7 @@ public class Window {
     private com.leaf.game.render.Mesh cdMesh = null;    // rebuilt when state changes
     boolean cdMeshDirty = true;
 
-    // ── DEPRIVATION DOMAIN (Water God Stance) — ['] key ─────────────────────────
+    // ── DEPRIVATION DOMAIN (Water God Stance)  -  ['] key ─────────────────────────
     // Absolute stillness. The player locks in place. Every entity that moves inside
     // the golden hemisphere is instantly counter-struck with a lingering golden thread
     // and a dimensional-slash ring. Thread web builds over time. All configurable via
@@ -642,7 +651,7 @@ public class Window {
     private boolean depActive    = false;
     private float   depT         = 0f;   // seconds since domain activated
     private float   depCooldown  = 0f;   // seconds until usable again (counts down)
-    private float   depStrike    = 0f;   // 0→1 strike flash (decays 6×/sec); fed to shader
+    private float   depStrike    = 0f;   // 0->1 strike flash (decays 6×/sec); fed to shader
     private boolean lastApostr   = false;
     private float   depX, depY, depZ;   // player position frozen at activation
     private float   depDetectTimer = 0f; // accumulates until DEP_TICK, then samples
@@ -660,7 +669,7 @@ public class Window {
     private com.leaf.game.render.Mesh depDomeWire = null;
     /** Solid hemisphere for the hex force-field shader (domeMode). */
     private com.leaf.game.render.Mesh depDomeSolid = null;
-    /** Real hexagon-cage geometry (solid glowing tubes) — the actual wireframe dome. */
+    /** Real hexagon-cage geometry (solid glowing tubes)  -  the actual wireframe dome. */
     private com.leaf.game.render.Mesh depHexDome = null;
     /** Thin gold ground ring where the cage meets the floor. */
     private com.leaf.game.render.Mesh depBaseRing = null;
@@ -751,12 +760,12 @@ public class Window {
     private float mihRamp = 0f;   // 0..1 "Made in Heaven" time-acceleration ramp
     /** World positions of placed TORCH blocks (drive point lights). */
     private final java.util.List<Vector3f> torchPositions = new java.util.ArrayList<>();
-    private com.leaf.game.render.Mesh fxCrescentMesh = null;  // gradient slash (white edge → warm body)
+    private com.leaf.game.render.Mesh fxCrescentMesh = null;  // gradient slash (white edge -> warm body)
     private com.leaf.game.render.Mesh fxConeMesh = null;      // fiery cone (stone canon charge)
     // Rising-edge detectors so a teleport (blink / seal / substitute / swap) spawns FX once.
     private float lastBlinkFlash = 0f, lastSealFlash = 0f;
 
-    // ── QUANTUM BULLET (',' key) — phases through everything, rippling walls ─────
+    // ── QUANTUM BULLET (',' key)  -  phases through everything, rippling walls ─────
     private static final class QBullet {
         final Vector3f pos, vel;
         float age; final float life;
@@ -875,7 +884,7 @@ public class Window {
                 if (!overlay1) firstMouse[0] = true;
             }
 
-            // Skip the onboarding tutorial → jump straight to endless waves.
+            // Skip the onboarding tutorial -> jump straight to endless waves.
             if (key == GLFW_KEY_F2 && action == GLFW_RELEASE && !showChat
                     && tutorial != null && tutorial.isActive()) {
                 tutorial.skip();
@@ -900,13 +909,13 @@ public class Window {
                 if (!overlay4) firstMouse[0] = true;
             }
 
-            // F6 — toggle the non-Euclidean "Layered Rooms" anomaly.
+            // F6  -  toggle the non-Euclidean "Layered Rooms" anomaly.
             // (Edge is detected in the game loop via lastF6.)
             if (key == GLFW_KEY_F6 && action == GLFW_RELEASE && !showChat) {
                 lastF6 = false;
             }
 
-            // F9 — DEV: instantly clear the current wave / force the next wave
+            // F9  -  DEV: instantly clear the current wave / force the next wave
             if (key == GLFW_KEY_F9 && action == GLFW_RELEASE) {
                 // Kill all alive enemies so the wave-clear detector fires next tick.
                 if (enemyManager != null) enemyManager.getEnemies().forEach(e -> e.alive = false);
@@ -914,7 +923,7 @@ public class Window {
                 showUnlockCard  = false;
                 practiceAbility = null; practiceSteps = null;
                 if (enemyManager != null && enemyManager.awaitingNextWave) enemyManager.beginNextWave();
-                System.out.println("[DEV] F9 — skipped wave " + (enemyManager != null ? enemyManager.getWaveNumber() : "?"));
+                System.out.println("[DEV] F9  -  skipped wave " + (enemyManager != null ? enemyManager.getWaveNumber() : "?"));
             }
             if (key == GLFW_KEY_F12 && action == GLFW_RELEASE && !showChat) {
                 player.useTestMovement = !player.useTestMovement;
@@ -1032,12 +1041,12 @@ public class Window {
                 }
 
                 // While piloting the stand drone OR auto-aiming at an enemy, LMB is
-                // consumed by the stand — block normal block-breaking.
+                // consumed by the stand  -  block normal block-breaking.
                 // While Kamui is active, LMB drives the absorption system instead.
                 boolean standConsumedLMB = player.stand.isInStandPerspective()
                         || player.stand.autoAimedThisFrame;
                 boolean kamuiConsumedLMB = player != null && player.abilities.isKamui;
-                // Any held weapon turns LMB into FIRE, never break — one button for
+                // Any held weapon turns LMB into FIRE, never break  -  one button for
                 // every tool keeps the game straightforward.
                 Block heldLmb = hotbar[selectedSlot];
                 boolean gunHeld   = heldLmb == Block.GATLING_GUN
@@ -1062,7 +1071,7 @@ public class Window {
                         && selectedBlock != Block.GATLING_GUN) {   // the gun is a weapon, not a block
                     if (!playerOccupies(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ) &&
                             !remotePlayerOccupies(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ)) {
-                        // Torches are an infinite light tool — never consumed.
+                        // Torches are an infinite light tool  -  never consumed.
                         if (selectedBlock == Block.TORCH || inventory.useBlock(selectedBlock)) {
                             world.setBlock(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ, selectedBlock);
                             world.rebuildChunkAt(lastTarget.placeX, lastTarget.placeY, lastTarget.placeZ);
@@ -1134,7 +1143,7 @@ public class Window {
 
     /**
      * Debug "arm everything" helper (used by {@code /showcase}-style testing).
-     * NOT wired to PLAY anymore — PLAY runs the natural teach-and-reward
+     * NOT wired to PLAY anymore  -  PLAY runs the natural teach-and-reward
      * progression so the god-tier weapons stay an earned surprise.
      */
     public void enterPlaytestMode() {
@@ -1188,14 +1197,14 @@ public class Window {
             case ORBITAL     -> { w = Block.WPN_ORBITAL;      slot = 2; }
             case DOMAIN      -> { w = Block.WPN_TIMESTOP;     slot = 3; }
             case STONE_CANON -> { w = Block.WPN_STONE_CANNON; slot = 4; }
-            case DEPRIVATION -> { }  // no hotbar item — activated by ' key
+            case DEPRIVATION -> { }  // no hotbar item  -  activated by ' key
             default          -> { return null; }
         }
         if (slot >= 0 && w != null) {
             inventory.addBlockAmount(w, 1);
             hotbar[slot] = w;
         }
-        // Queue the fancy reveal card. Back-to-back grants (Orbital → The World at
+        // Queue the fancy reveal card. Back-to-back grants (Orbital -> The World at
         // the tower) each get their full 5.5 s on screen instead of overwriting.
         if (weaponRevealTimer > 0f) {
             weaponRevealQueue.add(a);
@@ -1258,50 +1267,50 @@ public class Window {
 
     /**
      * Build the guided TRY IT steps for a freshly unlocked ability.
-     * SLASH and DASH are skipped — the opening tutorial already taught them.
+     * SLASH and DASH are skipped  -  the opening tutorial already taught them.
      * Hard-to-explain powers get short multi-step walkthroughs.
      */
     private void queueTryStepsFor(Progression.Ability a) {
         switch (a) {
             case SLASH, DASH -> { /* already taught in the opening tutorial */ }
             case QUAGMIRE -> tryQueue.add(new TryStep(a, "M",
-                    "MUD WAVE  —  press  M",
-                    "Aim at an enemy on the ground  —  the mud TRAPS them.",
+                    "MUD WAVE   -   press  M",
+                    "Aim at an enemy on the ground   -   the mud TRAPS them.",
                     TRY_COOLDOWN_DIP, 9f));
             case LIGHTNING -> tryQueue.add(new TryStep(a, "U",
-                    "LIGHTNING  —  press  U",
+                    "LIGHTNING   -   press  U",
                     "A full-power bolt strikes the enemy in your crosshair.",
                     TRY_COOLDOWN_DIP, 9f));
             case GRAB -> tryQueue.add(new TryStep(a, "O",
-                    "GRAB & SLAM  —  press  O",
-                    "GET CLOSE to an enemy first  —  then grab and SLAM them!",
+                    "GRAB & SLAM   -   press  O",
+                    "GET CLOSE to an enemy first   -   then grab and SLAM them!",
                     TRY_COOLDOWN_DIP, 12f));
             case BLINK -> tryQueue.add(new TryStep(a, "E",
-                    "BLINK  —  press  E",
+                    "BLINK   -   press  E",
                     "You teleport to WHERE YOU ARE LOOKING. Aim far, then blink.",
                     TRY_COOLDOWN_DIP, 9f));
             case PILLAR -> tryQueue.add(new TryStep(a, "K",
-                    "STONE PILLAR  —  press  K",
-                    "Stand on ROCKY / STONE ground  —  a pillar launches you up!",
+                    "STONE PILLAR   -   press  K",
+                    "Stand on ROCKY / STONE ground   -   a pillar launches you up!",
                     TRY_COOLDOWN_DIP, 12f));
             case CANNONBALL -> tryQueue.add(new TryStep(a, "HOLD  G",
-                    "CANNONBALL  —  hold  G",
+                    "CANNONBALL   -   hold  G",
                     "Hold to charge... release to LAUNCH yourself like a cannonball!",
                     TRY_COOLDOWN_DIP, 12f));
             case STAND -> {
                 tryQueue.add(new TryStep(a, "X",
-                        "COMBAT DRONE  —  press  X",
+                        "COMBAT DRONE   -   press  X",
                         "Your drone deploys beside you and fires at enemies on its own.",
                         TRY_STAND_OUT, 12f));
                 tryQueue.add(new TryStep(a, "TAB",
-                        "PILOT IT  —  press  TAB",
+                        "PILOT IT   -   press  TAB",
                         "See through the drone's eyes. Press TAB again to come back.",
                         TRY_STAND_PILOT, 9f));
             }
             case SEAL -> {
                 tryQueue.add(new TryStep(a, "H",
-                        "MINATO'S SEAL  —  press  H",
-                        "Throw a glowing seal  —  it sticks wherever it lands.",
+                        "MINATO'S SEAL   -   press  H",
+                        "Throw a glowing seal   -   it sticks wherever it lands.",
                         TRY_SEAL_PLACED, 12f));
                 tryQueue.add(new TryStep(a, "B",
                         "NOW press  B",
@@ -1310,12 +1319,12 @@ public class Window {
             }
             case SUBSTITUTE -> {
                 tryQueue.add(new TryStep(a, "HOLD  V",
-                        "SUBSTITUTE  —  hold  V",
-                        "Keep holding  —  you are braced for the next enemy hit.",
+                        "SUBSTITUTE   -   hold  V",
+                        "Keep holding   -   you are braced for the next enemy hit.",
                         TRY_SUB_PRIMED, 9f));
                 tryQueue.add(new TryStep(a, "HOLD  V",
                         "NOW LET AN ENEMY HIT YOU",
-                        "The hit is absorbed  —  you blink away and your decoy EXPLODES.",
+                        "The hit is absorbed   -   you blink away and your decoy EXPLODES.",
                         TRY_INFO_ONLY, 6f));
             }
             default -> { /* weapons get the WEAPON FORGED card instead */ }
@@ -1323,7 +1332,7 @@ public class Window {
     }
 
     /**
-     * Central death handler — the SINGLE place a death is triggered, so every damage
+     * Central death handler  -  the SINGLE place a death is triggered, so every damage
      * source (enemy hits, fall damage, PvP/troop relay, the void) dies the same way and
      * respawns at the same consistent spawn point via the revival flow. Idempotent: a
      * no-op if a death is already in progress.
@@ -1398,7 +1407,7 @@ public class Window {
         if (next != null && player.progression.isUnlocked(next)) {
             java.util.List<AbilityPractice.Step> steps = AbilityPractice.forAbility(next);
             if (steps.isEmpty()) {
-                // No tutorial for this ability — keep draining the queue.
+                // No tutorial for this ability  -  keep draining the queue.
                 startNextPractice();
                 return;
             }
@@ -1554,10 +1563,10 @@ public class Window {
         // ── AUDIO PRELOAD ──────────────────────────────────────────────────────
         // Warm up the JVM audio mixer so the very first play() call has no delay,
         // then decode every sound file once into heap memory.  Playback from this
-        // point on is pure memory copy — no classpath IO, no thread-creation cost.
+        // point on is pure memory copy  -  no classpath IO, no thread-creation cost.
         //AudioManager.warmup();
         com.leaf.game.render.BlockTextureAtlas.load();
-        // Subtle Doppler — enough to feel projectiles/wind pass by without the
+        // Subtle Doppler  -  enough to feel projectiles/wind pass by without the
         // cartoonish over-pitch a factor of 1.0 produces.
         /**AudioManager.setDopplerFactor(0.7f);
         for (String snd : new String[]{
@@ -1594,7 +1603,7 @@ public class Window {
                 "block_stone", "block_soil", "block_sand", "block_crystal",
                 "stone_digging", "soil_digging", "sand_digging",
                 "crystal_clank1", "cystal_clank2", "crystal_clank3", "crystal_clank4",
-                // (block sounds now live under "block_stone/soil/sand/crystal" — see preload above)
+                // (block sounds now live under "block_stone/soil/sand/crystal"  -  see preload above)
         }) { //AudioManager.preload(snd);
             }
         **/
@@ -1641,9 +1650,9 @@ public class Window {
             // ── TIME CONTROLLER UPDATE ────────────────────────────────────────
             // Must happen before anything reads tc.getScale() this frame.
             // Key policy (checked with glfwGetKey so they work as hold-keys):
-            //   R → slow  (0.15 scale)
-            //   Y → fast  (4.0 scale)
-            //   Neither → normal (1.0)
+            //   R -> slow  (0.15 scale)
+            //   Y -> fast  (4.0 scale)
+            //   Neither -> normal (1.0)
             // Chat box suppresses time dilation so Y/R text doesn't glitch.
             if (!showChat && !isPaused && networkInitialized && !isPreloading) {
                 boolean timeUnlocked = player.can(Progression.Ability.TIME);
@@ -1657,7 +1666,7 @@ public class Window {
                     tc.setTargetScale(1.0f);
                 }
             } else {
-                // Menu open or not yet in-game — return to normal
+                // Menu open or not yet in-game  -  return to normal
                 tc.setTargetScale(1.0f);
             }
             tc.update(rawDeltaTime);
@@ -1669,26 +1678,41 @@ public class Window {
             if (cutscene.isActive()) {
                 cutscene.update(rawDeltaTime);
             }
-            // Ending cutscene just finished — activate flight immediately so the
+            // Fireworks during ending cutscene
+            if (cutscene.isActive() && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
+                fireworkTimer -= rawDeltaTime;
+                if (fireworkTimer <= 0f) {
+                    fireworkTimer = 0.4f;
+                    float px = player.position.x + (float)(Math.random() - 0.5) * 10f;
+                    float py = player.position.y + 1f + (float)(Math.random() * 5f);
+                    float pz = player.position.z + (float)(Math.random() - 0.5) * 10f;
+                    float[] c = new float[][]{{3f,1f,0.3f},{0.3f,3f,0.5f},{0.5f,0.8f,3f},{3f,0.3f,1f}}[(int)(Math.random()*4)];
+                    fxBurst(px, py, pz, 0.2f, 3.5f, 0.5f, c[0], c[1], c[2]);
+                }
+            }
+            // Ending cutscene just finished  -  activate flight immediately so the
             // player is already flying when the world comes back.
             if (cutsceneWasActive && !cutscene.isActive()
                     && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
                 if (player.progression.isUnlocked(Progression.Ability.FLIGHT)) {
                     player.debugMode = true;   // debugMode is the flight-active flag
                 }
+                // Unlock ALL abilities so the player can rampage freely
+                player.progression.unlockAll();
+                immunityTimer = 999f;  // invincible post-ending
             }
             if (!cutscene.isActive() && deathCutscenePending) {
-                // Cutscene just ended — check which kind finished.
+                // Cutscene just ended  -  check which kind finished.
                 CutsceneManager.Kind finishedKind = cutscene.getKind();
                 if (finishedKind == CutsceneManager.Kind.KAMUI_AWAKEN) {
-                    // Kamui awakening done — show death screen so player can hit ENTER to respawn.
+                    // Kamui awakening done  -  show death screen so player can hit ENTER to respawn.
                     deathCutscenePending = false;
                     showDeathScreen = true;
                 }
             }
-            // Tick immunity — block incoming damage while it's active.
+            // Tick immunity  -  block incoming damage while it's active.
             if (immunityTimer > 0f) immunityTimer -= rawDeltaTime;
-            // Showcase/demo mode: never run out of mana, never die — so the user can
+            // Showcase/demo mode: never run out of mana, never die  -  so the user can
             // chain every ability for the teacher without interruption.
             if (showcaseMode && player != null) {
                 player.mana   = player.maxMana;
@@ -1709,7 +1733,7 @@ public class Window {
                 // At 140 blocks/s the player crosses ~4 chunk columns per second;
                 // the default cap of 3 per frame can't keep up. 20 per frame clears
                 // a full preloaded queue within one second without spiking frame time
-                // (each buildChunkMeshes call is ~0.5–1 ms on average hardware).
+                // (each buildChunkMeshes call is ~0.5-1 ms on average hardware).
                 boolean cannonActive = player.abilities.isCannonballing
                         || player.abilities.isCharging();
                 int maxMeshesPerFrame = isPreloading ? 24 : cannonActive ? 20 : 8;
@@ -1717,7 +1741,7 @@ public class Window {
                 // issues a blocking glBufferData upload, so a burst of them (fast
                 // movement / cannonball, when many chunks arrive at once) blows
                 // the frame and shows as a lag spike. Cap the time spent here and
-                // let leftover chunks mesh next frame — terrain pops in over a few
+                // let leftover chunks mesh next frame  -  terrain pops in over a few
                 // frames instead of stalling one. While preloading the player is
                 // frozen at spawn, so spikes are invisible; let it run uncapped.
                 long meshBudgetNanos = 4_000_000L; // ~4 ms
@@ -1755,7 +1779,7 @@ public class Window {
                         int spawnZ = (int)Math.floor(player.position.z);
                         // Scan from ceiling down; find the highest outdoor solid block.
                         // Requires full sky visibility above (no solid block between
-                        // the surface and Chunk.HEIGHT) — this prevents spawning on
+                        // the surface and Chunk.HEIGHT)  -  this prevents spawning on
                         // cave ceilings or inside underground structures.
                         outer:
                         for (int ly = Chunk.HEIGHT - 2; ly >= 1; ly--) {
@@ -1774,7 +1798,7 @@ public class Window {
                         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
                         if (armPlaytestOnSpawn) {
-                            // PLAY → full-fun sandbox. No tutorial, no walls: everything
+                            // PLAY -> full-fun sandbox. No tutorial, no walls: everything
                             // unlocked, weapons in the hotbar, enemies roaming to fight.
                             armPlaytestOnSpawn = false;
                             enterPlaytestMode();
@@ -1805,6 +1829,38 @@ public class Window {
                             playIntroOnSpawn = false;
                             cutscene.startIntro();
                         }
+                    }
+
+                    // ── VICTORY SCREEN INPUT HANDLER ─────────────────────────
+                    if (showVictoryScreen) {
+                        // Periodic fireworks
+                        fireworkTimer -= rawDeltaTime;
+                        if (fireworkTimer <= 0f) {
+                            fireworkTimer = 0.35f;
+                            float px = player.position.x + (float)(Math.random() - 0.5) * 8f;
+                            float py = player.position.y + 2f + (float)(Math.random() * 4f);
+                            float pz = player.position.z + (float)(Math.random() - 0.5) * 8f;
+                            float[] c = new float[][]{{3f,1f,0.3f},{0.3f,3f,0.5f},{0.5f,0.8f,3f},{3f,0.3f,1f}}[(int)(Math.random()*4)];
+                            fxBurst(px, py, pz, 0.2f, 3.5f, 0.5f, c[0], c[1], c[2]);
+                            fxRing (px, py - 0.3f, pz, 0.3f, 5f, 0.4f, c[0]*0.6f, c[1]*0.6f, c[2]*0.6f);
+                        }
+                        boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
+                                || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                        if (en && !lastVictoryEnter) {
+                            showVictoryScreen = false;
+                            // Launch the player skyward as a celebration
+                            player.setVelocityY(35f);
+                            fxBurst(player.position.x, player.position.y + 1f, player.position.z, 0.6f, 8f, 0.8f, 3.5f, 1.5f, 0.4f);
+                            fxRing (player.position.x, player.position.y, player.position.z, 1f, 14f, 0.9f, 3.5f, 1.0f, 0.3f);
+                            float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
+                            int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
+                            cutscene.endingStat = String.format(
+                                    "Enemies defeated: %d      Time: %d:%02d",
+                                    enemyManager.totalKills, em, es);
+                            cutscene.startEnding();
+                            fireworkTimer = 0f;
+                        }
+                        lastVictoryEnter = en;
                     }
 
                     // ── DEATH SCREEN INPUT HANDLER ───────────────────────────
@@ -1884,7 +1940,7 @@ public class Window {
                     }
 
                     if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending) {
-                        // ── MP DUEL SETUP — runs BEFORE abilities so PvP hits land ─
+                        // ── MP DUEL SETUP  -  runs BEFORE abilities so PvP hits land ─
                         updateMpProxyEarly();
 
                         // ── PLAYER UPDATE (time-scaled) ────────────────────────
@@ -1925,6 +1981,21 @@ public class Window {
                             }
                         }
                         player.update(window, camera, world, deltaTime);
+
+                        // ── SMASH HINT: show "SHIFT = GROUND SMASH" on first 3 big falls ──
+                        if (smashHintCount < 3
+                                && player.can(Progression.Ability.PILLAR)
+                                && !player.isOnGround()
+                                && !player.isSmashing()
+                                && !player.debugMode
+                                && (player.highestY - player.position.y) > 8f) {
+                            if (!showSmashHint) {
+                                showSmashHint = true;
+                                smashHintCount++;
+                            }
+                        } else if (player.isOnGround() || player.isSmashing() || player.debugMode) {
+                            showSmashHint = false;
+                        }
 
                         // ── DEPRIVATION DOMAIN: enforce position lock every frame ─
                         // Override whatever movement player.update() computed so the
@@ -1982,10 +2053,10 @@ public class Window {
 
                         // ── FOOTSTEPS ─────────────────────────────────────────
                         // Only while grounded, not submerged, and actually moving.
-                        // Surface type: sand/red-sand → walking_sand; sprint → running.
+                        // Surface type: sand/red-sand -> walking_sand; sprint -> running.
                         float horizSpeedStep = (float) Math.sqrt(
                                 listenerVel.x * listenerVel.x + listenerVel.z * listenerVel.z);
-                        // Walking/running files are long loops — decide which one
+                        // Walking/running files are long loops  -  decide which one
                         // should be playing this frame and switch loops on change.
                         String wantedStep = null;
                         if (player.isOnGround()
@@ -2011,13 +2082,13 @@ public class Window {
                             activeStepLoop = wantedStep;
                         }
 
-                        // ── METEOR SPAWN: smash start → STAR_IRON falling from sky ──
+                        // ── METEOR SPAWN: smash start -> STAR_IRON falling from sky ──
                         // Detects the leading edge of isSmashing so the meteor only
                         // spawns once per smash, not every frame of the descent.
-                        // Only spawns on rocky/hard ground — looks wrong on sand/beach.
+                        // Only spawns on rocky/hard ground  -  looks wrong on sand/beach.
                         boolean nowSmashing = player.isSmashing();
                         if (nowSmashing && !wasSmashing) {
-                            // Scan downward — at smash start the player is still airborne,
+                            // Scan downward  -  at smash start the player is still airborne,
                             // so position.y - 1 is AIR. Find the first solid block below.
                             Block groundBlock = Block.AIR;
                             int scanX = (int)Math.floor(player.position.x);
@@ -2080,7 +2151,7 @@ public class Window {
                             telescope.update(camera, dayNight);  // Always update compass and tracking math
                         }
 
-                        // ── ABILITY WEAPONS — LEFT-CLICK fires the equipped ability
+                        // ── ABILITY WEAPONS  -  LEFT-CLICK fires the equipped ability
                         //    (RMB still works too, but every tool answers to LMB so
                         //     there is exactly ONE button to remember) ───────────
                         Block heldWpn = hotbar[selectedSlot];
@@ -2112,13 +2183,13 @@ public class Window {
                         // Selected-weapon hint so the player always knows what Left-Click does
                         if (hintTimer <= 0.1f) {
                             String wpnHint = switch (heldWpn) {
-                                case WPN_ORBITAL     -> "Orbital Annihilation  —  Left-Click to fire";
-                                case WPN_SNIPER      -> "Sniper  —  hold Left-Click to charge, release to fire";
-                                case WPN_TIMESTOP    -> "Time Domain  —  Left-Click to toggle";
-                                case WPN_STONE_CANNON-> "Stone Cannon  —  hold Left-Click near stone, release to fire";
-                                case GATLING_GUN     -> "Gatling Gun  —  hold Left-Click to fire";
-                                case GRAPPLING_HOOK  -> "Grappling Hook  —  hold LMB to swing";
-                                case TELESCOPE       -> "Telescope  —  hold RMB to look";
+                                case WPN_ORBITAL     -> "Orbital Annihilation   -   Left-Click to fire";
+                                case WPN_SNIPER      -> "Sniper   -   hold Left-Click to charge, release to fire";
+                                case WPN_TIMESTOP    -> "Time Domain   -   Left-Click to toggle";
+                                case WPN_STONE_CANNON-> "Stone Cannon   -   hold Left-Click near stone, release to fire";
+                                case GATLING_GUN     -> "Gatling Gun   -   hold Left-Click to fire";
+                                case GRAPPLING_HOOK  -> "Grappling Hook   -   hold LMB to swing";
+                                case TELESCOPE       -> "Telescope   -   hold RMB to look";
                                 default -> null;
                             };
                             if (wpnHint != null) { hintText = wpnHint; hintTimer = 1.5f; }
@@ -2143,7 +2214,7 @@ public class Window {
                             if (grabEnemy.grabImpactIsGround) AudioManager.play("ground_smash");
                             ScreenEffectManager.INSTANCE.hitStop(3);
                             ScreenEffectManager.INSTANCE.flashGrabSlam();
-                            // Brutal impact shake — bigger than standard smash
+                            // Brutal impact shake  -  bigger than standard smash
                             activeShakeDuration  = grabEnemy.grabImpactIsGround ? 0.75f : 0.55f;
                             activeShakeAmplitude = grabEnemy.grabImpactIsGround ? 0.38f : 0.28f;
                             smashShakeTimer = Math.max(smashShakeTimer, activeShakeDuration);
@@ -2155,7 +2226,7 @@ public class Window {
                         // ── GRAB THROW LAUNCH RECOIL ───────────────────────────
                         // throwFlash is set the frame a wall/slam throw fires.
                         if (player.grab.throwFlash > 0f) {
-                            // Brief camera judder — feels like pulling a trigger
+                            // Brief camera judder  -  feels like pulling a trigger
                             smashShakeTimer = Math.max(smashShakeTimer, 0.12f);
                             activeShakeDuration  = 0.12f;
                             activeShakeAmplitude = 0.14f;
@@ -2189,8 +2260,8 @@ public class Window {
                             float adx = ev[3], ady = ev[4], adz = ev[5];
                             float cx = ox + adx * 3.5f, cy = oy + ady * 3.5f, cz = oz + adz * 3.5f;
                             float roll = (float) (Math.random() * Math.PI * 2.0);
-                            // Two crossing crescents (facing back at the player) → a searing X.
-                            // Warm amber-gold tint — the baked gradient gives a white-hot
+                            // Two crossing crescents (facing back at the player) -> a searing X.
+                            // Warm amber-gold tint  -  the baked gradient gives a white-hot
                             // edge fading to deep amber (powerful 3D blade, not flat white).
                             fxSlash(cx, cy, cz, -adx, -ady, -adz, roll,        2.4f, 3.6f, 6.0f, 0.30f, 1.5f, 1.0f, 0.45f);
                             fxSlash(cx, cy, cz, -adx, -ady, -adz, roll + 1.5f, -2.4f, 3.2f, 5.4f, 0.30f, 1.6f, 1.1f, 0.5f);
@@ -2199,7 +2270,7 @@ public class Window {
                         player.attacks.pendingMeleeArcs.clear();
 
                         // Update all enemies (gravity, AI, death fade, etc.).
-                        // THE WORLD: time is frozen → enemies and their projectiles
+                        // THE WORLD: time is frozen -> enemies and their projectiles
                         // stop dead while the player keeps moving (dt=0 freezes them).
                         enemyManager.update(timeStopActive ? 0f : deltaTime, world, player.position);
 
@@ -2257,7 +2328,7 @@ public class Window {
                                 float adz = e.position.z - player.position.z;
                                 if (adx*adx + adz*adz > 80f * 80f) continue;
                                 if (e.type == Enemy.Type.INFERNO_TOWER) {
-                                    // Rising embers from the crown — subtle warm streaks, NOT
+                                    // Rising embers from the crown  -  subtle warm streaks, NOT
                                     // HDR-bright (colours ≤ 0.25 keep peak < 1.0 in the FBO so
                                     // bloom stays gentle rather than saturating the screen).
                                     float ang = (float)(Math.random() * Math.PI * 2);
@@ -2333,7 +2404,7 @@ public class Window {
                         }
                         if (tutorial != null) tutorial.update(deltaTime);
 
-                        // ── THE VOYAGE — opens after the player clears wave 6 ──
+                        // ── THE VOYAGE  -  opens after the player clears wave 6 ──
                         // Waves 1-6 are the "training ground" where abilities unlock.
                         // Once the wave-6 card is dismissed and practice is done the
                         // crystal shatters, FLIGHT is granted, and the journey begins.
@@ -2343,7 +2414,7 @@ public class Window {
                                 && !showUnlockCard && practiceAbility == null
                                 && enemyManager.lastClearedWave >= Progression.VOYAGE_START_WAVE) {
                             voyage.start();
-                            enemyManager.wavesEnabled    = false;  // training done — free to explore
+                            enemyManager.wavesEnabled    = false;  // training done  -  free to explore
                             enemyManager.freeExploreMode = true;   // ambient enemies roam the world
                             voyageStarted = true;
                             // Drop stale ground-combat prompts; this round is ALL
@@ -2353,7 +2424,7 @@ public class Window {
                             tryStep = null;
                             tryQueue.add(new TryStep(Progression.Ability.FLIGHT,
                                     "SPACE  x2",
-                                    "DOUBLE-TAP  SPACE  —  FLY!",
+                                    "DOUBLE-TAP  SPACE   -   FLY!",
                                     "Hold SPACE to climb. Then follow the BEAM OF LIGHT to the shard.",
                                     TRY_FLYING, 90f));
                         }
@@ -2368,7 +2439,7 @@ public class Window {
                         // so the two full-screen cards never stack on each other.
                         if (weaponRevealTimer > 0f && !showUnlockCard) {
                             weaponRevealTimer = Math.max(0f, weaponRevealTimer - rawDeltaTime);
-                            // Current card done → show the next queued reveal (if any)
+                            // Current card done -> show the next queued reveal (if any)
                             if (weaponRevealTimer <= 0f && !weaponRevealQueue.isEmpty()) {
                                 Progression.Ability next = weaponRevealQueue.poll();
                                 weaponRevealAbility = next;
@@ -2385,26 +2456,32 @@ public class Window {
                             hintTimer = 8f;
                         }
 
-                        // ── WAVE CLEARED → ending / unlock card ───────────────
+                        // ── WAVE CLEARED -> ending / unlock card ───────────────
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
                             int waveJustCleared = enemyManager.lastClearedWave;
 
                             if (waveJustCleared >= Progression.ENDING_WAVE && !gameEnded) {
-                                // ── WAVE 10 = FLIGHT = THE ENDING ─────────────
+                                // ── WAVE 11 = VICTORY ─────────────────────────
                                 player.progression.unlockForWave(Progression.ENDING_WAVE); // grant FLIGHT
-                                float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
-                                int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
-                                cutscene.endingStat = String.format(
-                                        "Enemies defeated: %d      Time: %d:%02d",
-                                        enemyManager.totalKills, em, es);
-                                cutscene.startEnding();
-                                enemyManager.wavesEnabled = false;  // world is yours now — no more waves
-                                enemyManager.freeExploreMode = true; // …and it comes alive: ambient spawns + Inferno-Tower sites
-                                enemyManager.beginNextWave();        // clear the awaiting flag
+                                enemyManager.wavesEnabled = false;
+                                enemyManager.freeExploreMode = true;
+                                enemyManager.beginNextWave();
                                 gameEnded = true;
+                                showVictoryScreen = true;
+                                fireworkTimer = 0f;
+                                // Big bang — player death FX re-used as victory explosion
+                                float px = player.position.x, py = player.position.y + 1f, pz = player.position.z;
+                                fxBurst(px, py, pz, 0.5f, 6.0f, 0.8f, 3.5f, 1.2f, 0.4f);
+                                fxRing (px, py - 0.5f, pz, 0.8f, 12f, 0.9f, 3.5f, 1.0f, 0.3f);
+                                for (int i = 0; i < 12; i++) {
+                                    double a = i / 12.0 * Math.PI * 2;
+                                    fxBolt(px, py, pz, (float)Math.cos(a)*0.3f, 0.8f, (float)Math.sin(a)*0.3f, 8f, 0.12f, 0.9f, 3.0f, 1.0f, 0.4f);
+                                }
+                                ScreenEffectManager.INSTANCE.flash(1.0f, 1.0f, 0.85f, 0.7f, 0.5f);
+                                AudioManager.play("cystal_click", 1.0f);
                             } else {
                                 // Normal wave: unlock this tier. Card only when something
-                                // is genuinely NEW — wave 1 (Slash/Dash, already taught by
+                                // is genuinely NEW  -  wave 1 (Slash/Dash, already taught by
                                 // the tutorial) flows straight into the next wave.
                                 java.util.List<Progression.Ability> gained =
                                         player.progression.unlockForWave(waveJustCleared);
@@ -2433,14 +2510,14 @@ public class Window {
                             }
                         }
 
-                        // Dismiss the card with ENTER — no forced practice, straight to next wave.
+                        // Dismiss the card with ENTER  -  no forced practice, straight to next wave.
                         if (showUnlockCard) {
                             boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
                                     || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                             if (en && !lastCardSpace) {
                                 showUnlockCard = false;
                                 lastPracticeEnter = true;
-                                // Queue guided TRY IT steps for each fresh power —
+                                // Queue guided TRY IT steps for each fresh power  - 
                                 // the next wave is already coming, so they get to
                                 // try it on live targets immediately.
                                 tryQueue.clear();
@@ -2480,7 +2557,7 @@ public class Window {
                                 }
                                 tryStep = null;
                             } else if (tryTimer <= 0f) {
-                                tryStep = null;   // timed out — move on quietly
+                                tryStep = null;   // timed out  -  move on quietly
                             }
                         }
 
@@ -2503,7 +2580,7 @@ public class Window {
                                 practiceCelebration -= deltaTime;
                                 if (practiceCelebration <= 0f) advancePracticeStep();
                             } else {
-                                // Run the done() predicate — counts up to step.required.
+                                // Run the done() predicate  -  counts up to step.required.
                                 boolean oneAction = false;
                                 try { oneAction = step.done.test(practiceCtx); }
                                 catch (Exception ignored) {}
@@ -2520,7 +2597,7 @@ public class Window {
                                     advancePracticeStep(); // safety timeout
                                 }
 
-                                // ENTER skip — only for steps that explicitly allow it.
+                                // ENTER skip  -  only for steps that explicitly allow it.
                                 boolean enterNow = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
                                         || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
                                 boolean canSkip  = step.allowSkip
@@ -2613,7 +2690,7 @@ public class Window {
                             substituteCooldown = GameConfig.substituteCooldown;
                         }
 
-                        // ── VOID DEATH — player fell past y=0 into the abyss ─────
+                        // ── VOID DEATH  -  player fell past y=0 into the abyss ─────
                         if (player.fellIntoVoid && !showDeathScreen && !deathCutscenePending) {
                             player.fellIntoVoid = false;
                             ScreenEffectManager.INSTANCE.flash(0f, 0f, 0f, 1.0f, 0.5f);
@@ -2627,7 +2704,7 @@ public class Window {
                                 // Kamui / revival immunity = invincible
                                 enemyManager.pendingPlayerDamage = 0f;
                             } else {
-                                // ── DAMAGE ALERT — so a hit never comes "from nowhere" ──
+                                // ── DAMAGE ALERT  -  so a hit never comes "from nowhere" ──
                                 float dmg = enemyManager.pendingPlayerDamage;
                                 // Red vignette flash; stronger the harder you're hit.
                                 float fa = Math.min(0.6f, 0.18f + dmg * 0.05f);
@@ -2640,7 +2717,7 @@ public class Window {
                             }
                         }
 
-                        // ── CENTRAL DEATH — any source (enemy, FALL, PvP relay) that
+                        // ── CENTRAL DEATH  -  any source (enemy, FALL, PvP relay) that
                         //    drained HP to 0 dies here, the same way, with the same spawn.
                         if (player.health <= 0f && !player.abilities.isKamui && immunityTimer <= 0f) {
                             triggerDeath();
@@ -2650,7 +2727,7 @@ public class Window {
                         if (player.abilities.isKamui) {
                             player.mana = Math.max(0f,
                                     player.mana - GameConfig.manaKamuiDrain * deltaTime);
-                            // Force-exit Kamui when mana is fully exhausted — no cooldown
+                            // Force-exit Kamui when mana is fully exhausted  -  no cooldown
                             if (player.mana <= 0f) {
                                 player.abilities.isKamui          = false;
                                 player.abilities.kamuiAutoExited  = false;
@@ -2666,7 +2743,7 @@ public class Window {
                             boolean lmbHeld = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
                             if (lmbHeld) {
                                 // Find best target: enemy in crosshair takes priority, else block.
-                                // No range limit — Kamui can reach anything the player looks at.
+                                // No range limit  -  Kamui can reach anything the player looks at.
                                 Vector3f eyePos = camera.position;
                                 Enemy absorbEnemy = enemyManager.findMostAligned(
                                         world, eyePos, camera.getLookDirection(), 2000f);
@@ -2730,13 +2807,13 @@ public class Window {
                                         AudioManager.play("distortion_snap", 2.0f); // boosted ~+6 dB
                                     }
                                 } else {
-                                    // No valid target — drain charge back
+                                    // No valid target  -  drain charge back
                                     AudioManager.stopContinuous("kamui_distortion");
                                     player.abilities.absorptionCharge = Math.max(0f,
                                             player.abilities.absorptionCharge - deltaTime * 2f);
                                 }
                             } else {
-                                // LMB released — bleed charge away
+                                // LMB released  -  bleed charge away
                                 player.abilities.isAbsorbing     = false;
                                 AudioManager.stopContinuous("kamui_distortion");
                                 player.abilities.absorptionCharge = Math.max(0f,
@@ -2773,7 +2850,7 @@ public class Window {
                             }
                         }
 
-                        // P key — spawn test enemy at crosshair hit point
+                        // P key  -  spawn test enemy at crosshair hit point
                         boolean pHeld = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
                         if (pHeld && !lastP) {
                             RaycastResult hit = player.getTargetBlock(camera, world);
@@ -2787,7 +2864,7 @@ public class Window {
                         }
                         lastP = pHeld;
 
-                        // [0] key — DEV: spawn a GUARDIAN (golem) for testing.
+                        // [0] key  -  DEV: spawn a GUARDIAN (golem) for testing.
                         // Drops it at the block you're aiming at, or ~6 blocks in front.
                         boolean zeroHeld = glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS;
                         if (zeroHeld && !lastZeroKey) {
@@ -2871,7 +2948,7 @@ public class Window {
                         }
                         lastM = mHeld;
 
-                        // Advance mud waves — permanently paint MUD blocks on the ground
+                        // Advance mud waves  -  permanently paint MUD blocks on the ground
                         for (int wi = mudWaves.size() - 1; wi >= 0; wi--) {
                             float[] w = mudWaves.get(wi);
                             float stepDist = w[5] * deltaTime;
@@ -2897,7 +2974,7 @@ public class Window {
                                 }
                             }
 
-                            // Reached target — burst MUD chunks around enemy feet, remove wave
+                            // Reached target  -  burst MUD chunks around enemy feet, remove wave
                             if (w[6] >= w[7]) {
                                 int eid = (int) w[8];
                                 for (Enemy e : enemyManager.getEnemies()) {
@@ -2955,7 +3032,7 @@ public class Window {
                         if (!isChargingStoneCanon && iHeld && !lastI
                                 && !player.debugMode && stoneCanonCooldownTimer <= 0f
                                 && player.mana >= GameConfig.manaStoneCanonBase) {
-                            // Start charging — lock position
+                            // Start charging  -  lock position
                             isChargingStoneCanon     = true;
                             AudioManager.playContinuous("charging");
                             stoneCanonCharge         = 0f;
@@ -3030,7 +3107,7 @@ public class Window {
                                 }
                             }
 
-                            // Release I or exceed max charge → fire
+                            // Release I or exceed max charge -> fire
                             if (!iHeld || stoneCanonCharge >= GameConfig.stoneCanonMaxCharge) {
                                 isChargingStoneCanon = false;
                                 if (stoneCanonBlocksConsumed > 0) {
@@ -3049,7 +3126,7 @@ public class Window {
                                     Vector3f lookDir = camera.getLookDirection();
 
                                     // ── Fire from eye in exact look direction ─────
-                                    // (Previously spawned from the ground — user requested
+                                    // (Previously spawned from the ground  -  user requested
                                     //  it fires wherever you aim, like a normal projectile)
                                     Vector3f firePos = new Vector3f(
                                             player.position.x + lookDir.x * 1.2f,
@@ -3062,7 +3139,7 @@ public class Window {
                                     AudioManager.play("stone_canon");
                                     stoneCanonCooldownTimer = GameConfig.stoneCanonCooldown;
                                 } else {
-                                    // No blocks consumed — fizzle, just stop the charge sound
+                                    // No blocks consumed  -  fizzle, just stop the charge sound
                                     AudioManager.stopContinuous("charging");
                                 }
                                 stoneCanonLockedPos  = null;
@@ -3116,7 +3193,7 @@ public class Window {
                         // ── LANDING / FALL IMPACT SOUNDS ──────────────────────
                         // Detected from pre-update ground state vs post-update.
                         // savedHighestY captured before player.update() so it
-                        // holds the peak Y — Player resets it to position.y on landing.
+                        // holds the peak Y  -  Player resets it to position.y on landing.
                         boolean justLanded = wasOnGroundAudio == false && player.isOnGround();
                         if (justLanded) {
                             float fallDist = savedHighestY - player.position.y;
@@ -3131,7 +3208,7 @@ public class Window {
                                 // Damage-range fall
                                 AudioManager.play(isSandy ? "fall_sandy" : "fall_hit", 0.85f);
                             } else if (fallDist > 1.5f) {
-                                // Short drop / jump landing — light thud
+                                // Short drop / jump landing  -  light thud
                                 AudioManager.play(isSandy ? "fall_sandy" : "fall_light", 0.55f);
                             }
                         }
@@ -3153,7 +3230,7 @@ public class Window {
                                 AudioManager.play("water/water_enter", 0.7f);
                             }
                         }
-                        // Exit: pick randomly from 3 exit sounds — avoids the
+                        // Exit: pick randomly from 3 exit sounds  -  avoids the
                         // repetitive "same splash every step" problem when walking on water.
                         if (!feetInWater && lastFeetInWater) {
                             int pick = (int)(Math.random() * 3);
@@ -3172,28 +3249,28 @@ public class Window {
                         lastCamSubmerged = camSubmerged;
 
                         // ── WIND / FLIGHT SOUNDS ───────────────────────────────
-                        // Three beds that never actually stop — windFade smoothly
+                        // Three beds that never actually stop  -  windFade smoothly
                         // brings them to 0 so there are no abrupt pops on landing.
                         //
                         // KEY FIXES vs previous version:
-                        //  • inAir uses debugMode as override → touching blocks while
+                        //  • inAir uses debugMode as override -> touching blocks while
                         //    skimming no longer briefly kills the wind.
                         //  • When camSubmerged, windFade snaps to 0 immediately (water
                         //    has its own sound design).
                         //  • totalAirSpeed includes vertical so gentle rising/descending
-                        //    registers — not just horizontal glides.
+                        //    registers  -  not just horizontal glides.
                         //  • wind_soft is ducked when wind_blow is strong.
                         //  • Tilt pan: rolls the stereo image left/right with camera roll.
                         float vy      = player.getVelocityY();
                         // debugMode = flight mode: ALWAYS treat as in-air so brief block
                         // grazes during skimming don't cut the wind.
-                        // Underground (cave env) also suppresses wind — windFade fades
+                        // Underground (cave env) also suppresses wind  -  windFade fades
                         // out naturally when lastEnv switches to ENV_CAVE.
                         boolean inAir = (player.debugMode || !player.isOnGround())
                                         && !camSubmerged
                                         && lastEnv != AudioManager.ENV_CAVE;
 
-                        // Snap wind off immediately on water entry — no lingering wind underwater.
+                        // Snap wind off immediately on water entry  -  no lingering wind underwater.
                         if (camSubmerged) windFade = 0f;
 
                         float horizSpeed = (float) Math.sqrt(
@@ -3205,13 +3282,13 @@ public class Window {
                                 : (float) Math.sqrt(horizSpeed * horizSpeed + vy * vy);
 
                         // ── TUNING KNOBS ───────────────────────────────────────
-                        final float BLOW_START   = 3f;    // lower → wind starts earlier/gentler
-                        final float BIG_START    = 13f;   // lower → deep roar kicks in sooner
+                        final float BLOW_START   = 3f;    // lower -> wind starts earlier/gentler
+                        final float BIG_START    = 13f;   // lower -> deep roar kicks in sooner
                         final float BLOW_MAX_VOL = 0.70f;
                         final float BIG_MAX_VOL  = 0.85f;
                         final float SOFT_MAX_VOL = 0.20f;
                         final float FADE_IN_SEC  = 0.12f; // faster fade-in for responsive feel
-                        final float FADE_OUT_SEC = 0.55f; // longer fade-out — wind lingers a beat
+                        final float FADE_OUT_SEC = 0.55f; // longer fade-out  -  wind lingers a beat
 
                         if (inAir) {
                             windFade = Math.min(1f, windFade + deltaTime / FADE_IN_SEC);
@@ -3275,7 +3352,7 @@ public class Window {
                         }
 
                         // ── AMBIENT WIND GUSTS ────────────────────────────────────
-                        // Fires randomly even when standing still — a sudden gust of
+                        // Fires randomly even when standing still  -  a sudden gust of
                         // cold mountain wind. Boosts all wind beds, plays wind_harsh
                         // as the gust arrives, and tilts snow particles sideways.
                         // Independent of flight speed so it surprises the player.
@@ -3295,19 +3372,19 @@ public class Window {
                         }
 
                         // ── MUFFLE (low-pass on the whole mix) ────────────────
-                        // Priority 1 — submerged: very heavy low-pass gives the
+                        // Priority 1  -  submerged: very heavy low-pass gives the
                         //   沉闷 underwater feel.  Combined with ENV_UNDERWATER
                         //   reverb, it sells the "thick water pressing on your ears"
                         //   sensation.  Value 0..1 where 1 = fully muffled.
-                        // Priority 2 — fast air movement: lighter, speed-scaled cut.
+                        // Priority 2  -  fast air movement: lighter, speed-scaled cut.
                         //
-                        // UNDERWATER_MUFFLE – raise toward 1 for heavier/deafer feel
+                        // UNDERWATER_MUFFLE - raise toward 1 for heavier/deafer feel
                         final float UNDERWATER_MUFFLE = 0.82f;
                         final float MUFFLE_MAX        = 0.55f;
 
                         float targetMuffle;
                         if (camSubmerged) {
-                            // Hard cut on all high frequencies — deep, thick, pressured
+                            // Hard cut on all high frequencies  -  deep, thick, pressured
                             targetMuffle = UNDERWATER_MUFFLE;
                         } else if (windFade > 0f) {
                             targetMuffle = Math.min(MUFFLE_MAX,
@@ -3516,7 +3593,7 @@ public class Window {
                         item.update(timeStopActive ? 0f : deltaTime, player.position);
                         if (chestPos.distance(item.position) < 0.5f) {
                             if (item.blockType == Block.HOTDOG) {
-                                // Nom — hotdogs heal instead of entering the inventory.
+                                // Nom  -  hotdogs heal instead of entering the inventory.
                                 player.health = Math.min(player.maxHealth, player.health + 25f);
                                 AudioManager.play("cystal_click", 0.9f, 0.7f);
                                 ScreenEffectManager.INSTANCE.flash(0.4f, 1.0f, 0.5f, 0.18f, 0.25f);
@@ -3535,7 +3612,7 @@ public class Window {
 
                     // ── PvP PROXY relay ────────────────────────────────────────
                     // The proxy hitbox is created + positioned EARLY each frame (before
-                    // abilities run — see updateMpProxyEarly) so hits land reliably.
+                    // abilities run  -  see updateMpProxyEarly) so hits land reliably.
                     // Here we just read the damage our abilities dealt it and relay it.
                     if (mpProxy != null) {
                         float dealt = mpProxy.maxHealth - mpProxy.health;
@@ -3553,7 +3630,7 @@ public class Window {
                     }
                     mpLastSummonKey = sk;
 
-                    // ── SIMULATE our troops — home on the opponent, bite, relay ─
+                    // ── SIMULATE our troops  -  home on the opponent, bite, relay ─
                     Vector3f foePos = new Vector3f(remotePlayer.x, remotePlayer.y, remotePlayer.z);
                     float troopDmg = 0f;
                     for (com.leaf.game.entity.Summon s : mySummons) troopDmg += s.update(rawDeltaTime, foePos);
@@ -3583,14 +3660,14 @@ public class Window {
                         }
                     }
                     if (player.health <= 0f && !player.abilities.isKamui && immunityTimer <= 0f) {
-                        triggerDeath();   // PvP/troop kill — die immediately, same flow + spawn
+                        triggerDeath();   // PvP/troop kill  -  die immediately, same flow + spawn
                     }
 
                     // ── RECEIVE the opponent's ability VFX and replay them locally ─
                     float[] rfx;
                     while ((rfx = network.pollFx()) != null) addRemoteFx(rfx);
 
-                    // ── OPPONENT ELIMINATED — kill banner + confirm sound ──────────
+                    // ── OPPONENT ELIMINATED  -  kill banner + confirm sound ──────────
                     while (network.pollDeath() != null) {
                         killBannerTimer = 3.0f;
                         AudioManager.play("teleport");
@@ -3600,7 +3677,7 @@ public class Window {
 
                 if (!isPreloading) {
                     lastTarget = player.getTargetBlock(camera, world);
-                    // tickLiquids uses scaled deltaTime — fast time makes water flow faster
+                    // tickLiquids uses scaled deltaTime  -  fast time makes water flow faster
                     world.tickLiquids(deltaTime);
                     world.updateChunks(world, worldGen, player);
                     if (dayNight.starsDirty) {
@@ -3624,7 +3701,7 @@ public class Window {
                     }
 
                     // ── NON-EUCLIDEAN "LAYERED ROOMS" (F6 toggles in/out) ────
-                    // (single-player only — unsynced world swap would break MP)
+                    // (single-player only  -  unsynced world swap would break MP)
                     boolean mpLiveDbg = network != null && network.connected;
                     boolean f6Now = glfwGetKey(window, GLFW_KEY_F6) == GLFW_PRESS;
                     if (f6Now && !lastF6 && !mpLiveDbg) {
@@ -3638,7 +3715,7 @@ public class Window {
                     if (nerActive) updateLayeredRooms();
 
                     // ── CANYON WARP (F5 toggles to the mesa region and back) ───
-                    // (single-player only — teleporting away desyncs the duel)
+                    // (single-player only  -  teleporting away desyncs the duel)
                     boolean f5Now = glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS;
                     if (f5Now && !lastF5 && !mpLiveDbg) {
                         if (!atCanyon) {
@@ -3651,7 +3728,7 @@ public class Window {
                             player.setVelocityY(0f);
                             atCanyon = true;
                             canyonSettlePending = true;
-                            hintText = "WARPED TO CANYON  —  press F5 to return";
+                            hintText = "WARPED TO CANYON   -   press F5 to return";
                             hintTimer = 5f;
                         } else {
                             player.position.set(canyonReturnX, canyonReturnY, canyonReturnZ);
@@ -3664,7 +3741,7 @@ public class Window {
                     }
                     lastF5 = f5Now;
                     // Hover high above the canyon until its chunk meshes, then snap
-                    // to the surface — avoids a long fall onto ungenerated terrain.
+                    // to the surface  -  avoids a long fall onto ungenerated terrain.
                     if (canyonSettlePending) {
                         int ccx = Math.floorDiv((int) Math.floor(player.position.x), Chunk.SIZE);
                         int ccz = Math.floorDiv((int) Math.floor(player.position.z), Chunk.SIZE);
@@ -3707,15 +3784,15 @@ public class Window {
                     lastF8 = f8Now;
                     if (timeStopActive) updateTimeStop(rawDeltaTime);
 
-                    // ── METEOR STORM (F4) — rains hot meteorites that carve craters ──
+                    // ── METEOR STORM (F4)  -  rains hot meteorites that carve craters ──
                     boolean f4Now = glfwGetKey(window, KeyBindings.METEOR_STORM) == GLFW_PRESS;
                     if (f4Now && !lastF4) startMeteorStorm();
                     lastF4 = f4Now;
-                    // Mega meteor removed from the keyboard — it shared a key with the
+                    // Mega meteor removed from the keyboard  -  it shared a key with the
                     // Deprivation Domain and erased mountains by accident.
                     updateMeteors(rawDeltaTime);
 
-                    // ── GATLING GUN — hold LMB (with the gun selected) to rip ──────
+                    // ── GATLING GUN  -  hold LMB (with the gun selected) to rip ──────
                     updateGatling(rawDeltaTime, camera);
 
                     // ── STARGAZING TOGGLES ──────────────────────────────────────────
@@ -3726,7 +3803,7 @@ public class Window {
                     if (sk2 && !lastSnowToggleKey) showSnowAtmos = !showSnowAtmos;
                     lastSnowToggleKey = sk2;
 
-                    // ── DAY / NIGHT CYCLE — advance the sky + light mood ───────────
+                    // ── DAY / NIGHT CYCLE  -  advance the sky + light mood ───────────
                     // "Made in Heaven": HOLD '[' to ramp the cycle up to ~400×, so the
                     // sun & moon race across the sky. Eases in/out so it accelerates.
                     boolean mih = glfwGetKey(window, KeyBindings.TIME_ACCEL) == GLFW_PRESS;
@@ -3738,7 +3815,7 @@ public class Window {
                         meteorSystem.update(rawDeltaTime * tc.getScale(), dayNight);
                     }
 
-                    // ── RADAR SWEEP (F10) — earned god-tier power, sees enemies through walls ──
+                    // ── RADAR SWEEP (F10)  -  earned god-tier power, sees enemies through walls ──
                     boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
                     if (f10Now && !lastF10 && !vlActive
                             && player.can(Progression.Ability.RADAR)) {
@@ -3749,7 +3826,7 @@ public class Window {
                     lastF10 = f10Now;
                     if (vlActive) updateVoxelLines(rawDeltaTime);
 
-                    // ── CHOCOLATE DISCO GRID ('.' key) — showcase only; a stray press
+                    // ── CHOCOLATE DISCO GRID ('.' key)  -  showcase only; a stray press
                     //    mid-fight summons a glowing grid nobody asked for ─────────────
                     boolean kNow = (showcaseMode || playtestMode)
                             && glfwGetKey(window, KeyBindings.DISCO) == GLFW_PRESS;
@@ -3763,7 +3840,7 @@ public class Window {
                     lastDisco = kNow;
                     if (cdActive) updateDiscoGrid(rawDeltaTime, camera, world);
 
-                    // ── DEPRIVATION DOMAIN – Water God Stance (' key) ─────────
+                    // ── DEPRIVATION DOMAIN - Water God Stance (' key) ─────────
                     boolean apostrNow = glfwGetKey(window, KeyBindings.DEPRIVATION_DOMAIN) == GLFW_PRESS;
                     if (apostrNow && !lastApostr) {
                         if (!depActive && depCooldown <= 0f && player.can(Progression.Ability.DEPRIVATION)) {
@@ -3779,7 +3856,7 @@ public class Window {
                     if (depActive) updateDeprivationDomain(rawDeltaTime, world, camera);
                     updateFx(rawDeltaTime);   // age shared ability VFX
 
-                    // ── QUANTUM BULLET (',' key) — fire a phasing bullet ─────────
+                    // ── QUANTUM BULLET (',' key)  -  fire a phasing bullet ─────────
                     qbCooldown     = Math.max(0f, qbCooldown - rawDeltaTime);
                     qbWarpStrength = Math.max(0f, qbWarpStrength - rawDeltaTime);  // warp lasts ~1 s on the block
                     boolean quantumNow = (showcaseMode || playtestMode)
@@ -3843,7 +3920,7 @@ public class Window {
                         item.update(timeStopActive ? 0f : deltaTime, player.position);
                         if (chestPos.distance(item.position) < 0.5f) {
                             if (item.blockType == Block.HOTDOG) {
-                                // Nom — hotdogs heal instead of entering the inventory.
+                                // Nom  -  hotdogs heal instead of entering the inventory.
                                 player.health = Math.min(player.maxHealth, player.health + 25f);
                                 AudioManager.play("cystal_click", 0.9f, 0.7f);
                                 ScreenEffectManager.INSTANCE.flash(0.4f, 1.0f, 0.5f, 0.18f, 0.25f);
@@ -3871,14 +3948,14 @@ public class Window {
             //
             // KEY: we use ONLY setMasterGain here (no muffle). Muffle applies its
             // lowpass to every source in the pool via rerouteAll(), including the
-            // tinnitus one-shot — at 2.2× pitch that kills 95% of its signal.
+            // tinnitus one-shot  -  at 2.2× pitch that kills 95% of its signal.
             // setMasterGain only re-applies to loop sources, so the tinnitus
             // one-shot (spawned at masterGain=1.0) keeps its full 6.0 gain.
             //
             // Shape (real tinnitus, per the user):
-            //   0 – 1.0 s : world CUTS to near-silence instantly (masterGain→0.0)
-            //   1.0 – 5.5 s: world bleeds back very slowly with cubic ease-out
-            //   5.5 – 7.0 s: world returns to normal; faint distorted bleed becomes clear
+            //   0 - 1.0 s : world CUTS to near-silence instantly (masterGain->0.0)
+            //   1.0 - 5.5 s: world bleeds back very slowly with cubic ease-out
+            //   5.5 - 7.0 s: world returns to normal; faint distorted bleed becomes clear
             if (tinnitusTimer > 0f) {
                 tinnitusTimer = Math.max(0f, tinnitusTimer - rawDeltaTime);
                 float p = 1f - tinnitusTimer / TINNITUS_DUR; // 0=just started, 1=done
@@ -3886,9 +3963,9 @@ public class Window {
                 // Cut to silence fast (first 14% ≈ 1 s), then recover slowly.
                 float gain;
                 if (p < 0.14f) {
-                    gain = 1f - (p / 0.14f); // 1→0 over first second
+                    gain = 1f - (p / 0.14f); // 1->0 over first second
                 } else {
-                    float q = (p - 0.14f) / 0.86f;  // 0→1 over remaining 6 s
+                    float q = (p - 0.14f) / 0.86f;  // 0->1 over remaining 6 s
                     gain = q * q * q;                 // cubic: very slow then accelerates
                 }
                 AudioManager.setMasterGain(gain);
@@ -3913,14 +3990,14 @@ public class Window {
                     && orbitalT >= ORB_DARK_START && orbitalT < ORB_END;
             // The radar also blooms (bright green lines + searing enemy pings bleed).
             boolean doRadarBloom = vlActive && !isPreloading && bloomShader != null && vlAmountNow > 0.05f;
-            // Disco grid also blooms — the wireframe boxes and detonation pillars are
+            // Disco grid also blooms  -  the wireframe boxes and detonation pillars are
             // HDR-bright and need the bloom pass to look correct.
             boolean doDiscoBloom = cdActive && !isPreloading && bloomShader != null && cdSpawnT > 0.05f;
-            // Domain always blooms — the HDR gold hemisphere + threads + boundary ring need it.
+            // Domain always blooms  -  the HDR gold hemisphere + threads + boundary ring need it.
             boolean doDepBloom   = depActive && !isPreloading && bloomShader != null;
             // Shared ability-FX (slashes, rings, bolts) bloom whenever any "real" one
             // is live. Ambient living-world particles (tower embers, sakura petals,
-            // volcanic motes) are EXCLUDED — they fire continuously, so letting them
+            // volcanic motes) are EXCLUDED  -  they fire continuously, so letting them
             // route the whole scene through the bloom FBO every frame washed the world
             // out to a bright, see-through haze (the "transparent shader" bug).
             boolean hasBloomFx = false;
@@ -3929,7 +4006,7 @@ public class Window {
             }
             boolean doFxBloom    = (hasBloomFx || !qbBullets.isEmpty() || !meteors.isEmpty())
                     && !isPreloading && bloomShader != null;
-            // Stone Canon's charge gathers searing emissive energy → bloom it.
+            // Stone Canon's charge gathers searing emissive energy -> bloom it.
             boolean doStoneBloom = isChargingStoneCanon && !isPreloading && bloomShader != null;
             boolean doBloom = doOrbitalBloom || doRadarBloom || doDiscoBloom || doDepBloom
                     || doFxBloom || doStoneBloom;
@@ -4041,7 +4118,7 @@ public class Window {
                 shader.setUniform("vlSweep",  vlSweepNow);
 
                 // Deprivation Domain world-shader tinting + special domain lighting.
-                // depSweep is a ring radius that grows ~14 blocks/s and resets — the
+                // depSweep is a ring radius that grows ~14 blocks/s and resets  -  the
                 // repeating "360° detection" pulse traced across the terrain.
                 float depSweepR = depActive
                         ? (depT * 8f) % Math.max(1f, GameConfig.depRadius)
@@ -4058,9 +4135,8 @@ public class Window {
                         (int) Math.floor(camera.position.y),
                         (int) Math.floor(camera.position.z)).isLiquid();
                 shader.setUniform("isUnderwater", isCameraUnderwater ? 1 : 0);
-                shader.setUniform("cameraY", camera.position.y);
                 shader.setUniform("camPos", new Vector3f(camera.position.x, camera.position.y, camera.position.z));
-                shader.setUniform("domeMode", 0);   // off — the dome is now real tube geometry, not a shader fill
+                shader.setUniform("domeMode", 0);   // off  -  the dome is now real tube geometry, not a shader fill
 
                 // ── SNOW BIOME ATMOSPHERE ─────────────────────────────────────
                 // Fades in as the player climbs into snow-mountain altitude.
@@ -4109,7 +4185,7 @@ public class Window {
                 // Use whichever overlay is currently stronger so neither system
                 // silently stomps the other during simultaneous effects.
                 // When Kamui FBO post-process is active the distort shader is the
-                // sole source of colour effects — zero the 3-D overlay so the
+                // sole source of colour effects  -  zero the 3-D overlay so the
                 // scene captured into the FBO is clean and readable.
                 float abilityOverlayStr = doKamuiDistort ? 0f : player.abilities.getOverlayStrength();
                 float attackOverlayStr  = player.attacks.getOverlayStrength();
@@ -4179,7 +4255,7 @@ public class Window {
 
                 // ── VIEW MATRIX + ROLL ────────────────────────────────────────
                 // When piloting the drone, all cosmetic effects are suppressed:
-                // no roll, no screen shake, no attack pitch — clean drone view only.
+                // no roll, no screen shake, no attack pitch  -  clean drone view only.
                 // All rendering uses standCamera so the player sees through the drone.
                 Matrix4f baseView;
                 float rollAngle;
@@ -4278,7 +4354,7 @@ public class Window {
                 orbProjView.set(renderMvp);   // captured for the F7 cinematic overlay
                 float[] frustumPlanes = extractFrustumPlanes(renderMvp);
 
-                // ── DAY/NIGHT SKY — gradient + sun + stars, behind everything ──
+                // ── DAY/NIGHT SKY  -  gradient + sun + stars, behind everything ──
                 if (!isPreloading && !(orbitalActive && orbDark)) {
                     renderSky(projection, view, camera);
                     renderMoon3D(projection, view, camera);     // 3D sphere moon
@@ -4370,7 +4446,7 @@ public class Window {
                 }
 
                 // ── ORBITAL ANNIHILATION: 3D effect geometry (inside the FBO so
-                //    it gets the searing bloom) — drawn over opaque terrain ──────
+                //    it gets the searing bloom)  -  drawn over opaque terrain ──────
                 if (orbitalActive && !isPreloading) {
                     renderOrbital3D(shader, projection, view, renderMvp);
                 }
@@ -4575,11 +4651,9 @@ public class Window {
                     getItemMesh(Block.CRYSTAL_CITRINE).render();
                 }
 
-                // 5. Placed Seals (Normal Pass & Ghost Pass) — always lit so they're visible at night.
-                // cameraY override prevents abyss fog from darkening seal meshes (local-space Y ≈ 0).
+                // 5. Placed Seals (Normal Pass & Ghost Pass)  -  always lit so they're visible at night.
                 if (!player.seals.placedSeals.isEmpty()) {
                     shader.setUniform("ambientStrength", Math.max(dayNight.ambientStrength, 0.80f));
-                    shader.setUniform("cameraY", -1000f);
                     com.leaf.game.render.Texture sealTex = com.leaf.game.render.AssetManager.get().getTexture("seal");
                     if (sealTex != null) {
                         shader.setUniform("useTexture", 1);
@@ -4620,7 +4694,6 @@ public class Window {
                     }
                     glEnable(GL_DEPTH_TEST);
                     shader.setUniform("alphaMultiplier", 1.0f);
-                    shader.setUniform("cameraY", camera.position.y);  // restore
                     shader.setUniform("ambientStrength", dayNight.ambientStrength); // restore
                 }
 
@@ -4628,7 +4701,7 @@ public class Window {
                 if (!enemyManager.getEnemies().isEmpty()) {
                     // RADAR: draw enemies as their EXACT model in see-through wireframe
                     // (no solid fill = transparent body) and ignore depth so contacts
-                    // show through terrain — the "detection" look.
+                    // show through terrain  -  the "detection" look.
                     boolean radarWire = vlActive && vlAmountNow > 0.05f;
                     if (radarWire) {
                         org.lwjgl.opengl.GL11.glPolygonMode(
@@ -4640,7 +4713,7 @@ public class Window {
                         // ── Animated path: enemy_basic.json with walk/attack/death ──
                         // ── Animated path ──
                         for (Enemy enemy : enemyManager.getEnemies()) {
-                            if (enemy == mpProxy) continue;   // invisible PvP hitbox — never drawn
+                            if (enemy == mpProxy) continue;   // invisible PvP hitbox  -  never drawn
                             // ── SPIDER RENDER CALL ──
                             if (enemy instanceof com.leaf.game.entity.spider.SpiderEnemy) {
                                 com.leaf.game.entity.spider.SpiderEnemy spider = (com.leaf.game.entity.spider.SpiderEnemy) enemy;
@@ -4699,7 +4772,7 @@ public class Window {
                             // Decide target animation from AI state
                             String want;
                             if (enemy.type == Enemy.Type.INFERNO_TOWER) {
-                                // Static structure — its only clip is the importer's bind pose.
+                                // Static structure  -  its only clip is the importer's bind pose.
                                 want = "idle";
                             } else if (isGuardian) {
                                 // The guardian drives its own clip (patrol walk/idle + 3-hit combo).
@@ -4757,7 +4830,7 @@ public class Window {
 
                             // RADAR: bright-green tint, depth off (through walls), and a
                             // searing glow spike the instant the sweep arm crosses this
-                            // enemy's bearing — fading over the afterglow. Always at least
+                            // enemy's bearing  -  fading over the afterglow. Always at least
                             // base-bright so every contact (even far/hidden) reads clearly.
                             if (radarWire) {
                                 float dxb = enemy.position.x - vlCx, dzb = enemy.position.z - vlCz;
@@ -4799,7 +4872,7 @@ public class Window {
                         com.leaf.game.render.ModelMesh capsule =
                                 com.leaf.game.render.AssetManager.get().getModel("player");
                         for (Enemy enemy : enemyManager.getEnemies()) {
-                            if (enemy == mpProxy) continue;   // invisible PvP hitbox — never drawn
+                            if (enemy == mpProxy) continue;   // invisible PvP hitbox  -  never drawn
                             float flashF = enemy.hitFlashTimer > 0f
                                     ? (enemy.hitFlashTimer / 0.18f) : 0f;
                             float alpha  = enemy.alive ? 1.0f : flashF;
@@ -4827,7 +4900,7 @@ public class Window {
                     }
                 }
 
-                // ── DEPRIVATION DOMAIN: sliced corpses (real model → 8 flying octants) ──
+                // ── DEPRIVATION DOMAIN: sliced corpses (real model -> 8 flying octants) ──
                 if (depActive && !isPreloading) {
                     renderDepCorpses(view, projection);
                     shader.bind();   // restore the world shader for what follows
@@ -4861,7 +4934,7 @@ public class Window {
                             stoneCanonCharge / GameConfig.stoneCanonMaxCharge);
                     // Boulder rises from ground level up by ~1.5 blocks at full charge
                     float riseY = stoneCanonGroundPos.y + chargeProgress * 1.5f;
-                    // Scale grows from 0.08 → max scale as charge builds
+                    // Scale grows from 0.08 -> max scale as charge builds
                     float minSc = GameConfig.stoneCanonMinScale * 0.22f;
                     float maxSc = GameConfig.stoneCanonMinScale
                             + chargeProgress * (GameConfig.stoneCanonMaxScale - GameConfig.stoneCanonMinScale);
@@ -4889,7 +4962,7 @@ public class Window {
                     shader.setUniform("alphaMultiplier", 1.0f);
 
                     // ── CHARGE: a fiery triangular CONE forming, aimed where it fires.
-                    //    White-hot tip → deep-red base, growing + pulsing with charge. ──
+                    //    White-hot tip -> deep-red base, growing + pulsing with charge. ──
                     if (fxConeMesh == null) fxConeMesh = buildCone(22);
                     Matrix4f pvSC = new Matrix4f(projection).mul(view);
                     Vector3f look = camera.getLookDirection();
@@ -4902,7 +4975,7 @@ public class Window {
                     glEnable(GL_BLEND); glBlendFunc(GL_ONE, GL_ONE);
                     glDepthMask(false); glDepthFunc(GL_LEQUAL); glDisable(GL_CULL_FACE);
                     shader.setUniform("emissiveMode", 1);
-                    // Outer fiery cone (gradient baked: white tip → red base).
+                    // Outer fiery cone (gradient baked: white tip -> red base).
                     orbDraw(shader, pvSC, fxConeMesh,
                             faceMatrix(scCx, scCy, scCz, look.x, look.y, look.z).scale(coneRad, coneRad, coneLen),
                             br, br, br);
@@ -4947,11 +5020,11 @@ public class Window {
                     if (dummyModel != null) {
                         for (float[] dm : substituteDummies) {
                             float lifeFrac = dm[3] / dm[4]; // 1=fresh … 0=about to explode
-                            // Scale expands slightly as timer runs out (0.9 → 1.2)
+                            // Scale expands slightly as timer runs out (0.9 -> 1.2)
                             float dscale = 0.9f + (1f - lifeFrac) * 0.3f;
                             float alpha  = Math.max(0.15f, lifeFrac * 0.90f);
                             shader.setUniform("alphaMultiplier", alpha);
-                            // Dark silhouette — near-black with faint blue tinge
+                            // Dark silhouette  -  near-black with faint blue tinge
                             shader.setUniform("overlayVignetteStrength", 0.80f + (1f - lifeFrac) * 0.15f);
                             shader.setUniform("overlayVignetteColor", new Vector3f(0.02f, 0.02f, 0.06f));
                             Matrix4f dummyMat = new Matrix4f()
@@ -4966,11 +5039,9 @@ public class Window {
                     }
                 }
 
-                // 7. Render Items — always adequately lit so items visible day and night.
-                // cameraY must be set far below so the abyss-depth fog (which uses local-space
-                // item Y ≈ 0) never triggers; restored to real camera Y after the loop.
-                shader.setUniform("ambientStrength", Math.max(dayNight.ambientStrength, 0.75f));
-                shader.setUniform("cameraY", -1000f);
+                // 7. Render Items  -  emissive so they're always bright and easy to spot.
+                shader.setUniform("emissiveMode", 1);
+                shader.setUniform("emissiveTint", new Vector3f(1.2f, 1.2f, 1.2f));
                 for (DroppedItem item : droppedItems) {
                     float bob = (float) Math.sin(item.age * 3.0f) * 0.05f;
                     Matrix4f itemModel = new Matrix4f()
@@ -4994,8 +5065,7 @@ public class Window {
                     shader.setUniform("mvp", itemMvp);
                     itemMesh.render();
                 }
-                shader.setUniform("cameraY", camera.position.y);  // restore for terrain
-                shader.setUniform("ambientStrength", dayNight.ambientStrength); // restore
+                shader.setUniform("emissiveMode", 0);  // restore normal lighting
 
                 // 8. Render Remote Player
                 if (network != null && network.connected) {
@@ -5027,7 +5097,7 @@ public class Window {
                     shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
                     glEnable(GL_DEPTH_TEST);
                 }
-                // 10. Knife view model — disabled (re-enable when model is ready)
+                // 10. Knife view model  -  disabled (re-enable when model is ready)
                 // if (player != null && !player.debugMode && !player.stand.isInStandPerspective()) {
                 //     renderKnifeViewModel(shader, projection, view, camera);
                 // }
@@ -5068,7 +5138,7 @@ public class Window {
 
                     distortShader.unbind();
                 } else if (doQuantumWarp) {
-                    // ── QUANTUM SURFACE WARP — ripple the wall texture (the scene)
+                    // ── QUANTUM SURFACE WARP  -  ripple the wall texture (the scene)
                     //    around the phasing bullet's screen position. ──────────────
                     org.lwjgl.opengl.GL30.glBindFramebuffer(
                             org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
@@ -5113,7 +5183,7 @@ public class Window {
                     bloomShader.setUniform("texel",
                             1f / Math.max(1, fw[0]), 1f / Math.max(1, fh[0]));
                     bloomShader.setUniform("bloomStrength", 1.7f);
-                    // Domain strike flash overlay (0 when domain is inactive — safe to always set)
+                    // Domain strike flash overlay (0 when domain is inactive  -  safe to always set)
                     bloomShader.setUniform("depStrike", depStrike);
                     bloomShader.setUniform("threshold", 0.65f);
 
@@ -5156,12 +5226,14 @@ public class Window {
                     if (weaponRevealTimer > 0f && weaponRevealAbility != null)
                         hud.renderWeaponReveal((float)ww[0], (float)wh[0]);
                     if (showDeathScreen)         hud.renderDeathScreen((float)ww[0], (float)wh[0]);
+                    if (showVictoryScreen)       hud.renderVictoryScreen((float)ww[0], (float)wh[0], enemyManager.totalKills,
+                            (float)glfwGetTime() - RunRecords.INSTANCE.runStartTime, RunRecords.INSTANCE.totalDeaths());
                     hud.renderChocolateDiscoConsole();
                     // (The Orbital Annihilation cinematic is now drawn as real 3D
-                    //  geometry during the world pass — see renderOrbital3D.)
+                    //  geometry during the world pass  -  see renderOrbital3D.)
                     // Screen flash overlay (snipe, explosion, melee hit, etc.)
                     ScreenEffectManager.INSTANCE.renderFlash(ww[0], wh[0]);
-                    // Snow particle overlay — drawn on top of world, under flash
+                    // Snow particle overlay  -  drawn on top of world, under flash
                     hud.renderSnowEffect(ww[0], wh[0], snowTimeAccum,
                                          snowIntensity, windGustStrength, windGustAngle);
                 }
@@ -5242,7 +5314,7 @@ public class Window {
     private void spawnCraterEjecta(int ix, int iy, int iz, int radius) {
         // Scale ejecta particle count with crater size
         int ejectedCount = Math.min(96, 6 * radius);
-        // smashImpactY is the player's feet level (first AIR block) — sample one block down for the actual ground material.
+        // smashImpactY is the player's feet level (first AIR block)  -  sample one block down for the actual ground material.
         Block ejectBlock = world.getBlock(ix, iy - 1, iz);
         if (ejectBlock == Block.AIR || !ejectBlock.isSolid()) ejectBlock = Block.GRAVEL;
 
@@ -5272,11 +5344,11 @@ public class Window {
 
     /**
      * Returns a camera-position offset for the current frame.
-     * Damped sinusoidal: amplitude decays linearly from smashShakeAmplitude → 0
+     * Damped sinusoidal: amplitude decays linearly from smashShakeAmplitude -> 0
      * over smashShakeDuration seconds.
      *
      * The caller adds this to camera.position before building the view matrix,
-     * then subtracts it afterward — player position accounting is unaffected.
+     * then subtracts it afterward  -  player position accounting is unaffected.
      *
      * @param rawDt raw (unscaled) frame time, used to tick the shake timer
      * @return offset vector (zero when no shake active)
@@ -5287,7 +5359,7 @@ public class Window {
         smashShakeTimer = Math.max(0f, smashShakeTimer - rawDt);
 
         float progress    = smashShakeTimer / activeShakeDuration; // Dynamic duration
-        // Comfort: half-strength shake — full amplitude made playtesters dizzy.
+        // Comfort: half-strength shake  -  full amplitude made playtesters dizzy.
         float amplitude   = progress * activeShakeAmplitude * 0.5f;
         float timeSecs    = (float)glfwGetTime();
         float freq        = GameConfig.smashShakeFrequency;
@@ -5312,7 +5384,7 @@ public class Window {
      */
     private void renderKnifeViewModel(Shader shader, Matrix4f projection, Matrix4f view,
                                       com.leaf.game.util.Camera camera) {
-        // Only visible while actively swinging — not a permanent view model
+        // Only visible while actively swinging  -  not a permanent view model
         if (player.attacks.knifeSwingPhase < 0.05f) return;
 
         // ── Camera basis vectors ───────────────────────────────────────────────
@@ -5371,7 +5443,7 @@ public class Window {
         shader.setUniform("alphaMultiplier", 1.0f);
     }
 
-    /** Render MP troops as solid cubes — cyan for ours, red for the opponent's. */
+    /** Render MP troops as solid cubes  -  cyan for ours, red for the opponent's. */
     private void renderSummons(Shader shader, Matrix4f projection, Matrix4f view) {
         if (network == null || !network.connected) return;
         if (summonCubeMine == null) summonCubeMine = buildColorCube(0.20f, 0.95f, 1.00f); // cyan = ours
@@ -5701,7 +5773,7 @@ public class Window {
 
     /**
      * Returns the dig sound to play while the player is actively breaking a block.
-     * Crystal returns the special sentinel {@code "crystal_clank_seq"} — the caller
+     * Crystal returns the special sentinel {@code "crystal_clank_seq"}  -  the caller
      * should call {@link #nextCrystalClank()} to get the actual shuffled sound name.
      */
     static String blockDigSound(Block b) {
@@ -5755,7 +5827,7 @@ public class Window {
     //        │              │
     //        SW ── door ── SE
     //
-    // Walking clockwise you go NW→NE→SE→SW→NW physically, but logically the room
+    // Walking clockwise you go NW->NE->SE->SW->NW physically, but logically the room
     // number keeps climbing (1,2,3,4,5,6…). Each quadrant is skinned with a room
     // colour. The visible rooms (current + its two neighbours) always show three
     // consecutive numbers; the DIAGONAL quadrant is fully hidden behind the solid
@@ -5783,11 +5855,11 @@ public class Window {
 
     /** Logical room number shown in the quadrant that is {@code offset} clockwise
      *  steps ahead of the player's current quadrant. The counter-clockwise
-     *  neighbour (offset 3) shows N-1 — the room you just came from. */
+     *  neighbour (offset 3) shows N-1  -  the room you just came from. */
     private int nerLogicalRoom(int offset, int base) {
         return switch (offset) {
             case 1 -> base + 1;   // clockwise neighbour (ahead)
-            case 2 -> base + 2;   // diagonal (hidden — becomes "ahead" next step)
+            case 2 -> base + 2;   // diagonal (hidden  -  becomes "ahead" next step)
             case 3 -> base - 1;   // counter-clockwise neighbour (behind)
             default-> base;       // current room
         };
@@ -5907,7 +5979,7 @@ public class Window {
             nerPrevWaves = enemyManager.wavesEnabled;
             enemyManager.wavesEnabled = false;   // keep the anomaly calm
         }
-        hintText  = "LAYERED ROOMS  —  walk CLOCKWISE around the pillar.   (F6 to exit)";
+        hintText  = "LAYERED ROOMS   -   walk CLOCKWISE around the pillar.   (F6 to exit)";
         hintTimer = 7f;
     }
 
@@ -5929,9 +6001,9 @@ public class Window {
         if (q < 0 || q == nerQuad) return;
 
         int diff = (q - nerQuad + 4) % 4;
-        if      (diff == 1) nerRoom++;   // clockwise  → next room
-        else if (diff == 3) nerRoom--;   // counter-cw → previous room
-        // diff == 2 (straight across the solid centre) can't happen by walking — ignore.
+        if      (diff == 1) nerRoom++;   // clockwise  -> next room
+        else if (diff == 3) nerRoom--;   // counter-cw -> previous room
+        // diff == 2 (straight across the solid centre) can't happen by walking  -  ignore.
         nerQuad = q;
         nerApplyThemes();                // repaints only the now-hidden diagonal room
 
@@ -5950,7 +6022,7 @@ public class Window {
             orbEpiY = lastTarget.hitY + 0.5f;
             orbEpiZ = lastTarget.hitZ + 0.5f;
         } else {
-            // No block targeted — drop it ~14 blocks ahead, on the first surface below.
+            // No block targeted  -  drop it ~14 blocks ahead, on the first surface below.
             float dirx = (float) Math.cos(camera.yaw), dirz = (float) Math.sin(camera.yaw);
             float tx = player.position.x + dirx * 14f;
             float tz = player.position.z + dirz * 14f;
@@ -5964,7 +6036,7 @@ public class Window {
         orbitalT = 0f; orbCarved = false; orbStruck = false; orbitalActive = true;
         orbParticles.clear();
         AudioManager.play("laser_gun", 1.0f);   // starts charging immediately on F7
-        hintText = "ORBITAL ANNIHILATION  —  stand back."; hintTimer = 3f;
+        hintText = "ORBITAL ANNIHILATION   -   stand back."; hintTimer = 3f;
     }
 
     /** Drive the scan/blackout parameters, shake, particles, one-shots; end it. */
@@ -6027,8 +6099,8 @@ public class Window {
         if (t >= ORB_END) {
             orbitalActive = false; orbDark = false; orbFlashAmt = 0f; orbParticles.clear();
             // Restore clean audio state BEFORE spawning the tinnitus source so:
-            //   • masterGain = 1.0  → tinnitus one-shot created at full gain (6.0×1.0=6.0)
-            //   • muffle = 0        → routeSource attaches NO lowpass to the tinnitus source
+            //   • masterGain = 1.0  -> tinnitus one-shot created at full gain (6.0×1.0=6.0)
+            //   • muffle = 0        -> routeSource attaches NO lowpass to the tinnitus source
             // The arc then uses setMasterGain to suppress world loops without touching
             // the already-spawned tinnitus one-shot (setMasterGain only re-applies to loops).
             AudioManager.setMasterGain(1.0f);
@@ -6118,10 +6190,10 @@ public class Window {
 
         ScreenEffectManager.INSTANCE.flash(0.45f, 0.7f, 1.0f, 0.7f, 0.18f);
         orbShake(0.25f, 0.18f);
-        hintText = "THE WORLD  —  time has stopped."; hintTimer = 3f;
+        hintText = "THE WORLD   -   time has stopped."; hintTimer = 3f;
     }
 
-    /** Drive the expand → hold → collapse radius; deactivate and restore audio at the end. */
+    /** Drive the expand -> hold -> collapse radius; deactivate and restore audio at the end. */
     private void updateTimeStop(float dt) {
         timeStopT += dt;
         float t = timeStopT;
@@ -6148,7 +6220,7 @@ public class Window {
         }
     }
 
-    /** Drive the one-shot radar scan: fade in → scan (rotating arm) → fade out. */
+    /** Drive the one-shot radar scan: fade in -> scan (rotating arm) -> fade out. */
     private void updateVoxelLines(float dt) {
         vlT += dt;
         float t = vlT;
@@ -6170,7 +6242,7 @@ public class Window {
         int cxB = (int) Math.floor(orbEpiX);
         int czB = (int) Math.floor(orbEpiZ);
         int R = ORB_CRATER_R;
-        // Full column: sky limit → void.  Every block in the cylinder is erased,
+        // Full column: sky limit -> void.  Every block in the cylinder is erased,
         // exposing the void below bedrock so falling in is instant death.
         int yBot = 0;
         int yTop = Chunk.HEIGHT - 1;
@@ -6212,10 +6284,10 @@ public class Window {
         m.render();
     }
 
-    /** Radar 3D layer: a soft vertical "arm" curtain sweeping around (opaque→
+    /** Radar 3D layer: a soft vertical "arm" curtain sweeping around (opaque->
      *  transparent afterglow) + a small centre pylon. The flat ground sweep, rings
      *  and spokes live in the terrain shader; enemies are wireframed in the enemy
-     *  render pass (see the radar gate there). Kept deliberately DIM — additive
+     *  render pass (see the radar gate there). Kept deliberately DIM  -  additive
      *  green that glows without blowing out to white. */
     private void renderRadar3D(com.leaf.game.render.Shader shader,
                                Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
@@ -6236,9 +6308,9 @@ public class Window {
         shader.setUniform("emissiveMode", 1);
 
         // Vertical afterglow CURTAIN: a curved wall (radius 1, height 1) spanning
-        // fan-angle [-span,0]; bright leading edge → transparent trailing.
-        // rotateY(-sweep) maps local fan-angle a → world bearing (a + sweep).
-        // DIM — a soft sheet of light, not a searing wall.
+        // fan-angle [-span,0]; bright leading edge -> transparent trailing.
+        // rotateY(-sweep) maps local fan-angle a -> world bearing (a + sweep).
+        // DIM  -  a soft sheet of light, not a searing wall.
         Matrix4f curtain = new Matrix4f().translate(cx, cy - 1.0f, cz)
                 .rotateY(-sweep)
                 .scale(armLen, 4.0f, armLen);
@@ -6257,14 +6329,14 @@ public class Window {
     }
 
     /** Vertical afterglow curtain: a curved wall of radius 1, y in [0,1], spanning
-     *  fan-angle [-span, 0]. Vertex brightness 1 at the leading edge (angle 0) → 0
-     *  trailing, so additive blending fades it opaque→transparent behind the arm. */
+     *  fan-angle [-span, 0]. Vertex brightness 1 at the leading edge (angle 0) -> 0
+     *  trailing, so additive blending fades it opaque->transparent behind the arm. */
     private com.leaf.game.render.Mesh orbBuildCurtain(float span, int segs) {
         float[] v = new float[(segs + 1) * 2 * 10];
         int vi = 0;
         for (int i = 0; i <= segs; i++) {
-            float a = -span * (float) i / segs;       // 0 → -span
-            float b = 1f - (float) i / segs;           // 1 → 0 brightness
+            float a = -span * (float) i / segs;       // 0 -> -span
+            float b = 1f - (float) i / segs;           // 1 -> 0 brightness
             float cxr = (float) Math.cos(a), czr = (float) Math.sin(a);
             int o = (vi++) * 10;                       // bottom vertex
             v[o]=cxr; v[o+1]=0; v[o+2]=czr; v[o+3]=b; v[o+4]=b; v[o+5]=b; v[o+6]=1; v[o+7]=0; v[o+8]=1; v[o+9]=0;
@@ -6285,7 +6357,7 @@ public class Window {
                                  Matrix4f projection, Matrix4f view, Matrix4f renderMvp) {
         // Each mesh is checked individually: other effects (beacon, radar,
         // domain) lazily build SOME of these first, and a combined null-check
-        // on orbTorus alone used to skip orbCyl/orbCube → NPE mid-laser.
+        // on orbTorus alone used to skip orbCyl/orbCube -> NPE mid-laser.
         if (orbTorus  == null) orbTorus  = orbBuildTorus(0.05f, 72, 8);
         if (orbSphere == null) orbSphere = orbBuildSphere(14, 20);
         if (orbCyl    == null) orbCyl    = orbBuildCylinder(28);
@@ -6464,10 +6536,10 @@ public class Window {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  DEPRIVATION DOMAIN — WATER GOD STANCE  (' key, KeyBindings.DEPRIVATION_DOMAIN)
+    //  DEPRIVATION DOMAIN  -  WATER GOD STANCE  (' key, KeyBindings.DEPRIVATION_DOMAIN)
     // ══════════════════════════════════════════════════════════════════════════
     //  The player locks in place. The world-shader tints the interior gold and the
-    //  exterior cool/dark — an absolute domain, a silent standoff. Any entity that
+    //  exterior cool/dark  -  an absolute domain, a silent standoff. Any entity that
     //  moves inside the radius is instantly cut apart: a chaotic "slash storm" of
     //  anime crescents erupts around the player (Soul-Knight-style omni-swing) and
     //  the victim bursts into white-hot voxel gibs that char as they fall.
@@ -6488,7 +6560,7 @@ public class Window {
         depCorpses.clear();
         if (depCrescent  == null) depCrescent  = buildSlashCrescent(22);
         if (depDomeWire  == null) depDomeWire  = buildDomeWire(7, 24);
-        hintText  = "DEPRIVATION DOMAIN — perfect stillness, absolute death · ['] to exit";
+        hintText  = "DEPRIVATION DOMAIN  -  perfect stillness, absolute death · ['] to exit";
         hintTimer = 5f;
         AudioManager.play("field_enter", 0.9f);
         ScreenEffectManager.INSTANCE.flash(1f, 0.88f, 0.28f, 0.30f, 0.40f);
@@ -6519,7 +6591,7 @@ public class Window {
         }
 
         // ── VIGOROUS SWORD AURA: a constant whirlwind of big slashes swooping around
-        //    you (instead of a calm orbiting ring) — the swords never rest. ─────────
+        //    you (instead of a calm orbiting ring)  -  the swords never rest. ─────────
         depAuraEmit += dt;
         float auraInterval = 0.045f;                 // ~22 slashes/sec whirling around
         while (depAuraEmit >= auraInterval) {
@@ -6567,7 +6639,7 @@ public class Window {
 
         boolean struck = false;
 
-        // ── Enemy movement detection → SLICE ─────────────────────────────────
+        // ── Enemy movement detection -> SLICE ─────────────────────────────────
         for (com.leaf.game.entity.Enemy e : enemyManager.getEnemies()) {
             if (!e.alive) continue;
             float dx = e.position.x - depX, dz = e.position.z - depZ;
@@ -6583,15 +6655,15 @@ public class Window {
                     spawnSlashBurst(ex, ey, ez, 4, 0.8f, 1.8f);  // a flurry of cuts on the body
                     spawnSliceGibs(ex, ey, ez);                  // blood-spark debris
                     captureCorpse(e);                            // chop the ACTUAL model into 8
-                    // Kill SILENTLY — applyDamage() plays a death "smash" sound; we
+                    // Kill SILENTLY  -  applyDamage() plays a death "smash" sound; we
                     // want only the sword-slash cues here. Set state directly instead.
                     e.health = 0f; e.alive = false;
                     e.hitFlashTimer = 0f;                        // suppress the normal corpse render
                     enemyAnimPlayers.remove(e.id);
-                    // Lock the head onto the victim — but let the current turn settle
+                    // Lock the head onto the victim  -  but let the current turn settle
                     // past halfway before snapping to a new one (avoids whiplash).
                     if (!depTurning || depTurnT > 0.5f) aimHeadAt(camera, ex, ey, ez);
-                    // Many slashes: 2 random sword cuts per kill (varied pitch) → a flurry.
+                    // Many slashes: 2 random sword cuts per kill (varied pitch) -> a flurry.
                     AudioManager.play(SLASH_ALL[(int)(Math.random() * SLASH_ALL.length)],
                                       0.85f, 0.9f + (float) Math.random() * 0.35f);
                     AudioManager.play(SLASH_SHORT[(int)(Math.random() * SLASH_SHORT.length)],
@@ -6602,7 +6674,7 @@ public class Window {
             depPrevPos.put(System.identityHashCode(e), new org.joml.Vector3f(e.position));
         }
 
-        // ── Projectile nullification → split & drop ──────────────────────────
+        // ── Projectile nullification -> split & drop ──────────────────────────
         for (com.leaf.game.entity.EnemyManager.EnemyProjectile proj : enemyManager.projectiles) {
             if (!proj.alive) continue;
             float dx = proj.pos.x - depX, dz = proj.pos.z - depZ;
@@ -6615,9 +6687,9 @@ public class Window {
             }
         }
 
-        // ── THE SLASH STORM — omnidirectional dome of slashes on top of the player ──
+        // ── THE SLASH STORM  -  omnidirectional dome of slashes on top of the player ──
         if (struck) {
-            int n = 6 + (int) (Math.random() * 6);   // 6–11 crescents around the player
+            int n = 6 + (int) (Math.random() * 6);   // 6-11 crescents around the player
             spawnSlashBurst(depX, depY + 1.1f, depZ, n, 1.0f, 2.0f);
             depStrike = Math.min(1f, depStrike + 0.6f);
             activeShakeAmplitude = 0.09f;
@@ -6649,7 +6721,7 @@ public class Window {
     /** Snapshot the enemy's posed model so it can be chopped into 8 flying octants. */
     private void captureCorpse(com.leaf.game.entity.Enemy e) {
         com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.get(e.id);
-        if (ap == null) return;                       // never rendered → no model to slice
+        if (ap == null) return;                       // never rendered -> no model to slice
         boolean isGuardian = e.type == Enemy.Type.GUARDIAN || e.type == Enemy.Type.GOLEM;
         com.leaf.game.anim.AnimModel model =
                 (e.type == Enemy.Type.SLIME && slimeAnimModel != null) ? slimeAnimModel
@@ -6699,7 +6771,7 @@ public class Window {
         return a + d * t;
     }
 
-    /** Ken-Perlin smootherstep — the S-curve for the bezier-feel head turn. */
+    /** Ken-Perlin smootherstep  -  the S-curve for the bezier-feel head turn. */
     private static float smootherstep(float t) {
         t = Math.max(0f, Math.min(1f, t));
         return t * t * t * (t * (t * 6f - 15f) + 10f);
@@ -6715,7 +6787,7 @@ public class Window {
             float pitch = (float) (Math.random() * Math.PI * 2.0);
             float roll  = (float) (Math.random() * Math.PI * 2.0);
             float s0    = startMin + (float) Math.random() * (startMax - startMin);
-            float s1    = s0 + 2.0f + (float) Math.random() * 1.4f;   // expand ~2–3 blocks
+            float s1    = s0 + 2.0f + (float) Math.random() * 1.4f;   // expand ~2-3 blocks
             // Longer life so the swing is readable; randomised so they don't sync up.
             float life  = GameConfig.depSlashLife * (0.8f + (float) Math.random() * 0.5f);
             // Sweep: how far the blade rotates through its arc over its life (the swing).
@@ -6758,7 +6830,7 @@ public class Window {
         float tnow = (float) glfwGetTime();
 
         glEnable(GL_BLEND);
-        glBlendFunc(GL_ONE, GL_ONE);   // additive — everything glows + blooms
+        glBlendFunc(GL_ONE, GL_ONE);   // additive  -  everything glows + blooms
         glDepthMask(false);
         glDepthFunc(GL_LEQUAL);        // terrain naturally occludes the slashes
         glDisable(GL_CULL_FACE);
@@ -6797,13 +6869,13 @@ public class Window {
         // ── THE SLASH STORM: crescents that SNAP through their arc fast, then linger
         //    + fade. (Fast expansion/sweep front-loaded so the cut reads as instant.) ─
         for (float[] s : depSlashFx) {
-            float f      = s[6] / s[7];                         // 0→1 over its life
+            float f      = s[6] / s[7];                         // 0->1 over its life
             float snap   = Math.min(1f, f / 0.18f);             // the actual slash: done in ~18%
-            float snapE  = 1f - (1f - snap) * (1f - snap);      // easeOut → very fast then settle
+            float snapE  = 1f - (1f - snap) * (1f - snap);      // easeOut -> very fast then settle
             float scale  = s[8] + (s[9] - s[8]) * snapE;
             float rise   = (f < 0.06f) ? f / 0.06f : 1f;        // appear almost instantly
             float fall   = (f > 0.45f) ? (1f - (f - 0.45f) / 0.55f) : 1f;
-            float br     = rise * fall * 4.6f;                  // HDR — feeds the bloom
+            float br     = rise * fall * 4.6f;                  // HDR  -  feeds the bloom
             if (br <= 0.01f) continue;
             Matrix4f m = new Matrix4f().translate(s[0], s[1], s[2])
                     .rotateY(s[3]).rotateX(s[4]).rotateZ(s[5] + s[10] * snapE)  // snap through the arc
@@ -6818,10 +6890,10 @@ public class Window {
             float hot = 1f - f;
             orbDraw(shader, pv, orbCube,
                     new Matrix4f().translate(g[0], g[1], g[2]).scale(g[6]),
-                    2.6f * hot + 0.12f, 0.7f * hot + 0.05f, 0.25f * hot + 0.04f);  // blood red→dark
+                    2.6f * hot + 0.12f, 0.7f * hot + 0.05f, 0.25f * hot + 0.04f);  // blood red->dark
         }
 
-        // Restore GL state — IMPORTANT: leave GL_CULL_FACE DISABLED (terrain needs it off;
+        // Restore GL state  -  IMPORTANT: leave GL_CULL_FACE DISABLED (terrain needs it off;
         // it is never enabled at init, so re-enabling here would hide terrain top faces).
         shader.setUniform("emissiveMode", 0);
         shader.setUniform("emissiveTint", new Vector3f(1f, 1f, 1f));
@@ -6906,7 +6978,7 @@ public class Window {
         meteors.add(m);
     }
 
-    /** Drop ONE colossal meteor straight onto the player — mountain-erasing impact. */
+    /** Drop ONE colossal meteor straight onto the player  -  mountain-erasing impact. */
     private void spawnMegaMeteor() {
         Meteor m = new Meteor();
         float tx = player.position.x + (float)(Math.random() - 0.5) * 24f;
@@ -6923,7 +6995,7 @@ public class Window {
 
     /** Advance meteors: trail puffs, descent, and crater-carving impacts. */
     private void updateMeteors(float dt) {
-        // Storm scheduler — staggered drops so it reads as a "rain", not a clump.
+        // Storm scheduler  -  staggered drops so it reads as a "rain", not a clump.
         if (meteorStormTimer > 0f) {
             meteorStormTimer -= dt;
             meteorSpawnTimer -= dt;
@@ -7175,7 +7247,7 @@ public class Window {
         Vector3f up    = new Vector3f(right).cross(look).normalize();
         Vector3f gp = new Vector3f(camera.position)
                 .fma(0.30f, right).fma(-0.26f, up).fma(0.55f, look);
-        // Orientation basis: local +X→right, +Y→up, +Z→ −look (so −Z is forward/down-barrel).
+        // Orientation basis: local +X->right, +Y->up, +Z-> −look (so −Z is forward/down-barrel).
         Matrix4f basis = new Matrix4f(
                 right.x, right.y, right.z, 0f,
                 up.x,    up.y,    up.z,    0f,
@@ -7540,7 +7612,7 @@ public class Window {
                 boolean solid = world.getBlock((int) Math.floor(b.pos.x),
                         (int) Math.floor(b.pos.y), (int) Math.floor(b.pos.z)).isSolid();
                 if (solid != b.wasSolid) {
-                    // Crossed a surface — pin a screen-space WARP to THIS world point
+                    // Crossed a surface  -  pin a screen-space WARP to THIS world point
                     // (frozen, so it stays on the block when you turn your head) for ~1 s.
                     qbWarpStrength = 1f;
                     qbWarpX = b.pos.x; qbWarpY = b.pos.y; qbWarpZ = b.pos.z;
@@ -7568,7 +7640,7 @@ public class Window {
      * shockwaves, and chaotic branching tendrils. Layered over the 2D bolt.
      */
     private void fxLightningStrike(float x, float y, float z) {
-        // Main shaft — thick electric-blue body with a white-hot core.
+        // Main shaft  -  thick electric-blue body with a white-hot core.
         fxBolt(x, y, z, 0f, 1f, 0f, 44f, 0.55f, 0.42f, 1.5f, 2.2f, 3.9f);  // blue body
         fxBolt(x, y, z, 0f, 1f, 0f, 44f, 0.22f, 0.42f, 3.4f, 3.4f, 3.6f);  // white core
         // Sky-ring portal/lens high above, from which the bolt descends.
@@ -7592,7 +7664,7 @@ public class Window {
         ScreenEffectManager.INSTANCE.flash(0.7f, 0.6f, 1.0f, 0.4f, 0.18f);
     }
 
-    /** A restrained, cool teleport flourish — concentric rings + a slim shimmer
+    /** A restrained, cool teleport flourish  -  concentric rings + a slim shimmer
      *  (no blinding white flash). */
     private void fxTeleport(float x, float y, float z) {
         // Two soft blue rings rising up the body (a vertical "warp" wash, not a flash).
@@ -7602,8 +7674,8 @@ public class Window {
         AudioManager.play("teleport", 0.6f, 0.95f + (float) Math.random() * 0.2f);
     }
 
-    /** Crescent with a baked WIDTH gradient — white-hot leading edge fading to a
-     *  warm, dim trailing body — so a slash reads as a powerful 3D blade, not a flat
+    /** Crescent with a baked WIDTH gradient  -  white-hot leading edge fading to a
+     *  warm, dim trailing body  -  so a slash reads as a powerful 3D blade, not a flat
      *  white shape. (Colour comes from this gradient × the per-slash emissive tint.) */
     private com.leaf.game.render.Mesh buildFxCrescent(int seg) {
         final float A = 1.22f, R = 1.0f, wMax = 0.16f;
@@ -7615,13 +7687,13 @@ public class Window {
             float dirX = (float) Math.sin(a), dirY = (float) Math.cos(a);
             float taper = (float) Math.pow(Math.max(0f, 1f - (a / A) * (a / A)), 0.6);
             float w = wMax * taper;
-            // inner (concave) — warm, dim body
+            // inner (concave)  -  warm, dim body
             int o = (vi++) * 10;
             float bIn = 0.20f + 0.30f * taper;
             v[o] = (R - w) * dirX; v[o+1] = (R - w) * dirY; v[o+2] = 0f;
             v[o+3] = 1.0f * bIn; v[o+4] = 0.45f * bIn; v[o+5] = 0.14f * bIn; v[o+6] = 1f;
             v[o+7] = 0f; v[o+8] = 0f; v[o+9] = 1f;
-            // outer (convex) — white-hot leading edge
+            // outer (convex)  -  white-hot leading edge
             o = (vi++) * 10;
             float bOut = 0.65f + 0.35f * taper;
             v[o] = (R + w) * dirX; v[o+1] = (R + w) * dirY; v[o+2] = 0f;
@@ -7639,15 +7711,15 @@ public class Window {
     }
 
     /** A solid cone, apex at +Z (tip), base ring at z=0 radius 1. Baked fiery gradient:
-     *  white-hot tip → deep red base. For the Stone Canon charge. */
+     *  white-hot tip -> deep red base. For the Stone Canon charge. */
     private com.leaf.game.render.Mesh buildCone(int seg) {
-        // verts: apex + base ring; triangles apex→edge, plus a base fan.
+        // verts: apex + base ring; triangles apex->edge, plus a base fan.
         float[] v = new float[(seg + 2) * 10];
         int vi = 0;
-        // apex (tip) — white-hot
+        // apex (tip)  -  white-hot
         int o = (vi++) * 10;
         v[o]=0; v[o+1]=0; v[o+2]=1f; v[o+3]=1f; v[o+4]=0.95f; v[o+5]=0.7f; v[o+6]=1f; v[o+7]=0; v[o+8]=0; v[o+9]=1f;
-        // base ring — deep red-orange
+        // base ring  -  deep red-orange
         for (int i = 0; i <= seg; i++) {
             double th = 2 * Math.PI * i / seg;
             o = (vi++) * 10;
@@ -7795,7 +7867,7 @@ public class Window {
 
     /**
      * Render every sliced corpse as 8 octants of the REAL enemy model, scattering
-     * outward (大卸八块 → 四散) and dissolving fast. Uses the model shader, so this is
+     * outward (大卸八块 -> 四散) and dissolving fast. Uses the model shader, so this is
      * called from the enemy render section (NOT inside renderDeprivationDomain).
      */
     private void renderDepCorpses(Matrix4f view, Matrix4f projection) {
@@ -7843,7 +7915,7 @@ public class Window {
         java.util.ArrayList<Integer> il = new java.util.ArrayList<>(16384);
         final float hw   = 0.018f;
         final float HALF = (float) (Math.PI * 0.5);
-        final float wAmp = 0.17f, wFreq = 3.5f;   // meridian undulation — woven, not straight
+        final float wAmp = 0.17f, wFreq = 3.5f;   // meridian undulation  -  woven, not straight
 
         // Undulating meridians: each spirals/waves as it climbs (per-meridian phase).
         int segM = 30;
@@ -7882,13 +7954,13 @@ public class Window {
         return new com.leaf.game.render.Mesh(va, ia);
     }
 
-    /** Solid upper hemisphere (radius 1, base y=0 → pole y=1), outward normals. */
+    /** Solid upper hemisphere (radius 1, base y=0 -> pole y=1), outward normals. */
     private com.leaf.game.render.Mesh buildSolidHemisphere(int rings, int sectors) {
         int vc = (rings + 1) * (sectors + 1);
         float[] v = new float[vc * 10];
         int vi = 0;
         for (int i = 0; i <= rings; i++) {
-            double lat = (Math.PI * 0.5) * i / rings;     // 0 base → π/2 pole
+            double lat = (Math.PI * 0.5) * i / rings;     // 0 base -> π/2 pole
             float y = (float) Math.sin(lat), rr = (float) Math.cos(lat);
             for (int j = 0; j <= sectors; j++) {
                 double lon = 2 * Math.PI * j / sectors;
@@ -7909,7 +7981,7 @@ public class Window {
 
     /**
      * Build a SOLID hexagon-cage hemisphere out of glowing tubes (real geometry, not a
-     * shader pattern — so it stays crisp through bloom and reads as a clear cage).
+     * shader pattern  -  so it stays crisp through bloom and reads as a clear cage).
      * Base sits on the ground (y=0), curving up to the pole (y=1).
      * {@code cols} = hex columns around (more ⇒ smaller, denser cells; azimuth wraps
      * seamlessly); {@code hw} = tube half-width in unit-sphere space (smaller ⇒ thinner
@@ -7926,7 +7998,7 @@ public class Window {
         final float SQRT3 = 1.7320508f;
         final float PI    = (float) Math.PI;
         final float HALF  = PI * 0.5f;
-        final float s  = (float) (2 * Math.PI) / (cols * SQRT3);   // hex size → columns wrap
+        final float s  = (float) (2 * Math.PI) / (cols * SQRT3);   // hex size -> columns wrap
 
         // For a full sphere, elevation angle goes from -HALF (south pole) to HALF (north pole).
         int numRows = (int) (PI / (1.5f * s)) + 2;
@@ -8006,7 +8078,7 @@ public class Window {
      * is white (×emissiveTint at draw), dimmer toward the tips for soft ends.
      */
     private com.leaf.game.render.Mesh buildSlashCrescent(int seg) {
-        final float A = 1.15f;     // arc half-angle (radians) — ~66°
+        final float A = 1.15f;     // arc half-angle (radians)  -  ~66°
         final float R = 1.0f;      // centreline radius
         final float wMax = 0.20f;  // max half-thickness of the blade
         float[] v = new float[(seg + 1) * 2 * 10];
@@ -8046,16 +8118,16 @@ public class Window {
     private com.leaf.game.render.Mesh buildPhantomBlade() {
         float[] v = {
             //  x       y      z    r     g     b     a    nx ny nz
-            // blade (white-hot) — triangle
+            // blade (white-hot)  -  triangle
              0.000f, 1.50f, 0f,  1.0f, 0.95f, 0.70f, 1f,  0f,0f,1f,
             -0.060f, 0.30f, 0f,  1.0f, 0.95f, 0.70f, 1f,  0f,0f,1f,
              0.060f, 0.30f, 0f,  1.0f, 0.95f, 0.70f, 1f,  0f,0f,1f,
-            // crossguard (gold) — quad
+            // crossguard (gold)  -  quad
             -0.220f, 0.24f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
              0.220f, 0.24f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
              0.220f, 0.32f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
             -0.220f, 0.32f, 0f,  1.0f, 0.80f, 0.35f, 1f,  0f,0f,1f,
-            // hilt (dark gold) — quad
+            // hilt (dark gold)  -  quad
             -0.045f, 0.00f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
              0.045f, 0.00f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
              0.045f, 0.26f, 0f,  0.8f, 0.60f, 0.25f, 1f,  0f,0f,1f,
@@ -8070,7 +8142,7 @@ public class Window {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    //  CHOCOLATE DISCO — FLAT HOLOGRAM METHODS
+    //  CHOCOLATE DISCO  -  FLAT HOLOGRAM METHODS
     // ══════════════════════════════════════════════════════════════════════════
 
     private void spawnDiscoGrid(Camera cam, World world) {
@@ -8262,7 +8334,7 @@ public class Window {
         shader.setUniform("mvp", renderMvp);
         glDepthFunc(GL_LESS);
         glDepthMask(true);
-        glDisable(GL_CULL_FACE);  // leave culling OFF — global default; terrain needs it off
+        glDisable(GL_CULL_FACE);  // leave culling OFF  -  global default; terrain needs it off
         glDisable(GL_BLEND);
     }
 
@@ -8376,7 +8448,7 @@ public class Window {
         }
     }
 
-    /** Stroke font (segments u0,v0,u1,v1 in a unit cell) for digits 1–9 and letters A–I. */
+    /** Stroke font (segments u0,v0,u1,v1 in a unit cell) for digits 1-9 and letters A-I. */
     private static float[] cdGlyph(char ch) {
         switch (ch) {
             case '1': return new float[]{1,1, 1,0};

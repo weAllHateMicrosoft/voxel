@@ -43,13 +43,13 @@ public class Progression {
         TIME       ("Time Dilation",    "[R] / [Y]",  "[R] slows time to a crawl, [Y] speeds it up  -  dodge or line up a shot."),
         SEAL       ("Minato's Seal",    "[H] / [B]",  "[H] throws a teleport seal; [B] warps you to it. Up to 5 active at once."),
         SUBSTITUTE ("Substitute",       "[V]",        "Hold to prime. The next hit is absorbed  -  you blink back and leave an exploding decoy."),
-        // ── GOD-TIER ARSENAL — earned late, the climax of the run ────────────────
+        // ── GOD-TIER ARSENAL  -  earned late, the climax of the run ────────────────
         GATLING    ("Gatling Gun",      "Slot + LMB", "A roaring gatling gun. Equip it and hold Left-Click to shred everything in your sights."),
         STONE_CANON ("Stone Cannon",      "HOLD LMB",   "Near stone, hold Left-Click to absorb it into a giant boulder. Release to fire a wrecking shot."),
         RADAR       ("Radar Sweep",       "[F10]",      "A pulse that paints every enemy through walls and terrain. You see everything."),
         DEPRIVATION ("Deprivation Domain","[ ' ]",      "A golden hemisphere erupts around you. Any enemy that enters is instantly sliced. Press once to start, again to end early."),
         ORBITAL     ("Orbital Annihilation","LMB",      "Left-Click to call a cinematic strike from orbit. The sky splits and the ground is erased."),
-        DOMAIN     ("The World",        "LMB",        "Left-Click to stop time itself. Everything freezes while you move freely — the ultimate power."),
+        DOMAIN     ("The World",        "LMB",        "Left-Click to stop time itself. Everything freezes while you move freely  -  the ultimate power."),
         KAMUI      ("Kamui",            "[Z]",        "Phase into another dimension  -  invincible while active. Drains mana fast."),
         FLIGHT     ("Flight",           "[Space x2]", "Double-tap Space to fly. [V] cycles flight modes (skim / soar / grapple).");
 
@@ -68,20 +68,20 @@ public class Progression {
         /* start  */ { Ability.SNIPE, Ability.RADAR },               // Sniper + Radar from the start
         /* wave 1 */ { Ability.SLASH, Ability.DASH },               // close combat + mobility
         /* wave 2 */ { Ability.QUAGMIRE },                          // control
-        // HEAL (hold L) is out of the natural run — enemies drop HOTDOGS now;
+        // HEAL (hold L) is out of the natural run  -  enemies drop HOTDOGS now;
         // walking over one heals +25. Still available via /showcase.
         /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
         /* wave 4 */ { Ability.BLINK },                             // escape
         // TIME (dilation) and SWAP (position swap) are deliberately out of the
-        // natural run — too many keybinds overwhelmed playtesters. /showcase only.
+        // natural run  -  too many keybinds overwhelmed playtesters. /showcase only.
         /* wave 5 */ { Ability.PILLAR, Ability.CANNONBALL },        // launch yourself
         /* wave 6 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL }, // tactician's toolkit
-        // ── THE ASCENSION — the crystal stops holding back. God-tier weapons. ──
+        // ── THE ASCENSION  -  the crystal stops holding back. God-tier weapons. ──
         /* wave 7 */ { Ability.GATLING },                           // first true weapon
         /* wave 8 */ { Ability.STONE_CANON },                        // siege weapon
         /* wave 9 */ { Ability.ORBITAL },                           // annihilation from orbit
-        /* wave 10*/ { Ability.DOMAIN },                            // stop time — the ultimate
-        /* wave 11*/ { Ability.FLIGHT },                            // final gift — the ending
+        /* wave 10*/ { Ability.DOMAIN },                            // stop time  -  the ultimate
+        /* wave 11*/ { Ability.FLIGHT },                            // final gift  -  the ending
     };
 
     /** Story headline shown on each wave's unlock card (index = wave cleared). */
@@ -130,7 +130,7 @@ public class Progression {
         for (int t = 0; t <= maxTier && t < TIERS.length; t++)
             for (Ability a : TIERS[t]) unlocked.add(a);
         // KAMUI is death-earned (3 deaths) and PERSISTS across runs. The awakening
-        // only fires once ever, so without this every new run would wipe it — re-grant
+        // only fires once ever, so without this every new run would wipe it  -  re-grant
         // it here whenever it's already been earned (flag persisted in RunRecords).
         // NOTE: add it directly (NOT grantKamui), which would bump maxTier to 8 and skip
         // all the wave-1..8 unlock cards.
@@ -140,7 +140,7 @@ public class Progression {
     /** True if the player may use this ability right now. */
     public boolean isUnlocked(Ability a) { return unlocked.contains(a); }
 
-    /** Unlock EVERY ability — used for multiplayer so both players are fully armed for PvP. */
+    /** Unlock EVERY ability  -  used for multiplayer so both players are fully armed for PvP. */
     public void unlockAll() {
         for (Ability a : Ability.values()) unlocked.add(a);
         maxTier = TIERS.length;
@@ -174,7 +174,7 @@ public class Progression {
      * Called when the 3rd death triggers the awakening cutscene.
      */
     public void grantKamui() {
-        // Kamui is death-earned and independent of wave progress — do NOT touch maxTier,
+        // Kamui is death-earned and independent of wave progress  -  do NOT touch maxTier,
         // or the wave-by-wave unlock cards up to that tier would be skipped this run.
         unlocked.add(Ability.KAMUI);
     }
