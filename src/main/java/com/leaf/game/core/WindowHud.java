@@ -184,8 +184,8 @@ class WindowHud {
     // ─────────────────────────────────────────────────────────────────────────
     void renderUnlockCard(float w, float h) {
         int n = win.unlockCardAbilities.size();
-        float cardW = 500f;
-        float cardH = 210f + n * 78f;
+        float cardW = 540f;
+        float cardH = 210f + n * 92f;
         ImGui.setNextWindowPos(w / 2f - cardW / 2f, h / 2f - cardH / 2f);
         ImGui.setNextWindowSize(cardW, cardH);
         ImGui.setNextWindowBgAlpha(0.93f);
@@ -195,13 +195,14 @@ class WindowHud {
               | imgui.flag.ImGuiWindowFlags.NoResize);
 
         ImGui.spacing(); ImGui.spacing();
-        cardCenter("ABILITY UNLOCKED", 1.0f, 0.85f, 0.35f);
+        cardCenterBig("NEW POWER UNLOCKED", 1.3f, 1.0f, 0.85f, 0.35f);
         ImGui.spacing();
         cardCenter(win.player.progression.flavorFor(win.unlockCardWave), 0.85f, 0.9f, 1.0f);
         ImGui.spacing(); ImGui.separator(); ImGui.spacing();
 
         for (Progression.Ability a : win.unlockCardAbilities) {
-            cardCenter(a.label + "    " + a.key, 0.45f, 0.95f, 1.0f);
+            // The key IS the lesson — render the key + name line big.
+            cardCenterBig(a.key + "   " + a.label, 1.35f, 0.45f, 0.95f, 1.0f);
             ImGui.spacing();
             ImGui.pushTextWrapPos(ImGui.getWindowWidth() - 24f);
             ImGui.setCursorPosX(22f);
@@ -226,6 +227,23 @@ class WindowHud {
         float tw = ImGui.calcTextSize(text).x;
         ImGui.setCursorPosX(Math.max(8f, (ImGui.getWindowWidth() - tw) * 0.5f));
         ImGui.textColored(r, g, b, 1.0f, text);
+    }
+
+    /**
+     * Centre a line at {@code scale}× the base font size in the current ImGui
+     * window (drawn via the window draw list — the binding has no static
+     * setWindowFontScale). Advances the layout cursor past the text.
+     */
+    private void cardCenterBig(String text, float scale, float r, float g, float b) {
+        ImFont font = ImGui.getFont();
+        float  base = ImGui.getFontSize();
+        float  size = base * scale;
+        float  tw   = ImGui.calcTextSize(text).x * scale;
+        float  x = ImGui.getWindowPosX() + Math.max(8f, (ImGui.getWindowWidth() - tw) * 0.5f);
+        float  y = ImGui.getCursorScreenPosY();
+        ImGui.getWindowDrawList().addText(font, size, x, y,
+                ImGui.colorConvertFloat4ToU32(r, g, b, 1.0f), text);
+        ImGui.dummy(0f, size + 2f);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1880,6 +1898,14 @@ class WindowHud {
             renderObjectiveBanner(draw, screenW, screenH);
         }
 
+        // ── COMBAT KEY STRIP — always-on key reminders above the hotbar.
+        // Playtest feedback: nobody remembers keybinds after one tutorial pass.
+        if (!win.showHelp && !win.playtestMode && !win.isPaused
+                && win.tutorial != null && win.tutorial.isFinished()
+                && !win.player.stand.isInStandPerspective()) {
+            renderCombatKeyStrip(draw, screenW, screenH);
+        }
+
         // ── PLAYTEST CONTROLS LEGEND ──────────────────────────────────────────
         // Always-on compact legend so the player discovers every system unaided.
         if (win.playtestMode && !win.showHelp && !win.isPaused
@@ -2196,7 +2222,6 @@ class WindowHud {
         ImGui.separator();
         helpRow("[ ` ] (Tilde)", "FLAPPY BIRD MODE — press ` at any time to instantly transform DESCENT into a full 2D side-scrolling Flappy Bird arcade! Press [TAB] to toggle 3D/2D view. How high can you score?");
         helpRow("[ F4 ]", "METEOR STORM — rains flaming meteorites from the sky. Each one dynamically carves a crater into the terrain on impact. The mountain will never be the same.");
-        helpRow("[ \\ ] (Backslash)", "MEGA METEOR — drops one colossal, mountain-erasing meteor onto the map. Stand clear.");
         helpRow("[ F6 ]", "NON-EUCLIDEAN SPACE — teleports you into an impossible, infinitely looping 4D layered room. Find your way out.");
         ImGui.spacing();
 
@@ -2205,10 +2230,10 @@ class WindowHud {
         ImGui.separator();
         helpRow("[ F7 ] / Slot 3", "Orbital Annihilation (RMB): cinematic 3D orbital strike — earn it in the Ashlands.");
         helpRow("[ F8 ] / Slot 4", "The World / Time Stop (RMB): freeze all enemies in place — earned by completing the Voyage.");
-        helpRow("[ F10 ]", "Radar Sweep: 3D ping — enemies glow through walls with wireframe highlights — earn it in the Glowing Groves.");
-        helpRow("[ . ] (Period)", "Chocolate Disco: Spawns a 9×9 tactical grid. Mark cells with LMB, press [.] again to detonate.");
-        helpRow("[ ' ] (Quote)", "Deprivation Domain: Golden absolute-defence hemisphere — any enemy entering is instantly sliced.");
-        helpRow("[ , ] (Comma)", "Quantum Bullet: Phases through walls, leaving visual ripple distortions on every surface hit.");
+        helpRow("[ F10 ]", "Radar Sweep: 3D ping — enemies glow through walls with wireframe highlights. Yours from the very start!");
+        helpRow("[ . ] (Period)", "Chocolate Disco (showcase mode only): Spawns a 9×9 tactical grid. Mark cells with LMB, press [.] again to detonate.");
+        helpRow("[ ' ] (Quote)", "Deprivation Domain: Golden absolute-defence hemisphere — any enemy entering is instantly sliced. Forged in the Glowing Groves.");
+        helpRow("[ , ] (Comma)", "Quantum Bullet (showcase mode only): Phases through walls, leaving ripple distortions on every surface hit.");
         helpRow("[ F12 ]", "Parkour Mode: Toggles Quake-style momentum physics (frictionless, high-speed).");
         helpRow("[ T ] → /skip", "Skip the tutorial and jump straight to wave 1.");
         helpRow("[ T ] → /showcase", "Instantly unlock every ability and arm all 5 weapons — for grading/testing.");
@@ -2219,6 +2244,8 @@ class WindowHud {
         ImGui.separator();
         Progression prog = win.player.progression;
         for (Progression.Ability a : prog.allAbilities()) {
+            // TIME is showcase-only now — don't advertise a locked row for it.
+            if (a == Progression.Ability.TIME && !prog.isUnlocked(a)) continue;
             if (prog.isUnlocked(a)) {
                 helpRow(a.key, a.label + "  -  " + a.desc);
             } else {
@@ -2350,51 +2377,84 @@ class WindowHud {
         int keyCol   = ImGui.colorConvertFloat4ToU32(0.45f, 0.9f, 1.0f, 1.0f);
         int panelBg  = ImGui.colorConvertFloat4ToU32(0.05f, 0.07f, 0.12f, 0.62f);
 
-        // ── TUTORIAL ACTIVE: staged lesson banner ────────────────────────────
+        // ── TUTORIAL ACTIVE: BIG centred lesson card ─────────────────────────
+        // Playtest feedback: small top-bar text was read once and forgotten.
+        // Now: huge gold title, a giant pulsing keyboard-key chip, short line.
         if (t != null && t.isActive()) {
-            String prog  = "STEP " + t.stepNumber() + " / " + t.stepCount();
+            ImFont font = ImGui.getFont();
+            float  base = ImGui.getFontSize();
+            float  pulse = 0.70f + 0.30f * (float) Math.sin(glfwGetTime() * 4.5);
+
             String title = t.title();
             String instr = t.instruction();
             String key   = t.keyHint();
 
-            // Measure the widest line so the panel fits all of them.
-            imgui.ImVec2 ps = ImGui.calcTextSize(prog);
-            imgui.ImVec2 ts = ImGui.calcTextSize(title);
-            imgui.ImVec2 is = ImGui.calcTextSize(instr);
-            float keyW = (key != null) ? ImGui.calcTextSize("[ " + key + " ]").x : 0f;
-            float maxW = Math.max(Math.max(ps.x, ts.x), Math.max(is.x, keyW));
-            float pad  = 18f;
-            float top  = y - 8f;
-            float lineH = ts.y;
-            int   lines = 3 + (key != null ? 1 : 0);
-            float bot  = top + lines * (lineH + 4f) + 12f;
-            draw.addRectFilled(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, bot, panelBg, 8f);
+            float titleSize = base * 2.4f;
+            float instrSize = base * 1.35f;
+            float keySize   = base * 2.0f;
 
-            // progress line
-            draw.addText(cx - ps.x / 2 + 1, y + 1, shadow, prog);
-            draw.addText(cx - ps.x / 2,     y,     dimCol, prog);
-            y += lineH + 4f;
-            // title
-            draw.addText(cx - ts.x / 2 + 1, y + 1, shadow, title);
-            draw.addText(cx - ts.x / 2,     y,     titleCol, title);
-            y += lineH + 4f;
-            // instruction
-            draw.addText(cx - is.x / 2 + 1, y + 1, shadow, instr);
-            draw.addText(cx - is.x / 2,     y,     bodyCol, instr);
-            y += lineH + 4f;
-            // key hint
-            if (key != null) {
-                String kk = "[ " + key + " ]";
-                imgui.ImVec2 ks = ImGui.calcTextSize(kk);
-                draw.addText(cx - ks.x / 2 + 1, y + 1, shadow, kk);
-                draw.addText(cx - ks.x / 2,     y,     keyCol, kk);
+            float titleW = ImGui.calcTextSize(title).x * (titleSize / base);
+            float instrW = ImGui.calcTextSize(instr).x * (instrSize / base);
+            float keyTxtW = (key != null) ? ImGui.calcTextSize(key).x * (keySize / base) : 0f;
+            float chipW   = keyTxtW + 44f;
+            float maxW  = Math.max(Math.max(titleW, instrW), chipW);
+            float pad   = 30f;
+
+            float top   = screenH * 0.13f;
+            float yy    = top + 16f;
+            float chipH = base * 2.0f + 22f;
+            float panelH = 16f                    // top pad
+                    + 12f                          // progress pips
+                    + titleSize + 12f              // title
+                    + (key != null ? chipH + 14f : 0f)
+                    + instrSize + 18f;             // instruction + bottom pad
+            draw.addRectFilled(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
+                    ImGui.colorConvertFloat4ToU32(0.03f, 0.04f, 0.10f, 0.78f), 14f);
+            draw.addRect(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 0.35f), 14f, 0, 1.5f);
+
+            // Progress pips — one dot per step, current one glows
+            int   n = t.stepCount();
+            float pipR = 4f, pipGap = 16f;
+            float pipX = cx - (n - 1) * pipGap / 2f;
+            for (int i = 1; i <= n; i++) {
+                boolean done = i < t.stepNumber();
+                boolean curr = i == t.stepNumber();
+                int col = curr ? ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.3f, pulse)
+                        : done ? ImGui.colorConvertFloat4ToU32(0.5f, 0.95f, 0.6f, 0.9f)
+                               : ImGui.colorConvertFloat4ToU32(0.45f, 0.5f, 0.6f, 0.6f);
+                draw.addCircleFilled(pipX + (i - 1) * pipGap, yy, curr ? pipR + 1.5f : pipR, col);
             }
+            yy += 12f;
+
+            // Title — huge gold
+            draw.addText(font, titleSize, cx - titleW / 2 + 2, yy + 2, shadow, title);
+            draw.addText(font, titleSize, cx - titleW / 2, yy, titleCol, title);
+            yy += titleSize + 12f;
+
+            // Giant key chip — looks like a physical keyboard key, pulsing border
+            if (key != null) {
+                float x0 = cx - chipW / 2f;
+                int chipEdge = ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.06f, 0.95f);
+                int chipBg   = ImGui.colorConvertFloat4ToU32(0.12f, 0.14f, 0.24f, 0.97f);
+                int chipBdr  = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.30f, pulse);
+                int chipTxt  = ImGui.colorConvertFloat4ToU32(1.0f, 0.96f, 0.80f, 1.0f);
+                draw.addRectFilled(x0, yy + 5f, x0 + chipW, yy + chipH + 5f, chipEdge, 10f);
+                draw.addRectFilled(x0, yy, x0 + chipW, yy + chipH, chipBg, 10f);
+                draw.addRect(x0, yy, x0 + chipW, yy + chipH, chipBdr, 10f, 0, 3f);
+                draw.addText(font, keySize, cx - keyTxtW / 2, yy + (chipH - keySize) / 2f, chipTxt, key);
+                yy += chipH + 14f;
+            }
+
+            // Instruction — short, readable
+            draw.addText(font, instrSize, cx - instrW / 2 + 1, yy + 1, shadow, instr);
+            draw.addText(font, instrSize, cx - instrW / 2, yy, bodyCol, instr);
 
             // skip hint (bottom-centre, unobtrusive)
             String skip = "[F2] skip tutorial";
             imgui.ImVec2 ss = ImGui.calcTextSize(skip);
-            draw.addText(cx - ss.x / 2 + 1, bot + 5f, shadow, skip);
-            draw.addText(cx - ss.x / 2,     bot + 4f,
+            draw.addText(cx - ss.x / 2 + 1, top + panelH + 7f, shadow, skip);
+            draw.addText(cx - ss.x / 2,     top + panelH + 6f,
                     ImGui.colorConvertFloat4ToU32(0.6f, 0.62f, 0.7f, 0.6f), skip);
             return;
         }
@@ -2410,6 +2470,68 @@ class WindowHud {
         draw.addText(cx - ks.x / 2 + 1, y + hs.y + 7f, shadow, kills);
         draw.addText(cx - ks.x / 2,     y + hs.y + 6f,
                 ImGui.colorConvertFloat4ToU32(1.0f, 0.6f, 0.5f, 0.9f), kills);
+    }
+
+    /**
+     * Always-on key reminders, centred just above the hotbar.
+     * Shows the three core combat keys during the wave phase, and the flight
+     * keys once the Voyage opens — because nobody remembers a keybind they
+     * read once in a tutorial.
+     */
+    void renderCombatKeyStrip(imgui.ImDrawList draw, float screenW, float screenH) {
+        Progression prog = win.player.progression;
+        String[][] entries;
+        if (win.voyageStarted) {
+            entries = new String[][] {
+                { "SPACE x2", "FLY" },
+                { "V", "FLIGHT MODE" },
+                { "RMB", "FIRE WEAPON" },
+            };
+        } else {
+            java.util.List<String[]> list = new java.util.ArrayList<>();
+            list.add(new String[]{ "RMB hold", "SNIPE" });
+            if (prog.isUnlocked(Progression.Ability.SLASH)) list.add(new String[]{ "F", "SLASH" });
+            if (prog.isUnlocked(Progression.Ability.DASH))  list.add(new String[]{ "Q", "DASH" });
+            list.add(new String[]{ "F10", "RADAR" });
+            entries = list.toArray(new String[0][]);
+        }
+
+        ImFont font = ImGui.getFont();
+        float  base = ImGui.getFontSize();
+        float  keySize = base * 1.1f;
+        float  padX = 8f, gap = 26f, chipGapLabel = 7f;
+
+        // Measure total width
+        float total = 0f;
+        float[] keyWs = new float[entries.length], lblWs = new float[entries.length];
+        for (int i = 0; i < entries.length; i++) {
+            keyWs[i] = ImGui.calcTextSize(entries[i][0]).x * (keySize / base) + padX * 2;
+            lblWs[i] = ImGui.calcTextSize(entries[i][1]).x;
+            total += keyWs[i] + chipGapLabel + lblWs[i];
+            if (i < entries.length - 1) total += gap;
+        }
+
+        float chipH = keySize + 10f;
+        float x = screenW / 2f - total / 2f;
+        // Sits above the hotbar (slots are 40px tall, 10px from the bottom edge)
+        float yTop = screenH - 40f - 24f - chipH;
+
+        int chipBg  = ImGui.colorConvertFloat4ToU32(0.07f, 0.09f, 0.16f, 0.82f);
+        int chipBdr = ImGui.colorConvertFloat4ToU32(0.85f, 0.75f, 0.4f, 0.75f);
+        int keyTxt  = ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.8f, 0.95f);
+        int lblTxt  = ImGui.colorConvertFloat4ToU32(0.85f, 0.9f, 1.0f, 0.85f);
+        int shadow  = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f);
+
+        for (int i = 0; i < entries.length; i++) {
+            draw.addRectFilled(x, yTop, x + keyWs[i], yTop + chipH, chipBg, 6f);
+            draw.addRect(x, yTop, x + keyWs[i], yTop + chipH, chipBdr, 6f, 0, 1.5f);
+            draw.addText(font, keySize, x + padX, yTop + 5f, keyTxt, entries[i][0]);
+            float lx = x + keyWs[i] + chipGapLabel;
+            float ly = yTop + (chipH - base) / 2f;
+            draw.addText(lx + 1, ly + 1, shadow, entries[i][1]);
+            draw.addText(lx, ly, lblTxt, entries[i][1]);
+            x = lx + lblWs[i] + gap;
+        }
     }
 
     /**

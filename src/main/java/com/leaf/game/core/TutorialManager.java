@@ -111,6 +111,12 @@ public class TutorialManager {
         try { complete = s.done.test(ctx); }
         catch (Exception ignored) { /* never let the tutorial crash the game */ }
 
+        if (complete) {
+            // Juice: every lesson the player actually performs earns a chime + flash,
+            // so the key they just pressed is tied to a moment of reward.
+            AudioManager.play("cystal_click", 0.8f);
+            ScreenEffectManager.INSTANCE.flash(0.45f, 1.0f, 0.6f, 0.30f, 0.35f);
+        }
         if (complete || (s.timeout > 0f && ctx.stepTime >= s.timeout)) advance();
         return true;
     }
@@ -154,35 +160,39 @@ public class TutorialManager {
         // A short but complete tutorial that teaches movement, the three starting
         // abilities, and the Sniper before handing off to the Voyage (Flight + beams).
 
+        // The text is deliberately SHORT and the key is rendered as a huge pulsing
+        // chip by WindowHud.renderObjectiveBanner — playtesting showed long
+        // sentences in small type are read once and instantly forgotten.
+
         // 1 ── MOVE + LOOK (combined)
-        steps.add(new Step("Move",
-            "Use the MOUSE to look and  [W] [A] [S] [D]  to walk.", "WASD + Mouse",
+        steps.add(new Step("MOVE",
+            "Mouse to look around.  Walk forward!", "W A S D",
             null, c -> movedFar(c, 4f), 9f));
 
         // 2 ── SLASH  —  grants on enter so the key is immediately usable
-        steps.add(new Step("Runic Cleave",
-            "Press [F] to swing the Runic Cleave  —  a wide melee arc. Try it!", "F",
+        steps.add(new Step("SLASH",
+            "Your blade. Swing it!", "F",
             c -> c.player.progression.unlock(Progression.Ability.SLASH),
             c -> usedCooldown(c, c.player.attacks.getMeleeCooldownFrac()), 15f));
 
         // 3 ── DASH  —  grants on enter
-        steps.add(new Step("Dash",
-            "Press [Q] to Dash  —  an instant burst in your movement direction. Try it!", "Q",
+        steps.add(new Step("DASH",
+            "A burst of speed. Try it!", "Q",
             c -> c.player.progression.unlock(Progression.Ability.DASH),
             c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 12f));
 
         // 4 ── SNIPER  —  the ranged weapon already in slot 1
-        steps.add(new Step("Your First Weapon",
-            "Hold [C] (or Right-Click with the Sniper selected) to charge a crystal bolt, release to fire.", "C / RMB",
+        steps.add(new Step("SNIPER",
+            "Hold to charge...  release to FIRE!", "HOLD RIGHT-CLICK",
             null,
             c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 14f));
 
         // 5 ── BATTLE BEGINS — auto-advances and lets finish() turn waves on.
         // FLIGHT is granted later, when the Voyage opens after wave 6.
-        steps.add(new Step("Battle Begins",
-            "Press [F10] to RADAR SWEEP — pings every enemy through walls!  Defeat 6 waves and the crystal gives you the sky.", "Fight!",
+        steps.add(new Step("BATTLE BEGINS",
+            "Survive 6 waves  -  every wave unlocks a NEW POWER.", "GO!",
             null,
-            c -> false, 4f));
+            c -> false, 5f));
     }
 
     private static float angleDiff(float a, float b) {

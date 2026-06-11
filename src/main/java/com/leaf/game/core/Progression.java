@@ -69,7 +69,9 @@ public class Progression {
         /* wave 1 */ { Ability.SLASH, Ability.DASH },               // close combat + mobility
         /* wave 2 */ { Ability.QUAGMIRE, Ability.HEAL },            // control + sustain
         /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
-        /* wave 4 */ { Ability.BLINK, Ability.SWAP, Ability.TIME }, // escape kit
+        /* wave 4 */ { Ability.BLINK, Ability.SWAP },               // escape kit
+        // TIME (dilation, R/Y) is deliberately out of the natural run — too many
+        // keybinds overwhelmed playtesters. Still available via /showcase.
         /* wave 5 */ { Ability.PILLAR, Ability.CANNONBALL },        // launch yourself
         /* wave 6 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL }, // tactician's toolkit
         // ── THE ASCENSION — the crystal stops holding back. God-tier weapons. ──

@@ -137,9 +137,21 @@ public class Voyage {
                 }
             }
         }
+        // Keep every leg a SHORT flight. The tower fight especially must not be a
+        // 2 km commute — pull the beacon toward the player along the same bearing
+        // if the real biome is too far (collection only checks the beam column,
+        // so the objective works anywhere).
+        float maxDist = o.requireTowerKill ? 380f : 700f;
         if (foundX == Integer.MIN_VALUE) {
             // Fallback: drop the beacon a fixed distance ahead so the voyage never stalls.
-            foundX = px + 600; foundZ = pz;
+            foundX = px + (int) maxDist; foundZ = pz;
+        } else {
+            float dist = (float) Math.sqrt(bestSq);
+            if (dist > maxDist) {
+                float s = maxDist / dist;
+                foundX = px + Math.round((foundX - px) * s);
+                foundZ = pz + Math.round((foundZ - pz) * s);
+            }
         }
         float gy = win.worldGen.surfaceYEstimate(foundX, foundZ);
         o.location = new Vector3f(foundX + 0.5f, gy + 2f, foundZ + 0.5f);

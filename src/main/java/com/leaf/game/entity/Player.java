@@ -140,9 +140,8 @@ public class Player {
         // Always animate the view toward the current gravity orientation, and on a
         // fresh key press snap "down" to whatever axis the camera is looking along.
         camera.tickGravity(deltaTime);
-        boolean gravKey = glfwGetKey(window, com.leaf.game.core.KeyBindings.GRAVITY_FLIP) == GLFW_PRESS;
-        if (gravKey && !lastGravityKey) setGravityFromLook(camera);
-        lastGravityKey = gravKey;
+        // Gravity flip is disabled in normal play — a stray '/' press mid-fight flips the
+        // whole world upside-down, which reads as a bug to anyone who didn't ask for it.
 
         // ── Clear per-frame smash signal ──────────────────────────────────────
         smashImpactX = Integer.MIN_VALUE;
@@ -527,12 +526,16 @@ public class Player {
         return highestY - hNow;
     }
 
+    /** Comfort damping: full-strength roll/FOV pumping made playtesters dizzy. */
+    private static final float CAMERA_COMFORT = 0.4f;
+
     public float getCameraRoll() {
-        return flightController.getCameraRoll() + abilities.getCameraRoll();
+        return (flightController.getCameraRoll() + abilities.getCameraRoll()) * CAMERA_COMFORT;
     }
     public float getCameraFovBoost() {
-        if (isSmashing) return -8f;
-        return flightController.getFovBoost() + abilities.getCameraFovBoost() + attacks.getFovBoost();
+        if (isSmashing) return -8f * CAMERA_COMFORT;
+        return (flightController.getFovBoost() + abilities.getCameraFovBoost() + attacks.getFovBoost())
+                * CAMERA_COMFORT;
     }
     public boolean isSmashing() { return isSmashing; }
 

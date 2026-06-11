@@ -139,10 +139,11 @@ public class Window {
     // ── THE VOYAGE — guided exploration quest (replaces wave grinding) ──────────
     Voyage  voyage        = null;
     boolean voyageStarted = false;
-    // Weapon-reveal overlay (fancy WEAPON FORGED card)
+    // Weapon-reveal overlay (fancy WEAPON FORGED card) + queue for back-to-back grants
     Progression.Ability weaponRevealAbility = null;
     int                 weaponRevealSlot    = -1;
     float               weaponRevealTimer   = 0f;
+    private final java.util.ArrayDeque<Progression.Ability> weaponRevealQueue = new java.util.ArrayDeque<>();
     // Night-time torch hint (shown once)
     boolean shownNightHint = false;
     /** Big centred reveal/directive banner the Voyage pushes (forge moments, next step). */
@@ -1154,11 +1155,25 @@ public class Window {
             inventory.addBlockAmount(w, 1);
             hotbar[slot] = w;
         }
-        // Trigger the fancy reveal card (works for weapons and key abilities)
-        weaponRevealAbility = a;
-        weaponRevealSlot    = slot;
-        weaponRevealTimer   = 5.5f;
+        // Queue the fancy reveal card. Back-to-back grants (Orbital → The World at
+        // the tower) each get their full 5.5 s on screen instead of overwriting.
+        if (weaponRevealTimer > 0f) {
+            weaponRevealQueue.add(a);
+        } else {
+            weaponRevealAbility = a;
+            weaponRevealSlot    = slot;
+            weaponRevealTimer   = 5.5f;
+        }
         return w;
+    }
+
+    /** Hotbar slot a granted ability's weapon lands in (-1 = key ability, no item). */
+    private static int weaponSlotFor(Progression.Ability a) {
+        return switch (a) {
+            case SNIPE -> 0; case GATLING -> 1; case ORBITAL -> 2;
+            case DOMAIN -> 3; case STONE_CANON -> 4;
+            default -> -1;
+        };
     }
 
     /**
@@ -2196,7 +2211,16 @@ public class Window {
                         if (voyageStarted && voyage.active) voyage.update(deltaTime);
                         if (voyageStarted) renderVoyageBeacon(rawDeltaTime);
                         if (voyageMsgTimer > 0f) voyageMsgTimer = Math.max(0f, voyageMsgTimer - rawDeltaTime);
-                        if (weaponRevealTimer > 0f) weaponRevealTimer = Math.max(0f, weaponRevealTimer - rawDeltaTime);
+                        if (weaponRevealTimer > 0f) {
+                            weaponRevealTimer = Math.max(0f, weaponRevealTimer - rawDeltaTime);
+                            // Current card done → show the next queued reveal (if any)
+                            if (weaponRevealTimer <= 0f && !weaponRevealQueue.isEmpty()) {
+                                Progression.Ability next = weaponRevealQueue.poll();
+                                weaponRevealAbility = next;
+                                weaponRevealSlot    = weaponSlotFor(next);
+                                weaponRevealTimer   = 5.5f;
+                            }
+                        }
 
                         // Night-time hint: show once when it first gets dark
                         if (!shownNightHint && world != null && player != null
@@ -3467,10 +3491,8 @@ public class Window {
                     boolean f4Now = glfwGetKey(window, KeyBindings.METEOR_STORM) == GLFW_PRESS;
                     if (f4Now && !lastF4) startMeteorStorm();
                     lastF4 = f4Now;
-                    // ── COLOSSAL METEOR (F11) — one giant rock, mountain-erasing crater ──
-                    boolean f11Now = glfwGetKey(window, com.leaf.game.core.KeyBindings.MEGA_METEOR) == GLFW_PRESS;
-                    if (f11Now && !lastF11) spawnMegaMeteor();
-                    lastF11 = f11Now;
+                    // Mega meteor removed from the keyboard — it shared a key with the
+                    // Deprivation Domain and erased mountains by accident.
                     updateMeteors(rawDeltaTime);
 
                     // ── GATLING GUN — hold LMB (with the gun selected) to rip ──────
@@ -3507,8 +3529,10 @@ public class Window {
                     lastF10 = f10Now;
                     if (vlActive) updateVoxelLines(rawDeltaTime);
 
-                    // ── CHOCOLATE DISCO GRID ('.' key) ─────────────────────────────────────────
-                    boolean kNow = glfwGetKey(window, KeyBindings.DISCO) == GLFW_PRESS;
+                    // ── CHOCOLATE DISCO GRID ('.' key) — showcase only; a stray press
+                    //    mid-fight summons a glowing grid nobody asked for ─────────────
+                    boolean kNow = (showcaseMode || playtestMode)
+                            && glfwGetKey(window, KeyBindings.DISCO) == GLFW_PRESS;
                     if (kNow && !lastDisco) {
                         if (!cdActive) {
                             spawnDiscoGrid(camera, world);
@@ -3538,7 +3562,8 @@ public class Window {
                     // ── QUANTUM BULLET (',' key) — fire a phasing bullet ─────────
                     qbCooldown     = Math.max(0f, qbCooldown - rawDeltaTime);
                     qbWarpStrength = Math.max(0f, qbWarpStrength - rawDeltaTime);  // warp lasts ~1 s on the block
-                    boolean quantumNow = glfwGetKey(window, KeyBindings.QUANTUM_BULLET) == GLFW_PRESS;
+                    boolean quantumNow = (showcaseMode || playtestMode)
+                            && glfwGetKey(window, KeyBindings.QUANTUM_BULLET) == GLFW_PRESS;
                     if (quantumNow && !lastQuantum && qbCooldown <= 0f && !player.debugMode) {
                         Vector3f d = camera.getLookDirection();
                         Vector3f o = new Vector3f(camera.position.x + d.x * 0.6f,
@@ -4993,7 +5018,8 @@ public class Window {
         smashShakeTimer = Math.max(0f, smashShakeTimer - rawDt);
 
         float progress    = smashShakeTimer / activeShakeDuration; // Dynamic duration
-        float amplitude   = progress * activeShakeAmplitude;       // Dynamic amplitude
+        // Comfort: half-strength shake — full amplitude made playtesters dizzy.
+        float amplitude   = progress * activeShakeAmplitude * 0.5f;
         float timeSecs    = (float)glfwGetTime();
         float freq        = GameConfig.smashShakeFrequency;
 

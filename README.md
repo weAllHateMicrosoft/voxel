@@ -36,7 +36,7 @@ Click **PLAY** on the title screen and the game guides you from there — no exp
 ### Quick-Start
 
 1. Load the game and press **Play**.
-2. A **5-step tutorial** (about 1 minute) teaches: movement, Slash (`F`), Dash (`Q`), and the Sniper (`C` / RMB hold-to-charge).
+2. A **5-step tutorial** (about 1 minute) teaches: movement, Slash (`F`), Dash (`Q`), and the Sniper (hold **Right-Click** to charge, release to fire). You also start with **Radar Sweep** (`F10`) — ping every enemy through walls.
 3. **Survive 6 waves** at spawn. Each wave clears, an unlock card appears, press `ENTER` to continue:
 
    | Wave | New abilities |
@@ -44,7 +44,7 @@ Click **PLAY** on the title screen and the game guides you from there — no exp
    | 1 | Slash, Dash |
    | 2 | Quagmire, Heal |
    | 3 | Lightning, Grab |
-   | 4 | Blink, Position Swap, Time Dilation |
+   | 4 | Blink, Position Swap |
    | 5 | Stone Pillar, Cannonball |
    | 6 | Stand, Substitute, Seal — **the crystal shatters; the Voyage begins** |
 
@@ -53,14 +53,14 @@ Click **PLAY** on the title screen and the game guides you from there — no exp
    | Destination | What to do | Forges |
    |---|---|---|
    | **Crystal Fields** | fly into the violet beam | **Gatling Gun** |
-   | **Glowing Groves** | follow the green beam | **Radar Sweep** (`F10`) |
+   | **Glowing Groves** | follow the green beam | **Deprivation Domain** (`'`) |
    | **Floating Isles** | fly **UP** into the sky beam | **Stone Cannon** |
    | **The Ashlands** | destroy the **Inferno Tower**, then claim the core | **Orbital Annihilation** |
    | all shards reunited | automatic | **The World** — stop time |
 
 5. Press `F1` at any time for the full ability reference.
 
-> **Easter eggs (try them):** `` ` `` = Flappy Bird mode &nbsp;·&nbsp; `F4` = meteor storm &nbsp;·&nbsp; `\` = mega meteor &nbsp;·&nbsp; `F6` = non-Euclidean space
+> **Easter eggs (try them):** `` ` `` = Flappy Bird mode &nbsp;·&nbsp; `F4` = meteor storm &nbsp;·&nbsp; `F6` = non-Euclidean space
 
 > **For grading / testing:** `/showcase` (unlock everything instantly), `/skip` (skip tutorial), `/biome <name>` (warp to any biome).
 
@@ -204,8 +204,7 @@ Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks 
 | Hotbar slot 3 / `F7` | **Orbital Annihilation** (Ashlands tower) | RMB → volumetric cinematic strike |
 | Hotbar slot 4 / `F8` | **The World / Time Stop** (all shards) | RMB → freeze all enemies |
 | Hotbar slot 5 / `I` | **Stone Cannon** (Floating Isles) | hold RMB near stone → absorb → boulder |
-| `F10` | **Radar Sweep** (Glowing Groves) | ping every enemy through walls |
-| `R` / `Y` | Slow / speed up time | (Time Dilation) |
+| `F10` | **Radar Sweep** (starting kit) | ping every enemy through walls |
 | `'` (apostrophe) | **Deprivation Domain** — golden hemisphere auto-slasher | |
 | `,` (comma) | **Quantum Bullet** — phase-shift projectile through walls | |
 | `/god` (chat) | Toggle invincibility |
@@ -249,7 +248,6 @@ Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks 
 | Kamui | `Z` | Phase into another dimension — invincible; hold Left Click to vortex-suck enemies |
 | Paper Substitute | Hold `V` | Prime a decoy; the next hit is absorbed, you blink back, decoy explodes |
 | Quagmire | `M` | Fire a mud wave along the ground that traps enemies |
-| Time Dilation | `R` / `Y` | Slow time (`R`) or speed it up (`Y`) |
 | Heal | `L` | Channel healing over time (you cannot move while channelling) |
 | Manhattan Transfer | `X` / `Tab` | Deploy a combat drone that auto-fires; `Tab` to pilot it yourself |
 
