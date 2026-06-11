@@ -151,21 +151,33 @@ public class TutorialManager {
     private void buildSteps() {
         final World w = ctx.world;
 
-        // A deliberately SHORT tutorial — just enough to move and shoot, then the
-        // Voyage takes over (Flight + follow-the-beam objectives). No long drills.
+        // A short but complete tutorial that teaches movement, the three starting
+        // abilities, and the Sniper before handing off to the Voyage (Flight + beams).
 
         // 1 ── MOVE + LOOK (combined)
         steps.add(new Step("Move",
             "Use the MOUSE to look and  [W] [A] [S] [D]  to walk.", "WASD + Mouse",
             null, c -> movedFar(c, 4f), 9f));
 
-        // 2 ── YOUR FIRST WEAPON: SNIPER
+        // 2 ── SLASH  —  grants on enter so the key is immediately usable
+        steps.add(new Step("Runic Cleave",
+            "Press [F] to swing the Runic Cleave  —  a wide melee arc. Try it!", "F",
+            c -> c.player.progression.unlock(Progression.Ability.SLASH),
+            c -> usedCooldown(c, c.player.attacks.getMeleeCooldownFrac()), 15f));
+
+        // 3 ── DASH  —  grants on enter
+        steps.add(new Step("Dash",
+            "Press [Q] to Dash  —  an instant burst in your movement direction. Try it!", "Q",
+            c -> c.player.progression.unlock(Progression.Ability.DASH),
+            c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 12f));
+
+        // 4 ── SNIPER  —  the ranged weapon already in slot 1
         steps.add(new Step("Your First Weapon",
-            "The crystal wakes the SNIPER. Hold [C] (or Right-Click) to charge a bolt, release to fire.", "C",
+            "Hold [C] (or Right-Click with the Sniper selected) to charge a crystal bolt, release to fire.", "C / RMB",
             null,
             c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 14f));
 
-        // 3 ── HANDOFF  -  the Voyage (Flight + beam objectives) begins after this.
+        // 5 ── HANDOFF  —  the Voyage begins here.
         // Grant FLIGHT on enter so "double-tap SPACE" works during this very step.
         steps.add(new Step("The Crystal Gives You the Sky",
             "FLIGHT unlocked  -  double-tap [SPACE] to fly. Follow the beam of light to the first shard. [F1] = help.", "Space x2",

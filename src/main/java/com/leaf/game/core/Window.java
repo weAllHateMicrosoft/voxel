@@ -211,7 +211,7 @@ public class Window {
     // (see grantWeaponForAbility). Block selectors fill in as the player mines.
     final Block[] hotbar = {
             Block.WPN_SNIPER, Block.AIR, Block.AIR, Block.AIR,
-            Block.AIR, Block.TORCH, Block.GRASS, Block.DIRT, Block.STONE
+            Block.AIR, Block.TELESCOPE, Block.GRASS, Block.DIRT, Block.STONE
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -1628,9 +1628,13 @@ public class Window {
                             welcomeTimer   = 6.0f;
                             welcomeStarted = true;
                         } else {
-                            // Natural progression run: the player starts with just the
-                            // Sniper and earns every other power wave by wave.
+                            // Natural progression run: the player starts with the Sniper,
+                            // Telescope, and a small stack of building blocks.
                             inventory.addBlockAmount(Block.WPN_SNIPER, 1);
+                            inventory.addBlockAmount(Block.TELESCOPE, 1);
+                            inventory.addBlockAmount(Block.GRASS, 20);
+                            inventory.addBlockAmount(Block.DIRT, 20);
+                            inventory.addBlockAmount(Block.STONE, 20);
                             // Begin the designed onboarding tutorial. It controls all
                             // enemy spawning (waves stay off) until the player graduates.
                             if (tutorial == null) {
