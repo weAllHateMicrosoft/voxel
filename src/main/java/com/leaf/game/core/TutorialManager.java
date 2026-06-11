@@ -176,19 +176,19 @@ public class TutorialManager {
             null,
             c -> { if (!c.player.isOnGround()) c.flag = true; return c.flag; }, 12f));
 
-        // 5 ── YOUR STARTING TECHNIQUE: SNIPE
-        // The crystal grants SNIPE for free; every other ability unlocks by
+        // 5 ── YOUR STARTING TECHNIQUE: SNIPER
+        // The crystal grants the Sniper for free; every other ability unlocks by
         // surviving waves (see Progression). So the tutorial only teaches movement
         // plus this one offensive tool, then hands off to the first wave.
-        steps.add(new Step("Your First Technique",
-            "The crystal wakes one power: SNIPE. Hold [C] to charge a bolt, release to fire.", "C",
+        steps.add(new Step("Your First Weapon",
+            "The crystal wakes one power: the SNIPER. Hold [C] (or Right-Click) to charge a bolt, release to fire.", "C",
             null,
             c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 22f));
 
         // 6 ── HANDOFF  -  waves (and ability unlocks) begin when this step ends
         steps.add(new Step("They're Coming",
-            "Survive each wave and the crystal bonds deeper  -  a NEW ability every wave. "
-            + "Forgot a control? Press [F1] anytime.", null,
+            "Survive each wave and the crystal bonds deeper  -  a NEW power every wave. "
+            + "The later ones are devastating. Forgot a control? Press [F1] anytime.", null,
             null,
             c -> false, 6f));   // auto-advances after 6 s -> finish() turns on the wave spawner
     }

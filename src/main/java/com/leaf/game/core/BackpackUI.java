@@ -54,14 +54,17 @@ public class BackpackUI {
                 if (b == Block.AIR) continue;
 
                 int count = win.inventory.getCount(b);
-                boolean isTool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE
-                        || b == Block.GRAPPLING_HOOK
-                        || b == Block.WPN_ORBITAL || b == Block.WPN_VOID_SHARD
-                        || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON);
+                // Always-available utility tools.
+                boolean alwaysTool = (b == Block.TORCH || b == Block.TELESCOPE || b == Block.GRAPPLING_HOOK);
+                // Earned weapons — only appear once the player actually owns one (granted
+                // on ability unlock), so the hotbar never spoils a future surprise.
+                boolean weapon = (b == Block.GATLING_GUN || b == Block.WPN_SNIPER
+                        || b == Block.WPN_ORBITAL || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON);
+                boolean isTool = alwaysTool || (weapon && count > 0);
 
-                // Show block if player has a quantity of it, or if it is a tool
-                if (count > 0 || isTool) {
-                    String label = b.name() + (isTool ? " (Tool)" : " (" + count + ")");
+                // Show block if player has a quantity of it, or if it is an always-on tool.
+                if (count > 0 || alwaysTool) {
+                    String label = prettyName(b) + (isTool ? " (Weapon)" : " (" + count + ")");
 
                     if (ImGui.button(label, -1f, 32f)) {
                         ImGui.openPopup("equip_popup_" + b.name());
@@ -100,5 +103,23 @@ public class BackpackUI {
             }
         }
         ImGui.end();
+    }
+
+    /** Human-readable label for a block/weapon (avoids raw enum names like WPN_SNIPER). */
+    private static String prettyName(Block b) {
+        return switch (b) {
+            case WPN_SNIPER      -> "Sniper";
+            case WPN_ORBITAL     -> "Orbital Annihilation";
+            case WPN_TIMESTOP    -> "Time Domain";
+            case WPN_STONE_CANNON-> "Stone Cannon";
+            case GATLING_GUN     -> "Gatling Gun";
+            case GRAPPLING_HOOK  -> "Grappling Hook";
+            case TELESCOPE       -> "Telescope";
+            case TORCH           -> "Torch";
+            default -> {
+                String s = b.name().toLowerCase().replace('_', ' ');
+                yield Character.toUpperCase(s.charAt(0)) + s.substring(1);
+            }
+        };
     }
 }

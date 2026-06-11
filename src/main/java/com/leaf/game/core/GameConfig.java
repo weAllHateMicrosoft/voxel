@@ -141,8 +141,10 @@ public class GameConfig {
     public static float mouseSensitivity = 0.001f;
     public static float fov              = 70.0f;
 
-    /** Player starting/maximum health (buffed from the old 50 for more survivability). */
-    public static float playerMaxHealth = 75.0f;
+    /** Player starting/maximum health. Buffed to 120 so a first-time player can
+     *  reach the late-game god-tier unlocks (the climax of the progression) without
+     *  dying and being sent back through earlier waves. */
+    public static float playerMaxHealth = 120.0f;
 
     public static float GRAVITY      = 35.0f;
     public static float JUMP_FORCE   = 10.0f;

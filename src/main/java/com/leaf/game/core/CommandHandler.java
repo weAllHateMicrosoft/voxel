@@ -105,7 +105,7 @@ public class CommandHandler {
                 // Hard-assign ability weapons to slots 1–5 so the teacher can just
                 // press 1–5 and RMB without hunting through the backpack.
                 win.hotbar[0] = Block.GATLING_GUN;
-                win.hotbar[1] = Block.WPN_VOID_SHARD;
+                win.hotbar[1] = Block.WPN_SNIPER;
                 win.hotbar[2] = Block.WPN_ORBITAL;
                 win.hotbar[3] = Block.WPN_TIMESTOP;
                 win.hotbar[4] = Block.WPN_STONE_CANNON;
@@ -135,7 +135,7 @@ public class CommandHandler {
                 }
 
                 win.chatHistory.add("[SHOWCASE] ARMED: all abilities, godmode, infinite mana.");
-                win.chatHistory.add("[SHOWCASE] Slots 1-5: Gatling | VoidShard | Orbital | TimeStop | StoneCannon — RMB to fire");
+                win.chatHistory.add("[SHOWCASE] Slots 1-5: Gatling | Sniper | Orbital | TimeStop | StoneCannon — RMB to fire");
                 win.chatHistory.add("[SHOWCASE] Scenes: /showcase combat | horde | volcanic | sakura | off");
                 break;
             }

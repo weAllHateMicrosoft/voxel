@@ -174,10 +174,12 @@ public class Window {
     Block selectedBlock = Block.AIR;
     float digParticleTimer = 0f;
 
+    // Starting kit — basic. Slots 1-4 are RESERVED (empty) for the god-tier weapons
+    // earned through the progression; each drops into its own fixed slot on unlock
+    // (see grantWeaponForAbility). Block selectors fill in as the player mines.
     final Block[] hotbar = {
-            Block.GATLING_GUN, Block.WPN_VOID_SHARD, Block.WPN_ORBITAL,
-            Block.WPN_TIMESTOP, Block.WPN_STONE_CANNON,
-            Block.TORCH, Block.TELESCOPE, Block.GRAPPLING_HOOK, Block.GRASS
+            Block.WPN_SNIPER, Block.AIR, Block.AIR, Block.AIR,
+            Block.AIR, Block.TORCH, Block.GRASS, Block.DIRT, Block.STONE
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -1052,14 +1054,9 @@ public class Window {
     }
 
     /**
-     * Arm the full-fun playtest sandbox. Called once at spawn when the player
-     * pressed PLAY. The goal: the teacher can explore every part of the game and
-     * have fun without anyone explaining anything.
-     *
-     *  • Every ability unlocked, all weapons in the hotbar (slots 1–5)
-     *  • Invincible + infinite mana (showcaseMode) so nothing fizzles or kills you
-     *  • Free-explore world: enemies roam in so there's always something to fight
-     *  • No tutorial / wave-unlock walls
+     * Debug "arm everything" helper (used by {@code /showcase}-style testing).
+     * NOT wired to PLAY anymore — PLAY runs the natural teach-and-reward
+     * progression so the god-tier weapons stay an earned surprise.
      */
     public void enterPlaytestMode() {
         playtestMode = true;
@@ -1067,9 +1064,8 @@ public class Window {
         immunityTimer = 99999f;
         player.progression.unlockAll();
 
-        // Weapons in slots 1–5 so 1–5 + Right-Click does everything.
         hotbar[0] = Block.GATLING_GUN;
-        hotbar[1] = Block.WPN_VOID_SHARD;
+        hotbar[1] = Block.WPN_SNIPER;
         hotbar[2] = Block.WPN_ORBITAL;
         hotbar[3] = Block.WPN_TIMESTOP;
         hotbar[4] = Block.WPN_STONE_CANNON;
@@ -1080,9 +1076,8 @@ public class Window {
         for (Block b : Block.values()) {
             if (b != Block.AIR) inventory.addBlockAmount(b, 999);
         }
-        selectedSlot = 1;   // start on the Void Shard — most satisfying first shot
+        selectedSlot = 1;
 
-        // No tutorial / practice walls — they break flow and need explaining.
         if (tutorial != null) tutorial.skip();
         practiceQueue.clear();
         practiceAbility = null;
@@ -1091,11 +1086,34 @@ public class Window {
         practiceCelebration = 0f;
         showUnlockCard = false;
 
-        // Living world: ambient enemies + Inferno-Tower sites, no escalating waves.
         if (enemyManager != null) {
             enemyManager.wavesEnabled    = false;
             enemyManager.freeExploreMode = true;
         }
+    }
+
+    /**
+     * Map a just-unlocked ability to the physical weapon block it grants, and drop
+     * that weapon into its DEDICATED hotbar slot so the player SEES their new power
+     * appear in a clean, predictable place (matching the /showcase layout). This is
+     * what makes the god-tier reveals feel tangible and exciting.
+     * Returns the granted block (or null if the ability has no hotbar weapon).
+     */
+    public Block grantWeaponForAbility(Progression.Ability a) {
+        // slot -1 = no hotbar weapon for this ability.
+        int slot;
+        Block w;
+        switch (a) {
+            case SNIPE       -> { w = Block.WPN_SNIPER;       slot = 0; }
+            case GATLING     -> { w = Block.GATLING_GUN;      slot = 1; }
+            case ORBITAL     -> { w = Block.WPN_ORBITAL;      slot = 2; }
+            case DOMAIN      -> { w = Block.WPN_TIMESTOP;     slot = 3; }
+            case STONE_CANON -> { w = Block.WPN_STONE_CANNON; slot = 4; }
+            default          -> { return null; }
+        }
+        inventory.addBlockAmount(w, 1);
+        hotbar[slot] = w;
+        return w;
     }
 
     /**
@@ -1578,6 +1596,9 @@ public class Window {
                             welcomeTimer   = 6.0f;
                             welcomeStarted = true;
                         } else {
+                            // Natural progression run: the player starts with just the
+                            // Sniper and earns every other power wave by wave.
+                            inventory.addBlockAmount(Block.WPN_SNIPER, 1);
                             // Begin the designed onboarding tutorial. It controls all
                             // enemy spawning (waves stay off) until the player graduates.
                             if (tutorial == null) {
@@ -1865,16 +1886,18 @@ public class Window {
                         boolean rmbEdge = rmbNow && !lastRMB;
                         Block heldWpn = hotbar[selectedSlot];
 
-                        // Void Shard (WPN_VOID_SHARD): hold RMB to charge, release fires
-                        player.attacks.weaponCHeld = (heldWpn == Block.WPN_VOID_SHARD) && rmbNow;
+                        // Sniper (WPN_SNIPER): hold RMB to charge, release fires
+                        player.attacks.weaponCHeld = (heldWpn == Block.WPN_SNIPER) && rmbNow;
 
                         // Orbital Annihilation (WPN_ORBITAL): one-shot on RMB press
-                        if (heldWpn == Block.WPN_ORBITAL && rmbEdge && !orbitalActive) {
+                        if (heldWpn == Block.WPN_ORBITAL && rmbEdge && !orbitalActive
+                                && player.can(Progression.Ability.ORBITAL)) {
                             startOrbitalStrike(camera);
                         }
 
                         // Time Domain (WPN_TIMESTOP): toggle on RMB press
-                        if (heldWpn == Block.WPN_TIMESTOP && rmbEdge) {
+                        if (heldWpn == Block.WPN_TIMESTOP && rmbEdge
+                                && player.can(Progression.Ability.DOMAIN)) {
                             if (timeStopActive) stopTimeStop();
                             else if (!timeStopActive) startTimeStop();
                         }
@@ -1886,7 +1909,7 @@ public class Window {
                         if (hintTimer <= 0.1f) {
                             String wpnHint = switch (heldWpn) {
                                 case WPN_ORBITAL     -> "Orbital Annihilation  —  RMB to fire";
-                                case WPN_VOID_SHARD  -> "Void Shard  —  hold RMB to charge, release to fire";
+                                case WPN_SNIPER      -> "Sniper  —  hold RMB to charge, release to fire";
                                 case WPN_TIMESTOP    -> "Time Domain  —  RMB to toggle";
                                 case WPN_STONE_CANNON-> "Stone Cannon  —  hold RMB to charge, release to fire";
                                 case GATLING_GUN     -> "Gatling Gun  —  hold LMB to fire";
@@ -2130,12 +2153,24 @@ public class Window {
                                         player.progression.unlockForWave(waveJustCleared);
                                 if (gained.isEmpty()) gained = player.progression.abilitiesForWave(waveJustCleared);
                                 if (gained.isEmpty()) {
-                                    enemyManager.beginNextWave();   // no tier (shouldn't happen ≤ wave 9)
+                                    enemyManager.beginNextWave();   // no tier (shouldn't happen ≤ ending)
                                 } else {
+                                    // Drop any physical weapon this tier grants straight into the
+                                    // hotbar so the player SEES their new power appear.
+                                    boolean gotWeapon = false;
+                                    for (Progression.Ability a : gained) {
+                                        if (grantWeaponForAbility(a) != null) gotWeapon = true;
+                                    }
                                     unlockCardWave      = waveJustCleared;
                                     unlockCardAbilities = gained;
                                     showUnlockCard      = true;
-                                    AudioManager.play("seal_collect");
+                                    // A weightier sound + screen flash for a god-tier weapon reveal.
+                                    if (gotWeapon) {
+                                        AudioManager.play("snipe_loadgun");
+                                        ScreenEffectManager.INSTANCE.flash(1.0f, 0.85f, 0.4f, 0.55f, 0.4f);
+                                    } else {
+                                        AudioManager.play("seal_collect");
+                                    }
                                 }
                             }
                         }
@@ -3343,13 +3378,15 @@ public class Window {
 
                     // ── ORBITAL ANNIHILATION (F7 fires the cinematic) ─────────
                     boolean f7Now = glfwGetKey(window, GLFW_KEY_F7) == GLFW_PRESS;
-                    if (f7Now && !lastF7 && !orbitalActive && !mpLive) startOrbitalStrike(camera);
+                    if (f7Now && !lastF7 && !orbitalActive && !mpLive
+                            && player.can(Progression.Ability.ORBITAL)) startOrbitalStrike(camera);
                     lastF7 = f7Now;
                     if (orbitalActive) updateOrbitalStrike(rawDeltaTime);
 
                     // ── THE WORLD: time-stop domain (F8) ──────────────────────
                     boolean f8Now = glfwGetKey(window, GLFW_KEY_F8) == GLFW_PRESS;
-                    if (f8Now && !lastF8 && !timeStopActive && !mpLive) startTimeStop();
+                    if (f8Now && !lastF8 && !timeStopActive && !mpLive
+                            && player.can(Progression.Ability.DOMAIN)) startTimeStop();
                     lastF8 = f8Now;
                     if (timeStopActive) updateTimeStop(rawDeltaTime);
 
@@ -3386,12 +3423,13 @@ public class Window {
                         meteorSystem.update(rawDeltaTime * tc.getScale(), dayNight);
                     }
 
-                    // ── VOXEL LINES world restyle (F10 = one-shot cycle) ──────
+                    // ── RADAR SWEEP (F10) — earned god-tier power, sees enemies through walls ──
                     boolean f10Now = glfwGetKey(window, GLFW_KEY_F10) == GLFW_PRESS;
-                    if (f10Now && !lastF10 && !vlActive) {
+                    if (f10Now && !lastF10 && !vlActive
+                            && player.can(Progression.Ability.RADAR)) {
                         vlActive = true; vlT = 0f;
                         vlCx = player.position.x; vlCy = player.position.y + 1f; vlCz = player.position.z;
-                        hintText = "VOXEL LINES"; hintTimer = 3f;
+                        hintText = "RADAR SWEEP"; hintTimer = 3f;
                     }
                     lastF10 = f10Now;
                     if (vlActive) updateVoxelLines(rawDeltaTime);
@@ -6584,6 +6622,7 @@ public class Window {
 
         boolean held = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
         boolean canFire = hotbar[selectedSlot] == Block.GATLING_GUN && held
+                && player.can(Progression.Ability.GATLING)
                 && networkInitialized && !isPreloading && !isPaused && !showChat
                 && !showHelp && !showDiscoUI && !cutscene.isActive() && !player.debugMode;
 

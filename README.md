@@ -34,14 +34,19 @@ java -jar build/libs/game.jar
 Click **PLAY** on the title screen. The built-in tutorial will guide you through the controls
 step-by-step — teaching one mechanic at a time and waiting for you to do it before moving on.
 
-### Quick-Start (Teacher / Visitor)
+### Quick-Start
 
 1. Load the game and press **Play**.
-2. Press `T` to open chat and type `/showcase` — this arms every ability, enables god-mode,
-   and fills the hotbar with all weapons. Press Enter.
-3. The **ability weapons are in hotbar slots 1–5**. Select any and press **RMB** to fire.
-4. Press `F1` at any time for the full in-game reference card.
-5. Skip the tutorial instantly with `/skip` in chat.
+2. A short tutorial teaches movement and your first weapon — the **Sniper** (hold `C` or
+   Right-Click to charge, release to fire).
+3. **Survive each wave** and the crystal grants a new power — escalating from basic combat
+   and mobility all the way up to the **god-tier arsenal** (Gatling Gun, Radar, Orbital
+   Annihilation, and Time Stop) in the final waves.
+4. Press `F1` at any time for the full in-game reference card — it shows everything you've
+   unlocked plus what's still locked and which wave grants it.
+
+> **For grading / testing:** type `/showcase` in chat (`T`) to instantly unlock everything
+> and fill the hotbar, or `/skip` to jump past the tutorial. See *Developer Cheat Codes* below.
 
 ### Core Controls
 
@@ -50,27 +55,31 @@ step-by-step — teaching one mechanic at a time and waiting for you to do it be
 | `W` `A` `S` `D` | Move |
 | `Space` | Jump |
 | Double-tap `W` | Sprint |
-| Double-tap `Space` | Toggle flight · `V` to cycle modes |
+| Double-tap `Space` | Toggle flight · `V` to cycle modes (after FLIGHT unlocks) |
 | Mouse | Look around |
 | Left Click (hold) | Mine block / fire Gatling Gun |
-| **Right Click** | **Fire the selected ability weapon** |
+| **Right Click** | **Fire the selected weapon** (Sniper, Orbital, Time Stop, Stone Cannon) |
 | `1`–`9` | Select hotbar slot |
-| `Left Alt` | Open backpack (equip weapons to hotbar) |
+| `Left Alt` | Open backpack (re-equip earned weapons to hotbar) |
 | `T` | Open chat (type commands) |
 | `F1` | Open the in-game Master Ability Guide |
 
-### Default Hotbar
+### The Progression — earn your arsenal
 
-| Slot | Weapon | RMB Action |
+You start with only the **Sniper**. Each wave you clear bonds the crystal deeper and grants a
+new power, building toward the god-tier finale:
+
+| Wave | Granted | |
 |---|---|---|
-| 1 | Gatling Gun | Hold LMB to fire |
-| 2 | **Void Shard** | Hold RMB to charge → release to fire crystal bolt |
-| 3 | **Orbital Annihilation** | RMB → cinematic laser strike |
-| 4 | **Time Domain** | RMB → freeze all enemies |
-| 5 | **Stone Cannon** | Hold RMB near stone → absorbs it → fires boulder |
-| 6 | Torch | Place or hold for light |
-| 7 | Telescope | Hold RMB to zoom |
-| 8 | Grappling Hook | Hold LMB to swing |
+| Start | **Sniper** | charge-and-release crystal bolt |
+| 1–6 | Slash, Dash, Quagmire, Heal, Lightning, Grab, Blink, Swap, Time Dilation, Stone Pillar, Cannonball, Drone, Substitute, Seal | the core kit — combat, mobility, control, tactics |
+| **7** | **Gatling Gun** | your first true weapon — appears in the hotbar |
+| **8** | **Stone Cannon** + **Radar Sweep** | siege + see enemies through walls (`F10`) |
+| **9** | **Orbital Annihilation** | call down a cinematic strike (`F7` / RMB) |
+| **10** | **The World** (Time Stop) | freeze time itself (`F8` / RMB) |
+| **11** | **Flight** | the ending — the sky is yours |
+
+Each new weapon literally appears in your hotbar with a screen-flash the moment you earn it.
 
 ---
 
@@ -172,32 +181,36 @@ Enemy models (Golem, Slime) are all animated using this system. Each live enemy 
 
 ## Developer Cheat Codes
 
-Use these to grade quickly without completing all 10 waves:
+Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks everything.
 
 | Key / Command | What it does |
 |---|---|
-| `/showcase` (chat) | **One-command demo mode** — arms every ability, fills hotbar with weapons, god-mode on |
+| `/showcase` (chat) | **Unlock everything** — every ability + all weapons in slots 1-5, god-mode on |
 | `/showcase combat` (chat) | Spawn 7 enemies in a ring around you |
 | `/showcase horde` (chat) | Spawn 14 enemies |
 | `/showcase volcanic` (chat) | Warp to volcanic biome + erect Inferno Tower |
 | `/showcase sakura` (chat) | Warp to cherry-blossom grove |
 | `/showcase off` (chat) | Turn demo mode off |
 | `/biome <name>` (chat) | Warp to any biome (forest, desert, crystal, autumn, mushroom, volcanic…) |
-| `F9` | **Wave Skip** — instantly kills all enemies and advances the wave counter |
+| `/skip` (chat) | Skip the tutorial → jump straight to waves (abilities still unlock per wave) |
+| `F9` | **Wave Skip** — instantly clears the wave and advances the counter (fast way to the late unlocks) |
 | `F3` | Open debug overlay (FPS, player coords, time scale) |
 | `P` | Spawn a basic enemy at your crosshair |
 | `0` (zero) | Spawn a boss-tier Guardian Golem |
-| Hotbar slot 1 | **Gatling Gun** — hold Left Click to rapid-fire |
-| Hotbar slot 2 | **Void Shard** — hold RMB → charge, release → crystal bolt explosion |
-| Hotbar slot 3 | **Orbital Annihilation** — RMB → volumetric cinematic laser strike |
-| Hotbar slot 4 | **Time Domain** — RMB → freeze all enemies |
-| Hotbar slot 5 | **Stone Cannon** — hold RMB near stone → absorb → boulder |
-| `F7` | Same as Orbital Annihilation (old key still works) |
-| `F8` | Same as Time Domain (old key still works) |
-| `R` / `Y` | Slow / speed up time |
-| `'` (apostrophe) | **Deprivation Domain** — golden hemisphere auto-slasher |
-| `,` (comma) | **Quantum Bullet** — phase-shift projectile through walls |
-| `/skip` (chat) | Skip the full tutorial + all wave-unlock practice sessions |
+
+**The god-tier weapons (after `/showcase`, or earned at the listed wave):**
+
+| Slot / Key | Weapon | How to use |
+|---|---|---|
+| Hotbar slot 1 | **Gatling Gun** (wave 7) | hold Left Click to rapid-fire |
+| Hotbar slot 2 | **Sniper** (start) | hold RMB → charge, release → crystal bolt explosion |
+| Hotbar slot 3 / `F7` | **Orbital Annihilation** (wave 9) | RMB → volumetric cinematic strike |
+| Hotbar slot 4 / `F8` | **The World / Time Stop** (wave 10) | RMB → freeze all enemies |
+| Hotbar slot 5 / `I` | **Stone Cannon** (wave 8) | hold RMB near stone → absorb → boulder |
+| `F10` | **Radar Sweep** (wave 8) | ping every enemy through walls |
+| `R` / `Y` | Slow / speed up time | (Time Dilation, wave 4) |
+| `'` (apostrophe) | **Deprivation Domain** — golden hemisphere auto-slasher | |
+| `,` (comma) | **Quantum Bullet** — phase-shift projectile through walls | |
 | `/god` (chat) | Toggle invincibility |
 | `/give all` (chat) | Fill hotbar with all building blocks |
 | `/spawn spider` (chat) | Spawn a procedural IK spider enemy |
@@ -211,7 +224,7 @@ Use these to grade quickly without completing all 10 waves:
 
 | Ability | Key | Description |
 |---|---|---|
-| Void Shard (Snipe) | `C` | Hold to charge a crystal bolt; longer charge = bigger explosion |
+| Sniper | `C` / RMB | Hold to charge a crystal bolt; longer charge = bigger explosion |
 | Runic Cleave (Slash) | `F` | Wide melee swing that shatters blocks in a 3D crescent |
 | Gatling Gun | Hotbar slot 5 | Hold Left Click to rapid-fire and vaporise terrain |
 | Lightning | `U` | Strike your target; double-tap for AoE; chains between enemies in water |

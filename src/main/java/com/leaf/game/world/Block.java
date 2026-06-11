@@ -11,7 +11,7 @@ public enum Block {
     TORCH      (1.00f, 0.66f, 0.26f, 1.0f, 0.3f), // warm light source: place it, or hold it for a hand-light
     // ── Ability weapons (equip to hotbar, RMB to fire) ────────────────────
     WPN_ORBITAL    (0.90f, 0.60f, 0.15f, 1.0f, 99f), // Orbital Annihilation — RMB fires
-    WPN_VOID_SHARD (0.40f, 0.20f, 0.85f, 1.0f, 99f), // Void Shard sniper — hold RMB to charge
+    WPN_SNIPER     (0.40f, 0.20f, 0.85f, 1.0f, 99f), // Sniper — hold RMB to charge
     WPN_TIMESTOP   (0.15f, 0.75f, 0.90f, 1.0f, 99f), // Time Domain — RMB toggles
     WPN_STONE_CANNON(0.55f, 0.45f, 0.35f, 1.0f, 99f), // Stone Cannon — hold RMB to charge
     STONE     (1.00f, 1.00f, 1.00f, 1.0f,  4.0f,  "normalStone", true),  // seamless; all abilities/worldgen use Block.STONE so texture swap is automatic

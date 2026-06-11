@@ -77,7 +77,7 @@ public final class KeyBindings {
         register(GLFW_KEY_L, "Heal (hold)");
         register(GLFW_KEY_Z, "Kamui / Rewind");
         register(GLFW_KEY_X, "Manhattan Transfer (Stand)");
-        register(GLFW_KEY_C, "Void Shard (hold)");
+        register(GLFW_KEY_C, "Sniper (hold to charge)");
         register(GLFW_KEY_V, "Substitute / cycle flight");
         register(GLFW_KEY_B, "Minato's Seal — warp");
         register(GLFW_KEY_N, "Minato's Seal — reclaim");

@@ -1,7 +1,12 @@
-# DESCENT — Teacher Playtest Demo Script
+# DESCENT — Demo Script (`/showcase` quick tour)
 
-A tight **4–5 minute golden path**. The teacher can also just explore freely —
-everything is labelled in the hotbar and a hint appears on-screen whenever a weapon is selected.
+> **Note:** pressing **PLAY** now starts the real **guided progression** — a tutorial, then
+> a new power earned every wave, climaxing in the god-tier weapons (Gatling → Radar → Orbital
+> → Time Stop → Flight). Let the teacher play *that* for the intended "teach & reward" arc.
+> This script is the **fast `/showcase` tour** for when *you* want to show off everything at
+> once without playing through all the waves.
+
+A tight **4–5 minute golden path** using `/showcase` (everything unlocked, slots 1-5 armed).
 
 ---
 
@@ -45,7 +50,7 @@ A hint line appears at the bottom of the screen showing exactly what each weapon
 /showcase combat        (spawns 7 enemies in a ring around you)
 ```
 Chain 3–4 weapons so it reads as deep, not random:
-- **Slot 2** (Void Shard) — hold RMB, release: big crystal blast.
+- **Slot 2** (Sniper) — hold RMB, release: big crystal blast.
 - **F** — wide slash through the crowd.
 - **X** — deploy the auto-firing drone (press **TAB** to pilot it yourself).
 - **Z** — Kamui: phase out, invincible, re-enter.
@@ -70,7 +75,7 @@ Chain 3–4 weapons so it reads as deep, not random:
 | Key | Does |
 |-----|------|
 | **Slot 1 + LMB** | Gatling Gun — rapid fire |
-| **Slot 2 + RMB** | Void Shard — hold to charge, release fires crystal bolt |
+| **Slot 2 + RMB** | Sniper — hold to charge, release fires crystal bolt |
 | **Slot 3 + RMB** | Orbital Annihilation (also **F7**) |
 | **Slot 4 + RMB** | Time Domain — freeze all enemies (also **F8**) |
 | **Slot 5 + RMB** | Stone Cannon — hold near stone, release fires boulder |

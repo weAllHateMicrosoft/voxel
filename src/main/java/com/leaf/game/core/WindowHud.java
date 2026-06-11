@@ -49,18 +49,18 @@ class WindowHud {
         ImGui.textDisabled("        Survive. Learn. Escape.");
         ImGui.spacing(); ImGui.separator(); ImGui.spacing(); ImGui.spacing();
 
-        // ── The one shipping button — drops straight into the fully-armed sandbox ─
+        // ── The one shipping button — starts the guided, story-paced run ─────────
         if (ImGui.button("PLAY", 320, 44)) {
             win.network = null;
             win.playIntroOnSpawn   = true;
-            win.armPlaytestOnSpawn = true;   // PLAY = full-fun playtest: everything unlocked
+            win.armPlaytestOnSpawn = false;  // natural progression: earn powers wave by wave
             win.gameEnded = false;
             win.player.progression.reset();
             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
             win.startPreload();
         }
         ImGui.spacing();
-        ImGui.textDisabled("   Everything unlocked. Just explore and have fun.");
+        ImGui.textDisabled("   Survive. The crystal grants a new power every wave.");
         ImGui.spacing();
 
         // ── Developer options (hidden unless DEV_MENU)  -  kept in code ─────────
@@ -565,17 +565,19 @@ class WindowHud {
         draw.addCircleFilled(x1 - w * 0.2f, y0 + h * 0.2f, 4f, glass, 8);
     }
 
-    /** Void Shard glyph — a glowing purple crystal diamond. */
-    private void drawVoidShardIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+    /** Sniper glyph — a scope reticle with crosshairs over a faint purple charge glow. */
+    private void drawSniperIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
         float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
-        float w = (x1 - x0) * 0.30f, h = (y1 - y0) * 0.42f;
-        int glow = ImGui.colorConvertFloat4ToU32(0.55f, 0.30f, 1.0f, 0.35f);
-        int core = ImGui.colorConvertFloat4ToU32(0.62f, 0.32f, 0.95f, 1f);
-        int hi   = ImGui.colorConvertFloat4ToU32(0.85f, 0.70f, 1.0f, 1f);
-        draw.addCircleFilled(cx, cy, w * 1.5f, glow);                       // aura
-        draw.addQuadFilled(cx, cy - h, cx + w, cy, cx, cy + h, cx - w, cy, core); // diamond
-        draw.addLine(cx, cy - h, cx, cy + h, hi, 1.4f);                     // facet
-        draw.addLine(cx - w, cy, cx + w, cy, hi, 1.0f);
+        float r = Math.min(x1 - x0, y1 - y0) * 0.40f;
+        int glow = ImGui.colorConvertFloat4ToU32(0.55f, 0.30f, 1.0f, 0.30f);
+        int rim  = ImGui.colorConvertFloat4ToU32(0.80f, 0.70f, 1.0f, 1f);
+        int line = ImGui.colorConvertFloat4ToU32(0.95f, 0.92f, 1.0f, 0.95f);
+        int dot  = ImGui.colorConvertFloat4ToU32(1.0f, 0.45f, 0.45f, 1f);
+        draw.addCircleFilled(cx, cy, r * 0.9f, glow);          // charge aura
+        draw.addCircle(cx, cy, r, rim, 20, 2.0f);              // scope ring
+        draw.addLine(cx - r, cy, cx + r, cy, line, 1.3f);      // horizontal crosshair
+        draw.addLine(cx, cy - r, cx, cy + r, line, 1.3f);      // vertical crosshair
+        draw.addCircleFilled(cx, cy, r * 0.16f, dot);          // centre pip
     }
 
     /** Orbital Annihilation glyph — satellite dot raining a beam onto a target ring. */
@@ -1200,7 +1202,7 @@ class WindowHud {
                 // Tools and ability weapons render without needing a block count.
                 boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE
                         || b == Block.GRAPPLING_HOOK
-                        || b == Block.WPN_ORBITAL || b == Block.WPN_VOID_SHARD
+                        || b == Block.WPN_ORBITAL || b == Block.WPN_SNIPER
                         || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON);
                 if (b != Block.AIR && (tool || count > 0)) {
                     float s = 8.0f;
@@ -1210,7 +1212,7 @@ class WindowHud {
                         case TORCH           -> drawTorchIcon(draw, ix0, iy0, ix1, iy1);
                         case TELESCOPE       -> drawTelescopeIcon(draw, ix0, iy0, ix1, iy1);
                         case GRAPPLING_HOOK  -> drawGrappleIcon(draw, ix0, iy0, ix1, iy1);
-                        case WPN_VOID_SHARD  -> drawVoidShardIcon(draw, ix0, iy0, ix1, iy1);
+                        case WPN_SNIPER      -> drawSniperIcon(draw, ix0, iy0, ix1, iy1);
                         case WPN_ORBITAL     -> drawOrbitalIcon(draw, ix0, iy0, ix1, iy1);
                         case WPN_TIMESTOP    -> drawTimeStopIcon(draw, ix0, iy0, ix1, iy1);
                         case WPN_STONE_CANNON-> drawStoneCannonIcon(draw, ix0, iy0, ix1, iy1);
@@ -2066,7 +2068,7 @@ class WindowHud {
         ImGui.textColored(1.0f, 0.35f, 0.2f, 1.0f, "COMBAT");
         ImGui.separator();
         helpRow("[F]  Slash", "Wide melee swing. Hits every enemy in a cone in front of you.");
-        helpRow("[C]  Snipe", "Hold to charge a crystal bolt, release to fire. Longer charge = bigger explosion on impact.");
+        helpRow("[C] / RMB  Sniper", "Hold to charge a crystal bolt, release to fire. Longer charge = bigger explosion on impact.");
         helpRow("[G]  Cannonball", "Hold to charge, release to launch yourself as a cannonball. Explodes on landing. A dotted arc previews your trajectory while charging.");
         helpRow("[U]  Lightning", "Strike the enemy you're aiming at with a lightning bolt. Double-tap [U] quickly for an area burst that hits all nearby enemies.");
         helpRow("[O]  Grab & Slam", "Grab the enemy in your crosshair (up to ~4.5 blocks away), hoist them overhead, then smash them into the ground. Creates a crater. Big damage.");
@@ -2249,10 +2251,10 @@ class WindowHud {
 
         String line1 = win.playtestMode
                 ? "Everything's unlocked — just explore and have fun!"
-                : "You have lots of abilities!";
+                : "A crystal has bonded to you.";
         String line2 = win.playtestMode
                 ? "Slots 1-5 = weapons (Right-Click to fire).   [F1] = full guide."
-                : "Press  [F1]  for the full controls & ability guide.";
+                : "Survive each wave to unlock a new power.   [F1] = guide anytime.";
 
         // Approximate centering (default font ~7 px/char)
         draw.addText(bX + bW / 2f - line1.length() * 3.6f, bY + 8f, black, line1);

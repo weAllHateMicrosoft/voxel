@@ -28,7 +28,7 @@ public class Progression {
     //  (used by BOTH the unlock cards and the F1 reference, so they stay in sync)
     // ═══════════════════════════════════════════════════════════════════════
     public enum Ability {
-        SNIPE      ("Snipe",            "[C]",        "Hold to charge a crystal bolt, release to fire. Longer charge = bigger blast."),
+        SNIPE      ("Sniper",           "[C] / RMB",  "Hold to charge a crystal bolt, release to fire. Longer charge = bigger blast."),
         SLASH      ("Slash",            "[F]",        "Wide melee swing  -  hits every enemy in a cone in front of you."),
         DASH       ("Dash",             "[Q]",        "Instant burst in your move direction. Short cooldown, leaves a ghost trail."),
         QUAGMIRE   ("Quagmire",         "[M]",        "Fire a mud wave along the ground. Traps the enemy it hits for several seconds."),
@@ -43,7 +43,12 @@ public class Progression {
         TIME       ("Time Dilation",    "[R] / [Y]",  "[R] slows time to a crawl, [Y] speeds it up  -  dodge or line up a shot."),
         SEAL       ("Minato's Seal",    "[H] / [B]",  "[H] throws a teleport seal; [B] warps you to it. Up to 5 active at once."),
         SUBSTITUTE ("Substitute",       "[V]",        "Hold to prime. The next hit is absorbed  -  you blink back and leave an exploding decoy."),
-        STONE_CANON("Stone Canon",      "[I]",        "Near stone, hold to absorb it into a giant projectile. Release to fire."),
+        // ── GOD-TIER ARSENAL — earned late, the climax of the run ────────────────
+        GATLING    ("Gatling Gun",      "Slot + LMB", "A roaring gatling gun. Equip it and hold Left-Click to shred everything in your sights."),
+        STONE_CANON("Stone Cannon",     "[I] / RMB",  "Near stone, hold to absorb it into a giant boulder. Release to fire a wrecking shot."),
+        RADAR      ("Radar Sweep",      "[F10]",      "A pulse that paints every enemy through walls and terrain. You see everything."),
+        ORBITAL    ("Orbital Annihilation","[F7] / RMB","Call a cinematic strike from orbit. The sky splits and the ground is erased."),
+        DOMAIN     ("The World",        "[F8] / RMB", "Stop time itself. Everything freezes while you move freely — the ultimate power."),
         KAMUI      ("Kamui",            "[Z]",        "Phase into another dimension  -  invincible while active. Drains mana fast."),
         FLIGHT     ("Flight",           "[Space x2]", "Double-tap Space to fly. [V] cycles flight modes (skim / soar / grapple).");
 
@@ -59,36 +64,39 @@ public class Progression {
      * Progression.grantKamui() handles it separately.
      */
     private static final Ability[][] TIERS = {
-        /* start  */ { Ability.SNIPE },
-        /* wave 1 */ { Ability.SLASH, Ability.DASH },
-        /* wave 2 */ { Ability.QUAGMIRE },
-        /* wave 3 */ { Ability.LIGHTNING, Ability.HEAL },
-        /* wave 4 */ { Ability.GRAB },
-        /* wave 5 */ { Ability.BLINK, Ability.SWAP },
-        /* wave 6 */ { Ability.PILLAR, Ability.CANNONBALL },
-        /* wave 7 */ { Ability.STAND },
-        /* wave 8 */ { Ability.STONE_CANON, Ability.SUBSTITUTE },
-        /* wave 9 */ { Ability.SEAL },        // Minato's Seal — complex, earns its own wave
-        /* wave 10*/ { Ability.FLIGHT },       // final gift — the ending
+        /* start  */ { Ability.SNIPE },                              // Sniper — your first tool
+        /* wave 1 */ { Ability.SLASH, Ability.DASH },               // close combat + mobility
+        /* wave 2 */ { Ability.QUAGMIRE, Ability.HEAL },            // control + sustain
+        /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
+        /* wave 4 */ { Ability.BLINK, Ability.SWAP, Ability.TIME }, // escape kit
+        /* wave 5 */ { Ability.PILLAR, Ability.CANNONBALL },        // launch yourself
+        /* wave 6 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL }, // tactician's toolkit
+        // ── THE ASCENSION — the crystal stops holding back. God-tier weapons. ──
+        /* wave 7 */ { Ability.GATLING },                           // first true weapon
+        /* wave 8 */ { Ability.STONE_CANON, Ability.RADAR },        // siege + all-seeing eye
+        /* wave 9 */ { Ability.ORBITAL },                           // annihilation from orbit
+        /* wave 10*/ { Ability.DOMAIN },                            // stop time — the ultimate
+        /* wave 11*/ { Ability.FLIGHT },                            // final gift — the ending
     };
 
     /** Story headline shown on each wave's unlock card (index = wave cleared). */
     private static final String[] FLAVOR = {
         "The crystal stirs. Its first gift is yours.",
         "They're closing in. Move faster  -  strike harder.",
-        "Don't let them surround you. Hold them in place.",
-        "The mountain's fury  -  and the means to endure it.",
-        "They send something bigger. Take it apart.",
-        "Be everywhere they aren't.",
-        "The earth itself answers to you now.",
-        "You are not alone anymore.",
-        "Stone and shadow. Break through.",
-        "Mark the world. Bend it around you.",
-        "One last gift. The mountain releases you. The sky is yours now.",
+        "Hold them. Outlast them.",
+        "Their numbers grow. Answer with thunder.",
+        "Slip through every trap. Bend space to escape.",
+        "The earth itself launches you skyward.",
+        "Lay your traps. Command the battlefield.",
+        "Enough holding back. The crystal hands you a WEAPON.",
+        "Tear through stone  -  and see every foe through it.",
+        "Look up. Call the sky down upon them.",
+        "Time bows to you now. The world holds its breath.",
+        "One last gift. The mountain releases you. The sky is yours.",
     };
 
     /** The wave that triggers the ENDING cutscene and grants FLIGHT. */
-    public static final int ENDING_WAVE = 10;
+    public static final int ENDING_WAVE = 11;
 
     /** Always shown on unlock cards  -  the user wants players reminded about mana. */
     public static final String MANA_NOTE = "Most abilities draw MANA  -  the blue bar under your health. It refills over time.";
