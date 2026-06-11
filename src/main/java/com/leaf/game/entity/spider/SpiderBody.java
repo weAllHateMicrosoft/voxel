@@ -202,12 +202,18 @@ public class SpiderBody {
         float rotDrag = 1f - g.rotationalDragCoefficient * fractionGrounded;
         rotationalVelocity.mul(rotDrag);
 
-        // ── FIX: CLAMP ROTATIONAL VELOCITY (Anti-Flip) ──
+        // ── FIX: CLAMP ROTATIONAL VELOCITY (Anti-Flip + Anti-Spin) ──
         // Cap the pitch and roll momentum so external impulses (hits) or strange
         // terrain geometry cannot send the spider tumbling completely out of control.
         float maxRot = 0.08f;
         rotationalVelocity.x = Math.max(-maxRot, Math.min(maxRot, rotationalVelocity.x));
         rotationalVelocity.z = Math.max(-maxRot, Math.min(maxRot, rotationalVelocity.z));
+        // Yaw was previously UNCLAMPED — with the weak 120-TPS rotation drag this let
+        // turning momentum accumulate and the spider would whirl in place / lose its
+        // heading. Cap it generously (≈0.12 rad/tick ≈ 14 rad/s): fast enough to turn
+        // and face the player normally, but it kills the runaway spin.
+        float maxYaw = 0.12f;
+        rotationalVelocity.y = Math.max(-maxYaw, Math.min(maxYaw, rotationalVelocity.y));
 
         if (onGround) {
             velocity.x      *= 0.5f;
