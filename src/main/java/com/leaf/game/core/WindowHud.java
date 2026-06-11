@@ -38,8 +38,8 @@ class WindowHud {
     private static final boolean DEV_MENU = false;
 
     void renderConnectionMenu(float w, float h) {
-        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 150.0f);
-        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 430.0f : 320.0f);
+        ImGui.setNextWindowPos(w / 2.0f - 170.0f, h / 2.0f - 130.0f);
+        ImGui.setNextWindowSize(340.0f, DEV_MENU ? 400.0f : 240.0f);
         ImGui.begin("Start Screen",
                 imgui.flag.ImGuiWindowFlags.NoDecoration | imgui.flag.ImGuiWindowFlags.NoMove);
 
@@ -49,25 +49,18 @@ class WindowHud {
         ImGui.textDisabled("        Survive. Learn. Escape.");
         ImGui.spacing(); ImGui.separator(); ImGui.spacing(); ImGui.spacing();
 
-        // ── The one shipping button ───────────────────────────────────────────
+        // ── The one shipping button — drops straight into the fully-armed sandbox ─
         if (ImGui.button("PLAY", 320, 44)) {
             win.network = null;
-            win.playIntroOnSpawn = true;
+            win.playIntroOnSpawn   = true;
+            win.armPlaytestOnSpawn = true;   // PLAY = full-fun playtest: everything unlocked
             win.gameEnded = false;
-            win.player.progression.reset();   // fresh run: start with only the starting kit
+            win.player.progression.reset();
             RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
             win.startPreload();
         }
         ImGui.spacing();
-
-        // ── MULTIPLAYER (host / join over LAN) — both players get the full kit ─
-        ImGui.separator(); ImGui.spacing();
-        ImGui.textDisabled("        Multiplayer  (all abilities)");
-        ImGui.spacing();
-        if (ImGui.button("Host Game", 320, 28)) startMultiplayer(true);
-        ImGui.spacing();
-        ImGui.inputText("Host IP", win.ipInput);
-        if (ImGui.button("Join Game", 320, 28)) startMultiplayer(false);
+        ImGui.textDisabled("   Everything unlocked. Just explore and have fun.");
         ImGui.spacing();
 
         // ── Developer options (hidden unless DEV_MENU)  -  kept in code ─────────
@@ -570,6 +563,87 @@ class WindowHud {
         int glass = ImGui.colorConvertFloat4ToU32(0.4f, 0.8f, 1.0f, 1f);
         draw.addLine(x0 + w * 0.2f, y1 - h * 0.2f, x1 - w * 0.2f, y0 + h * 0.2f, brass, 4f);
         draw.addCircleFilled(x1 - w * 0.2f, y0 + h * 0.2f, 4f, glass, 8);
+    }
+
+    /** Void Shard glyph — a glowing purple crystal diamond. */
+    private void drawVoidShardIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
+        float w = (x1 - x0) * 0.30f, h = (y1 - y0) * 0.42f;
+        int glow = ImGui.colorConvertFloat4ToU32(0.55f, 0.30f, 1.0f, 0.35f);
+        int core = ImGui.colorConvertFloat4ToU32(0.62f, 0.32f, 0.95f, 1f);
+        int hi   = ImGui.colorConvertFloat4ToU32(0.85f, 0.70f, 1.0f, 1f);
+        draw.addCircleFilled(cx, cy, w * 1.5f, glow);                       // aura
+        draw.addQuadFilled(cx, cy - h, cx + w, cy, cx, cy + h, cx - w, cy, core); // diamond
+        draw.addLine(cx, cy - h, cx, cy + h, hi, 1.4f);                     // facet
+        draw.addLine(cx - w, cy, cx + w, cy, hi, 1.0f);
+    }
+
+    /** Orbital Annihilation glyph — satellite dot raining a beam onto a target ring. */
+    private void drawOrbitalIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0, cx = (x0 + x1) * 0.5f;
+        int sat   = ImGui.colorConvertFloat4ToU32(1.0f, 0.92f, 0.55f, 1f);
+        int beam  = ImGui.colorConvertFloat4ToU32(1.0f, 0.65f, 0.18f, 0.9f);
+        int ring  = ImGui.colorConvertFloat4ToU32(1.0f, 0.45f, 0.12f, 1f);
+        draw.addCircleFilled(cx, y0 + h * 0.16f, w * 0.10f, sat);           // satellite
+        draw.addTriangleFilled(cx - w*0.10f, y0 + h*0.18f,                  // widening beam
+                cx + w*0.10f, y0 + h*0.18f, cx, y1 - h*0.22f, beam);
+        draw.addCircle(cx, y1 - h * 0.18f, w * 0.26f, ring, 16, 2.2f);      // target ring
+    }
+
+    /** Time Domain glyph — a clock face with hands. */
+    private void drawTimeStopIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f;
+        float r = Math.min(x1 - x0, y1 - y0) * 0.40f;
+        int face = ImGui.colorConvertFloat4ToU32(0.10f, 0.55f, 0.70f, 0.85f);
+        int rim  = ImGui.colorConvertFloat4ToU32(0.45f, 0.95f, 1.0f, 1f);
+        int hand = ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 1.0f, 1f);
+        draw.addCircleFilled(cx, cy, r, face, 20);
+        draw.addCircle(cx, cy, r, rim, 20, 2.0f);
+        draw.addLine(cx, cy, cx, cy - r * 0.7f, hand, 2.0f);               // minute hand (12)
+        draw.addLine(cx, cy, cx + r * 0.5f, cy, hand, 2.0f);              // hour hand (3)
+    }
+
+    /** Stone Cannon glyph — a stone barrel firing a boulder. */
+    private void drawStoneCannonIcon(imgui.ImDrawList draw, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        int stone = ImGui.colorConvertFloat4ToU32(0.45f, 0.42f, 0.38f, 1f);
+        int dark  = ImGui.colorConvertFloat4ToU32(0.20f, 0.18f, 0.16f, 1f);
+        int rock  = ImGui.colorConvertFloat4ToU32(0.62f, 0.58f, 0.50f, 1f);
+        draw.addRectFilled(x0 + w*0.06f, y0 + h*0.52f, x0 + w*0.62f, y0 + h*0.86f, stone, 3f); // barrel
+        draw.addRectFilled(x0 + w*0.50f, y0 + h*0.48f, x0 + w*0.66f, y0 + h*0.90f, dark, 2f);  // muzzle
+        draw.addCircleFilled(x1 - w*0.18f, y0 + h*0.40f, w*0.16f, rock);  // boulder
+    }
+
+    /**
+     * Simple faux-3D block icon: an isometric top + two side faces drawn from the
+     * block's own colour. Reads instantly as "a block" without needing texture
+     * binding in the ImGui pass. Used for every placeable block in the hotbar.
+     */
+    private void drawBlockIcon(imgui.ImDrawList draw, Block b, float x0, float y0, float x1, float y1) {
+        float w = x1 - x0, h = y1 - y0;
+        float cx = (x0 + x1) * 0.5f;
+        float topY = y0 + h * 0.04f;
+        float midY = y0 + h * 0.36f;
+        float botY = y1 - h * 0.04f;
+
+        // Slightly translucent blocks (leaves, water) read better fully opaque as an icon.
+        float r = b.r, g = b.g, bl = b.b;
+        int topCol  = ImGui.colorConvertFloat4ToU32(Math.min(1f, r*1.15f), Math.min(1f, g*1.15f), Math.min(1f, bl*1.15f), 1f);
+        int leftCol = ImGui.colorConvertFloat4ToU32(r*0.80f, g*0.80f, bl*0.80f, 1f);
+        int rightCol= ImGui.colorConvertFloat4ToU32(r*0.55f, g*0.55f, bl*0.55f, 1f);
+        int edge    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.55f);
+
+        // Top face (diamond)
+        draw.addQuadFilled(cx, topY, x1, midY, cx, y0 + h*0.66f, x0, midY, topCol);
+        // Left face
+        draw.addQuadFilled(x0, midY, cx, y0 + h*0.66f, cx, botY, x0, botY, leftCol);
+        // Right face
+        draw.addQuadFilled(cx, y0 + h*0.66f, x1, midY, x1, botY, cx, botY, rightCol);
+
+        // Subtle edges for definition
+        draw.addLine(cx, topY, x0, midY, edge, 1.0f);
+        draw.addLine(cx, topY, x1, midY, edge, 1.0f);
+        draw.addLine(cx, y0 + h*0.66f, cx, botY, edge, 1.0f);
     }
     void renderHUD(Camera camera, float screenW, float screenH) {
         var draw = ImGui.getForegroundDrawList();
@@ -1113,30 +1187,39 @@ class WindowHud {
                         : ImGui.colorConvertFloat4ToU32(0.0f, 0.0f, 0.0f, 0.8f);
                 draw.addRect(x, startY, x + slotSize, startY + slotSize, outCol, 4.0f, 0,
                         (i == win.selectedSlot) ? 3.0f : 1.5f);
+
+                // Slot number (1-9) in the top-left corner so the keybind is obvious.
+                String slotNum = String.valueOf(i + 1);
+                draw.addText(x + 4, startY + 2, black, slotNum);
+                draw.addText(x + 3, startY + 1,
+                        ImGui.colorConvertFloat4ToU32(1f, 0.9f, 0.5f, 0.9f), slotNum);
+
                 Block b = win.hotbar[i];
                 int count = win.inventory.getCount(b);
 
-                // NEW: Added Block.TELESCOPE as a tool (so it renders without needing a block count)
-                boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE);
+                // Tools and ability weapons render without needing a block count.
+                boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE
+                        || b == Block.GRAPPLING_HOOK
+                        || b == Block.WPN_ORBITAL || b == Block.WPN_VOID_SHARD
+                        || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON);
                 if (b != Block.AIR && (tool || count > 0)) {
                     float s = 8.0f;
                     float ix0 = x + s, iy0 = startY + s, ix1 = x + slotSize - s, iy1 = startY + slotSize - s;
-                    if (b == Block.GATLING_GUN) {
-                        drawGunIcon(draw, ix0, iy0, ix1, iy1);
-                    } else if (b == Block.TORCH) {
-                        drawTorchIcon(draw, ix0, iy0, ix1, iy1);
-                    } else if (b == Block.TELESCOPE) {
-                        // NEW: Draws the telescope glyph when holding the item
-                        drawTelescopeIcon(draw, ix0, iy0, ix1, iy1);
-                    } else if (b == Block.GRAPPLING_HOOK) {
-                        drawGrappleIcon(draw, ix0, iy0, ix1, iy1); // Render hook icon
-                    } else {
-                        int blockCol = ImGui.colorConvertFloat4ToU32(b.r, b.g, b.b, 1.0f);
-                        draw.addRectFilled(ix0, iy0, ix1, iy1, blockCol, 2.0f);
-                        draw.addRect(ix0, iy0, ix1, iy1, black, 2.0f, 0, 1.5f);
-                        String countStr = String.valueOf(count);
-                        draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
-                        draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
+                    switch (b) {
+                        case GATLING_GUN     -> drawGunIcon(draw, ix0, iy0, ix1, iy1);
+                        case TORCH           -> drawTorchIcon(draw, ix0, iy0, ix1, iy1);
+                        case TELESCOPE       -> drawTelescopeIcon(draw, ix0, iy0, ix1, iy1);
+                        case GRAPPLING_HOOK  -> drawGrappleIcon(draw, ix0, iy0, ix1, iy1);
+                        case WPN_VOID_SHARD  -> drawVoidShardIcon(draw, ix0, iy0, ix1, iy1);
+                        case WPN_ORBITAL     -> drawOrbitalIcon(draw, ix0, iy0, ix1, iy1);
+                        case WPN_TIMESTOP    -> drawTimeStopIcon(draw, ix0, iy0, ix1, iy1);
+                        case WPN_STONE_CANNON-> drawStoneCannonIcon(draw, ix0, iy0, ix1, iy1);
+                        default -> {
+                            drawBlockIcon(draw, b, ix0, iy0, ix1, iy1);
+                            String countStr = String.valueOf(count);
+                            draw.addText(x + slotSize - 14, startY + slotSize - 18, black, countStr);
+                            draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
+                        }
                     }
                 }
             }
@@ -1617,8 +1700,16 @@ class WindowHud {
 
         // Onboarding objective banner (top-centre)  -  guides new players.
         // Waits for the welcome banner to fade so they don't overlap.
-        if (!win.showHelp && win.welcomeTimer <= 0f) {
+        // Skipped in playtest mode (no tutorial → no objectives to show).
+        if (!win.showHelp && win.welcomeTimer <= 0f && !win.playtestMode) {
             renderObjectiveBanner(draw, screenW, screenH);
+        }
+
+        // ── PLAYTEST CONTROLS LEGEND ──────────────────────────────────────────
+        // Always-on compact legend so the player discovers every system unaided.
+        if (win.playtestMode && !win.showHelp && !win.isPaused
+                && !win.player.stand.isInStandPerspective()) {
+            renderPlaytestLegend(draw, screenW, screenH);
         }
 
         // ── CONTEXTUAL HINT BANNER ────────────────────────────────────────────
@@ -1628,8 +1719,9 @@ class WindowHud {
         }
 
         // ── WAVE COUNTER ──────────────────────────────────────────────────────
-        // Top-left: "WAVE N  -  next in Xs" or "MAX ENEMIES REACHED"
-        if (!win.player.stand.isInStandPerspective() && !win.player.debugMode) {
+        // Top-left: "WAVE N  -  next in Xs" or "MAX ENEMIES REACHED".
+        // Hidden in playtest mode — waves are off, so a wave timer would mislead.
+        if (!win.player.stand.isInStandPerspective() && !win.player.debugMode && !win.playtestMode) {
             int waveNum = win.enemyManager.getWaveNumber();
             float waveTimer = win.enemyManager.getWaveTimer();
             int liveCount = (int) win.enemyManager.getEnemies().stream().filter(e -> e.alive).count();
@@ -2148,21 +2240,61 @@ class WindowHud {
         int cyan = ImGui.colorConvertFloat4ToU32(0.4f, 0.9f, 1.0f, alpha);
         int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, alpha);
 
-        float bW = 400f, bH = 56f;
+        float bW = 440f, bH = 56f;
         float bX = screenW / 2f - bW / 2f;
         float bY = screenH * 0.19f;
 
         draw.addRectFilled(bX, bY, bX + bW, bY + bH, bg, 8f);
         draw.addRect(bX, bY, bX + bW, bY + bH, border, 8f, 0, 1.8f);
 
-        String line1 = "You have lots of abilities!";
-        String line2 = "Press  [F1]  for the full controls & ability guide.";
+        String line1 = win.playtestMode
+                ? "Everything's unlocked — just explore and have fun!"
+                : "You have lots of abilities!";
+        String line2 = win.playtestMode
+                ? "Slots 1-5 = weapons (Right-Click to fire).   [F1] = full guide."
+                : "Press  [F1]  for the full controls & ability guide.";
 
         // Approximate centering (default font ~7 px/char)
         draw.addText(bX + bW / 2f - line1.length() * 3.6f, bY + 8f, black, line1);
         draw.addText(bX + bW / 2f - line1.length() * 3.6f - 1, bY + 7f, white, line1);
         draw.addText(bX + bW / 2f - line2.length() * 3.6f, bY + 29f, black, line2);
         draw.addText(bX + bW / 2f - line2.length() * 3.6f - 1, bY + 28f, cyan, line2);
+    }
+
+    /**
+     * Always-on compact controls legend shown during a playtest run, so the
+     * player can discover every system without anyone explaining a thing.
+     * Sits bottom-left, low-opacity, out of the way of the action.
+     */
+    void renderPlaytestLegend(imgui.ImDrawList draw, float screenW, float screenH) {
+        String[] lines = {
+            "MOVE  WASD    JUMP  Space   FLY  Space x2 (V cycles)",
+            "SLOTS 1-5  weapons -> Right-Click to fire",
+            "F  slash    Q  dash    E  blink    Z  phase    G  cannonball",
+            "X  drone    R  slow-mo    Left-Alt  backpack    T  chat",
+            "F1  full guide          /biome <name>  to teleport",
+        };
+        float pad = 8f, lh = 15f;
+        float boxW = 360f;
+        float boxH = lines.length * lh + pad * 2f;
+        float x = 12f;
+        float y = screenH - boxH - 12f;
+
+        int bg     = ImGui.colorConvertFloat4ToU32(0.03f, 0.04f, 0.08f, 0.55f);
+        int border = ImGui.colorConvertFloat4ToU32(0.4f, 0.8f, 1.0f, 0.30f);
+        int head   = ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 0.95f);
+        int body   = ImGui.colorConvertFloat4ToU32(0.85f, 0.92f, 1.0f, 0.85f);
+        int shadow = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.7f);
+
+        draw.addRectFilled(x, y, x + boxW, y + boxH, bg, 6f);
+        draw.addRect(x, y, x + boxW, y + boxH, border, 6f, 0, 1.4f);
+
+        for (int i = 0; i < lines.length; i++) {
+            int col = (i == 1) ? head : body;
+            float ly = y + pad + i * lh;
+            draw.addText(x + pad + 1, ly + 1, shadow, lines[i]);
+            draw.addText(x + pad,     ly,     col,    lines[i]);
+        }
     }
 
     /**

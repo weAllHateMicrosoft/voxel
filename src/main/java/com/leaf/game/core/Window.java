@@ -128,6 +128,14 @@ public class Window {
      *  be demoed back-to-back without fizzling or dying. Set in CommandHandler. */
     public boolean showcaseMode = false;
 
+    /** When the PLAY button is pressed, this arms the full playtest sandbox the
+     *  moment the world finishes loading (all abilities, weapons in the hotbar,
+     *  free-explore enemies, no tutorial walls). Consumed once at spawn. */
+    public boolean armPlaytestOnSpawn = false;
+    /** True for the whole session once a playtest run begins — drives the
+     *  always-on controls legend so the player never needs to be told anything. */
+    public boolean playtestMode = false;
+
     // ── PRACTICE SESSION — multi-step hands-on ability tutorial ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
@@ -1044,6 +1052,53 @@ public class Window {
     }
 
     /**
+     * Arm the full-fun playtest sandbox. Called once at spawn when the player
+     * pressed PLAY. The goal: the teacher can explore every part of the game and
+     * have fun without anyone explaining anything.
+     *
+     *  • Every ability unlocked, all weapons in the hotbar (slots 1–5)
+     *  • Invincible + infinite mana (showcaseMode) so nothing fizzles or kills you
+     *  • Free-explore world: enemies roam in so there's always something to fight
+     *  • No tutorial / wave-unlock walls
+     */
+    public void enterPlaytestMode() {
+        playtestMode = true;
+        showcaseMode = true;
+        immunityTimer = 99999f;
+        player.progression.unlockAll();
+
+        // Weapons in slots 1–5 so 1–5 + Right-Click does everything.
+        hotbar[0] = Block.GATLING_GUN;
+        hotbar[1] = Block.WPN_VOID_SHARD;
+        hotbar[2] = Block.WPN_ORBITAL;
+        hotbar[3] = Block.WPN_TIMESTOP;
+        hotbar[4] = Block.WPN_STONE_CANNON;
+        hotbar[5] = Block.TORCH;
+        hotbar[6] = Block.TELESCOPE;
+        hotbar[7] = Block.GRAPPLING_HOOK;
+        hotbar[8] = Block.GRASS;
+        for (Block b : Block.values()) {
+            if (b != Block.AIR) inventory.addBlockAmount(b, 999);
+        }
+        selectedSlot = 1;   // start on the Void Shard — most satisfying first shot
+
+        // No tutorial / practice walls — they break flow and need explaining.
+        if (tutorial != null) tutorial.skip();
+        practiceQueue.clear();
+        practiceAbility = null;
+        practiceSteps   = null;
+        practiceStepDone = false;
+        practiceCelebration = 0f;
+        showUnlockCard = false;
+
+        // Living world: ambient enemies + Inferno-Tower sites, no escalating waves.
+        if (enemyManager != null) {
+            enemyManager.wavesEnabled    = false;
+            enemyManager.freeExploreMode = true;
+        }
+    }
+
+    /**
      * Central death handler — the SINGLE place a death is triggered, so every damage
      * source (enemy hits, fall damage, PvP/troop relay, the void) dies the same way and
      * respawns at the same consistent spawn point via the revival flow. Idempotent: a
@@ -1514,16 +1569,25 @@ public class Window {
                         // doesn't punch straight through the freshly-meshed ground.
                         player.setVelocityY(0f);
                         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                        // Begin the designed onboarding tutorial. It controls all
-                        // enemy spawning (waves stay off) until the player graduates.
-                        if (tutorial == null) {
-                            tutorial = new TutorialManager(player, enemyManager, this, camera, world);
-                            tutorial.start();
-                        }
-                        // Start welcome banner once per session
-                        if (!welcomeStarted) {
+
+                        if (armPlaytestOnSpawn) {
+                            // PLAY → full-fun sandbox. No tutorial, no walls: everything
+                            // unlocked, weapons in the hotbar, enemies roaming to fight.
+                            armPlaytestOnSpawn = false;
+                            enterPlaytestMode();
                             welcomeTimer   = 6.0f;
                             welcomeStarted = true;
+                        } else {
+                            // Begin the designed onboarding tutorial. It controls all
+                            // enemy spawning (waves stay off) until the player graduates.
+                            if (tutorial == null) {
+                                tutorial = new TutorialManager(player, enemyManager, this, camera, world);
+                                tutorial.start();
+                            }
+                            if (!welcomeStarted) {
+                                welcomeTimer   = 6.0f;
+                                welcomeStarted = true;
+                            }
                         }
                         // Roll the intro cutscene the first time a NEW game reaches spawn.
                         if (playIntroOnSpawn) {
