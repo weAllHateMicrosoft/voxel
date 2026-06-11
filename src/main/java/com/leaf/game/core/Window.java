@@ -1138,20 +1138,23 @@ public class Window {
      * Returns the granted block (or null if the ability has no hotbar weapon).
      */
     public Block grantWeaponForAbility(Progression.Ability a) {
-        // slot -1 = no hotbar weapon for this ability.
-        int slot;
-        Block w;
+        // slot -1 = no hotbar weapon for this ability (key-activated, not an item).
+        int slot = -1;
+        Block w = null;
         switch (a) {
             case SNIPE       -> { w = Block.WPN_SNIPER;       slot = 0; }
             case GATLING     -> { w = Block.GATLING_GUN;      slot = 1; }
             case ORBITAL     -> { w = Block.WPN_ORBITAL;      slot = 2; }
             case DOMAIN      -> { w = Block.WPN_TIMESTOP;     slot = 3; }
             case STONE_CANON -> { w = Block.WPN_STONE_CANNON; slot = 4; }
+            case DEPRIVATION -> { }  // no hotbar item — activated by ' key
             default          -> { return null; }
         }
-        inventory.addBlockAmount(w, 1);
-        hotbar[slot] = w;
-        // Trigger the fancy weapon-reveal card
+        if (slot >= 0 && w != null) {
+            inventory.addBlockAmount(w, 1);
+            hotbar[slot] = w;
+        }
+        // Trigger the fancy reveal card (works for weapons and key abilities)
         weaponRevealAbility = a;
         weaponRevealSlot    = slot;
         weaponRevealTimer   = 5.5f;
@@ -3519,7 +3522,7 @@ public class Window {
                     // ── DEPRIVATION DOMAIN – Water God Stance (' key) ─────────
                     boolean apostrNow = glfwGetKey(window, KeyBindings.DEPRIVATION_DOMAIN) == GLFW_PRESS;
                     if (apostrNow && !lastApostr) {
-                        if (!depActive && depCooldown <= 0f) {
+                        if (!depActive && depCooldown <= 0f && player.can(Progression.Ability.DEPRIVATION)) {
                             startDeprivationDomain();
                         } else if (depActive) {
                             stopDeprivationDomain();

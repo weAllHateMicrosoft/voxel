@@ -45,9 +45,10 @@ public class Progression {
         SUBSTITUTE ("Substitute",       "[V]",        "Hold to prime. The next hit is absorbed  -  you blink back and leave an exploding decoy."),
         // ── GOD-TIER ARSENAL — earned late, the climax of the run ────────────────
         GATLING    ("Gatling Gun",      "Slot + LMB", "A roaring gatling gun. Equip it and hold Left-Click to shred everything in your sights."),
-        STONE_CANON("Stone Cannon",     "[I] / RMB",  "Near stone, hold to absorb it into a giant boulder. Release to fire a wrecking shot."),
-        RADAR      ("Radar Sweep",      "[F10]",      "A pulse that paints every enemy through walls and terrain. You see everything."),
-        ORBITAL    ("Orbital Annihilation","[F7] / RMB","Call a cinematic strike from orbit. The sky splits and the ground is erased."),
+        STONE_CANON ("Stone Cannon",      "[I] / RMB",  "Near stone, hold to absorb it into a giant boulder. Release to fire a wrecking shot."),
+        RADAR       ("Radar Sweep",       "[F10]",      "A pulse that paints every enemy through walls and terrain. You see everything."),
+        DEPRIVATION ("Deprivation Domain","[ ' ]",      "A golden hemisphere erupts around you. Any enemy that enters is instantly sliced. Press once to start, again to end early."),
+        ORBITAL     ("Orbital Annihilation","[F7] / RMB","Call a cinematic strike from orbit. The sky splits and the ground is erased."),
         DOMAIN     ("The World",        "[F8] / RMB", "Stop time itself. Everything freezes while you move freely — the ultimate power."),
         KAMUI      ("Kamui",            "[Z]",        "Phase into another dimension  -  invincible while active. Drains mana fast."),
         FLIGHT     ("Flight",           "[Space x2]", "Double-tap Space to fly. [V] cycles flight modes (skim / soar / grapple).");
@@ -64,7 +65,7 @@ public class Progression {
      * Progression.grantKamui() handles it separately.
      */
     private static final Ability[][] TIERS = {
-        /* start  */ { Ability.SNIPE },                              // Sniper — your first tool
+        /* start  */ { Ability.SNIPE, Ability.RADAR },               // Sniper + Radar from the start
         /* wave 1 */ { Ability.SLASH, Ability.DASH },               // close combat + mobility
         /* wave 2 */ { Ability.QUAGMIRE, Ability.HEAL },            // control + sustain
         /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
@@ -73,7 +74,7 @@ public class Progression {
         /* wave 6 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL }, // tactician's toolkit
         // ── THE ASCENSION — the crystal stops holding back. God-tier weapons. ──
         /* wave 7 */ { Ability.GATLING },                           // first true weapon
-        /* wave 8 */ { Ability.STONE_CANON, Ability.RADAR },        // siege + all-seeing eye
+        /* wave 8 */ { Ability.STONE_CANON },                        // siege weapon
         /* wave 9 */ { Ability.ORBITAL },                           // annihilation from orbit
         /* wave 10*/ { Ability.DOMAIN },                            // stop time — the ultimate
         /* wave 11*/ { Ability.FLIGHT },                            // final gift — the ending

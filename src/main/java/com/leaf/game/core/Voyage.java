@@ -19,7 +19,7 @@ import java.util.List;
  *
  * <pre>
  *   Crystal Fields  → Gatling Gun
- *   Glowing Groves  → Radar Sweep
+ *   Glowing Groves  → Deprivation Domain
  *   Floating Isles  → Stone Cannon
  *   The Ashlands    → Orbital Annihilation   (requires defeating the Inferno Tower)
  *   — finale —      → The World (Time Stop)
@@ -81,9 +81,9 @@ public class Voyage {
                 Block.MAT_CRYSTAL_CORE, Progression.Ability.GATLING, new float[]{0.70f, 0.40f, 1.0f}, false,
                 "The crystal forges your first true GUN  -  the Gatling. Hold Left-Click to tear through anything."));
         objectives.add(new Objective(Biome.MUSHROOM, false,
-                "the Glowing Groves", "Spore Shard", "Radar Sweep",
-                Block.MAT_GLOW_SPORE, Progression.Ability.RADAR, new float[]{0.30f, 1.0f, 0.70f}, false,
-                "RADAR forged. Press [F10] to ping every enemy through walls  -  you will need it to find the tower."));
+                "the Glowing Groves", "Spore Shard", "Deprivation Domain",
+                Block.MAT_GLOW_SPORE, Progression.Ability.DEPRIVATION, new float[]{0.30f, 1.0f, 0.70f}, false,
+                "Deprivation Domain forged. Press [ ' ] to erupt a golden hemisphere  -  any enemy that enters is instantly sliced."));
         objectives.add(new Objective(null, true,
                 "the Floating Isles", "Aether Shard", "Stone Cannon",
                 Block.MAT_AETHER_SHARD, Progression.Ability.STONE_CANON, new float[]{0.55f, 0.85f, 1.0f}, false,

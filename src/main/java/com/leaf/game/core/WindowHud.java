@@ -266,10 +266,11 @@ class WindowHud {
         draw.addRect(x0 + 4, y0 + 4, x1 - 4, y1 - 4,
                 ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.6f, 0.25f * alpha), 9f, 0, 1f);
 
+        int slot = win.weaponRevealSlot;
         float iy = y0 + 20f;
 
-        // WEAPON FORGED header
-        String header = "  ✦  WEAPON FORGED  ✦  ";
+        // WEAPON FORGED / ABILITY FORGED header
+        String header = slot >= 0 ? "  ✦  WEAPON FORGED  ✦  " : "  ✦  ABILITY FORGED  ✦  ";
         float hw = ImGui.calcTextSize(header).x;
         draw.addText(cx - hw / 2 + 1, iy + 1, sh, header);
         draw.addText(cx - hw / 2, iy, gld, header);
@@ -289,6 +290,13 @@ class WindowHud {
             case ORBITAL     -> drawOrbitalIcon(draw, ix0, iy0i, ix1, iy1i);
             case DOMAIN      -> drawTimeStopIcon(draw, ix0, iy0i, ix1, iy1i);
             case STONE_CANON -> drawStoneCannonIcon(draw, ix0, iy0i, ix1, iy1i);
+            case DEPRIVATION -> {
+                // Golden hemisphere icon
+                draw.addCircleFilled(cx, iy0i + iconSz / 2, iconSz / 2.2f,
+                        ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.15f, 0.55f * alpha));
+                draw.addCircle(cx, iy0i + iconSz / 2, iconSz / 2.2f,
+                        ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.4f, alpha), 32, 2f);
+            }
             default -> {
                 draw.addCircleFilled(cx, iy0i + iconSz / 2, iconSz / 2.2f,
                         ImGui.colorConvertFloat4ToU32(0.5f, 0.7f, 1f, 0.7f * alpha));
@@ -296,22 +304,21 @@ class WindowHud {
         }
         iy += iconSz + 10f;
 
-        // Weapon name
+        // Weapon / ability name
         String name = a.label;
         float nw = ImGui.calcTextSize(name).x;
         draw.addText(cx - nw / 2 + 1, iy + 1, sh, name);
         draw.addText(cx - nw / 2, iy, wht, name);
         iy += 22f;
 
-        // Key hint
-        String key = "[ " + a.key + " ]  to activate";
+        // Key hint (a.key already contains the bracket, e.g. "[C] / RMB" or "[ ' ]")
+        String key = a.key + "  to activate";
         float kw = ImGui.calcTextSize(key).x;
         draw.addText(cx - kw / 2 + 1, iy + 1, sh, key);
         draw.addText(cx - kw / 2, iy, acc, key);
         iy += 20f;
 
         // Hotbar slot arrow
-        int slot = win.weaponRevealSlot;
         if (slot >= 0) {
             String slotHint = "→  Added to hotbar slot  " + (slot + 1);
             float sw = ImGui.calcTextSize(slotHint).x;
@@ -2158,8 +2165,10 @@ class WindowHud {
                 ImGui.textDisabled("  [ ? ]");
                 ImGui.sameLine(230f);
                 ImGui.pushTextWrapPos(0f);
-                String lockMsg = (wv <= Progression.VOYAGE_START_WAVE)
+                String lockMsg = (wv >= 1 && wv <= Progression.VOYAGE_START_WAVE)
                         ? "Locked  -  defeat wave " + wv + " at spawn to unlock."
+                        : (a == Progression.Ability.KAMUI)
+                        ? "Locked  -  a secret. Keep playing."
                         : "Locked  -  forge on the Voyage (follow the beam after wave 6).";
                 ImGui.textDisabled(lockMsg);
                 ImGui.popTextWrapPos();
@@ -2230,13 +2239,6 @@ class WindowHud {
         helpRow("[H]", "Throw a seal marker. It sticks to the first surface it touches.");
         helpRow("[B]", "Instantly teleport to the seal nearest your crosshair. The targeted seal glows to indicate the destination.");
         helpRow("[N]", "Pull the targeted seal back to your hand without teleporting.");
-        ImGui.spacing();
-
-        // ── TIME CONTROL ──────────────────────────────────────────────────────
-        ImGui.textColored(0.7f, 1.0f, 0.6f, 1.0f, "TIME DILATION");
-        ImGui.separator();
-        helpRow("[R]  Slow time", "Everything moves in slow motion (including enemies). Useful for dodging or lining up a shot.");
-        helpRow("[Y]  Fast time", "Speeds up time  -  enemies and projectiles move faster. Use carefully.");
         ImGui.spacing();
 
         // ── WORLD & UI ────────────────────────────────────────────────────────
@@ -2526,7 +2528,7 @@ class WindowHud {
             "MOVE  WASD    JUMP  Space   FLY  Space x2 (V cycles)",
             "SLOTS 1-5  weapons -> Right-Click to fire",
             "F  slash    Q  dash    E  blink    Z  phase    G  cannonball",
-            "X  drone    R  slow-mo    Left-Alt  backpack    T  chat",
+            "X  drone    Left-Alt  backpack    T  chat",
             "F1  full guide          /biome <name>  to teleport",
         };
         float pad = 8f, lh = 15f;

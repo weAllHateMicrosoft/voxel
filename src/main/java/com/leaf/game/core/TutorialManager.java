@@ -180,7 +180,7 @@ public class TutorialManager {
         // 5 ── BATTLE BEGINS — auto-advances and lets finish() turn waves on.
         // FLIGHT is granted later, when the Voyage opens after wave 6.
         steps.add(new Step("Battle Begins",
-            "Enemies are coming!  Defeat each wave to unlock new powers.  Clear 6 waves and the crystal will give you the sky.", "Fight!",
+            "Press [F10] to RADAR SWEEP — pings every enemy through walls!  Defeat 6 waves and the crystal gives you the sky.", "Fight!",
             null,
             c -> false, 4f));
     }
