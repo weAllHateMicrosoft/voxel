@@ -4388,6 +4388,7 @@ public class Window {
                                     shader.setUniform("overlayVignetteStrength", 0f);
                                     shader.setUniform("overlayVignetteColor", new Vector3f(0f, 0f, 0f));
                                     shader.setUniform("alphaMultiplier", 1.0f);
+                                    shader.setUniform("alphaMultiplier", 1.0f);
                                 }
                                 continue; // Skip the humanoid animation rendering below!
                             }
@@ -4410,10 +4411,9 @@ public class Window {
                                             : (enemy.type == Enemy.Type.LAVA_SLIME    && lavaSlimeAnimModel    != null) ? lavaSlimeAnimModel
                                               : (enemy.type == Enemy.Type.INFERNO_TOWER && infernoTowerAnimModel != null) ? infernoTowerAnimModel
                                                 : (isGuardian                        && golemAnimModel != null) ? golemAnimModel
-                                                  : null; // Removed choppy enemy model fallback
+                                                  : enemyAnimModel; // <-- Restored standard enemy model
 
-                            if (targetModel == null) continue; // Skip rendering if no model exists (falls through to the capsule fallback)
-
+                            if (targetModel == null) continue; // Now this only triggers if the JSON file actually failed to load
                             com.leaf.game.anim.AnimPlayer ap = enemyAnimPlayers.computeIfAbsent(
                                     enemy.id, id -> {
                                         com.leaf.game.anim.AnimPlayer p = new com.leaf.game.anim.AnimPlayer(targetModel);

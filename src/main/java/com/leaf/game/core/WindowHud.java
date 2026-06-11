@@ -331,7 +331,7 @@ class WindowHud {
             float slotSize = 40f, spacing = 5f, numSlots = 9;
             float startX = screenW / 2f - (numSlots * slotSize + (numSlots - 1) * spacing) / 2f;
             float slotX  = startX + slot * (slotSize + spacing) + slotSize / 2f;
-            float slotTop = screenH - slotSize - 10f;
+            float slotTop = screenH - slotSize - 24f;
             float bounce = (float) Math.sin(win.weaponRevealTimer * 6.0) * 4f;
             float ax = slotX, ay = slotTop - 14f + bounce;
             int arrowCol = ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.2f, alpha);
@@ -729,9 +729,9 @@ class WindowHud {
     }
 
     /**
-     * Simple faux-3D block icon: an isometric top + two side faces drawn from the
-     * block's own colour. Reads instantly as "a block" without needing texture
-     * binding in the ImGui pass. Used for every placeable block in the hotbar.
+     * Simple faux-3D block icon: an isometric top + two side faces.
+     * Renders using the block's actual textures from the atlas when available,
+     * and falls back to flat shaded colors otherwise.
      */
     private void drawBlockIcon(imgui.ImDrawList draw, Block b, float x0, float y0, float x1, float y1) {
         float w = x1 - x0, h = y1 - y0;
@@ -740,24 +740,85 @@ class WindowHud {
         float midY = y0 + h * 0.36f;
         float botY = y1 - h * 0.04f;
 
+        // Calculate the correct bottom-left and bottom-right height for equal vertical edges
+        float sideBotY = y0 + h * 0.66f;
+
         // Slightly translucent blocks (leaves, water) read better fully opaque as an icon.
         float r = b.r, g = b.g, bl = b.b;
-        int topCol  = ImGui.colorConvertFloat4ToU32(Math.min(1f, r*1.15f), Math.min(1f, g*1.15f), Math.min(1f, bl*1.15f), 1f);
-        int leftCol = ImGui.colorConvertFloat4ToU32(r*0.80f, g*0.80f, bl*0.80f, 1f);
-        int rightCol= ImGui.colorConvertFloat4ToU32(r*0.55f, g*0.55f, bl*0.55f, 1f);
+        int topCol  = ImGui.colorConvertFloat4ToU32(Math.min(1f, r * 1.15f), Math.min(1f, g * 1.15f), Math.min(1f, bl * 1.15f), 1f);
+        int leftCol = ImGui.colorConvertFloat4ToU32(r * 0.80f, g * 0.80f, bl * 0.80f, 1f);
+        int rightCol= ImGui.colorConvertFloat4ToU32(r * 0.55f, g * 0.55f, bl * 0.55f, 1f);
         int edge    = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.55f);
 
-        // Top face (diamond)
-        draw.addQuadFilled(cx, topY, x1, midY, cx, y0 + h*0.66f, x0, midY, topCol);
-        // Left face
-        draw.addQuadFilled(x0, midY, cx, y0 + h*0.66f, cx, botY, x0, botY, leftCol);
-        // Right face
-        draw.addQuadFilled(cx, y0 + h*0.66f, x1, midY, x1, botY, cx, botY, rightCol);
+        // If the block has a texture and the atlas is loaded, draw the textured faces
+        if (b.texName != null && com.leaf.game.render.BlockTextureAtlas.isLoaded()) {
+            int texId = com.leaf.game.render.BlockTextureAtlas.getTextureId();
 
-        // Subtle edges for definition
+            // Retrieve the UV coordinates for Top (0), Left/West (5), and Right/East (4)
+            float[] topUV   = com.leaf.game.render.BlockTextureAtlas.getUV(b.texName, 0);
+            float[] leftUV  = com.leaf.game.render.BlockTextureAtlas.getUV(b.texName, 5);
+            float[] rightUV = com.leaf.game.render.BlockTextureAtlas.getUV(b.texName, 4);
+
+            // 1. Draw Top Face (Diamond)
+            draw.addImageQuad(texId,
+                    cx, topY,               // p1 (Back corner)
+                    x1, midY,               // p2 (Right corner)
+                    cx, y0 + h * 0.66f,     // p3 (Front corner)
+                    x0, midY,               // p4 (Left corner)
+                    topUV[2], topUV[1],     // uv1 (uMax, vMin) -> Back corner
+                    topUV[2], topUV[3],     // uv2 (uMax, vMax) -> Right corner
+                    topUV[0], topUV[3],     // uv3 (uMin, vMax) -> Front corner
+                    topUV[0], topUV[1],     // uv4 (uMin, vMin) -> Left corner
+                    topCol
+            );
+
+            // 2. Draw Left Face (Sheared side)
+            draw.addImageQuad(texId,
+                    x0, midY,               // p1 (Top-Left)
+                    cx, y0 + h * 0.66f,     // p2 (Top-Right)
+                    cx, botY,               // p3 (Bottom-Right / Bottom-Center)
+                    x0, sideBotY,           // p4 (Bottom-Left / Bottom-Outer)
+                    leftUV[0], leftUV[1],   // uv1 (uMin, vMin)
+                    leftUV[2], leftUV[1],   // uv2 (uMax, vMin)
+                    leftUV[2], leftUV[3],   // uv3 (uMax, vMax)
+                    leftUV[0], leftUV[3],   // uv4 (uMin, vMax)
+                    leftCol
+            );
+
+            // 3. Draw Right Face (Sheared side)
+            draw.addImageQuad(texId,
+                    cx, y0 + h * 0.66f,     // p1 (Top-Left)
+                    x1, midY,               // p2 (Top-Right)
+                    x1, sideBotY,           // p3 (Bottom-Right / Bottom-Outer)
+                    cx, botY,               // p4 (Bottom-Left / Bottom-Center)
+                    rightUV[0], rightUV[1],  // uv1 (uMin, vMin)
+                    rightUV[2], rightUV[1],  // uv2 (uMax, vMin)
+                    rightUV[2], rightUV[3],  // uv3 (uMax, vMax)
+                    rightUV[0], rightUV[3],  // uv4 (uMin, vMax)
+                    rightCol
+            );
+        } else {
+            // Fallback for solid-colored blocks / untextured meshes
+            // Top face (diamond)
+            draw.addQuadFilled(cx, topY, x1, midY, cx, y0 + h * 0.66f, x0, midY, topCol);
+            // Left face
+            draw.addQuadFilled(x0, midY, cx, y0 + h * 0.66f, cx, botY, x0, sideBotY, leftCol);
+            // Right face
+            draw.addQuadFilled(cx, y0 + h * 0.66f, x1, midY, x1, sideBotY, cx, botY, rightCol);
+        }
+
+        // Draw outer wireframe lines with the new pointed bottom
         draw.addLine(cx, topY, x0, midY, edge, 1.0f);
         draw.addLine(cx, topY, x1, midY, edge, 1.0f);
-        draw.addLine(cx, y0 + h*0.66f, cx, botY, edge, 1.0f);
+        draw.addLine(cx, y0 + h * 0.66f, cx, botY, edge, 1.0f);
+        draw.addLine(x0, midY, cx, y0 + h * 0.66f, edge, 1.0f);
+        draw.addLine(x1, midY, cx, y0 + h * 0.66f, edge, 1.0f);
+
+        draw.addLine(x0, midY, x0, sideBotY, edge, 1.0f);       // Corrected left vertical edge
+        draw.addLine(x1, midY, x1, sideBotY, edge, 1.0f);       // Corrected right vertical edge
+
+        draw.addLine(x0, sideBotY, cx, botY, edge, 1.0f);       // Left slanted bottom edge
+        draw.addLine(x1, sideBotY, cx, botY, edge, 1.0f);       // Right slanted bottom edge
     }
     void renderHUD(Camera camera, float screenW, float screenH) {
         var draw = ImGui.getForegroundDrawList();
@@ -1287,7 +1348,7 @@ class WindowHud {
             float slotSize = 40.0f, spacing = 5.0f;
             int numSlots = 9;
             float startX = cx - ((numSlots * slotSize + (numSlots - 1) * spacing) / 2.0f);
-            float startY = screenH - slotSize - 10.0f;
+            float startY = screenH - slotSize - 15.0f;
             win.selectedBlock = win.hotbar[win.selectedSlot];
 
             for (int i = 0; i < numSlots; i++) {
