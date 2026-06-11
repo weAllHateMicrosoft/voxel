@@ -500,7 +500,7 @@ public class AbilityController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void startDash(long window, Camera camera) {
-        if (player.mana < GameConfig.manaDash) return;  // insufficient mana — silently block
+        if (player.mana < GameConfig.manaDash) { player.manaFlashTimer = 0.5f; return; }
         player.mana -= GameConfig.manaDash;
         isDashing    = true;
         dashTimer    = GameConfig.dashDuration;
@@ -527,7 +527,7 @@ public class AbilityController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void fireCannonball(Camera camera) {
-        if (player.mana < GameConfig.manaCannonball) return;  // insufficient mana
+        if (player.mana < GameConfig.manaCannonball) { player.manaFlashTimer = 0.5f; return; }
         player.mana -= GameConfig.manaCannonball;
         isCannonballing = true;
         cannonCooldown  = GameConfig.cannonCooldown;
@@ -626,7 +626,7 @@ public class AbilityController {
     // ─────────────────────────────────────────────────────────────────────────
 
     private void executeBlink(Camera camera, World world) {
-        if (player.mana < GameConfig.manaBlink) return;  // insufficient mana
+        if (player.mana < GameConfig.manaBlink) { player.manaFlashTimer = 0.5f; return; }
         player.mana -= GameConfig.manaBlink;
         Vector3f dir  = camera.getLookDirection();
         float    step = 0.45f;

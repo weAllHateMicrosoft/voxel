@@ -67,6 +67,8 @@ public class EnemyManager {
     // ── Food drops — positions where a hotdog should spawn (drained by Window) ─
     /** Each entry = {x, y, z} of an enemy that just finished dying. */
     public final List<float[]> pendingFoodDrops = new ArrayList<>();
+    /** Each entry = {x, y, z} for a death-particle burst to spawn in Window. */
+    public final List<float[]> pendingDeathFX   = new ArrayList<>();
 
     // ── Wave spawning state ───────────────────────────────────────────────────
     private float waveTimer  = GameConfig.spawnWaveInterval; // (legacy; unused by clear-based waves)
@@ -343,6 +345,7 @@ public class EnemyManager {
             boolean cull = !e.alive && e.hitFlashTimer <= 0f;
             if (cull) {
                 totalKills++;
+                pendingDeathFX.add(new float[]{ e.position.x, e.position.y + 0.8f, e.position.z });
                 if (e.type == Enemy.Type.INFERNO_TOWER) {
                     towerDeathHandled.remove(e.id);
                     towerIdToSite.remove(e.id);   // site already moved to destroyed in handleTowerDeath

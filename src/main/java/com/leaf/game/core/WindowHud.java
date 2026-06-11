@@ -290,7 +290,7 @@ class WindowHud {
         float iy = y0 + 20f;
 
         // WEAPON FORGED / ABILITY FORGED header
-        String header = slot >= 0 ? "  ✦  WEAPON FORGED  ✦  " : "  ✦  ABILITY FORGED  ✦  ";
+        String header = slot >= 0 ? "  **  WEAPON FORGED  **  " : "  **  ABILITY FORGED  **  ";
         float hw = ImGui.calcTextSize(header).x;
         draw.addText(cx - hw / 2 + 1, iy + 1, sh, header);
         draw.addText(cx - hw / 2, iy, gld, header);
@@ -340,7 +340,7 @@ class WindowHud {
 
         // Hotbar slot arrow
         if (slot >= 0) {
-            String slotHint = "→  Added to hotbar slot  " + (slot + 1);
+            String slotHint = "->  Added to hotbar slot  " + (slot + 1);
             float sw = ImGui.calcTextSize(slotHint).x;
             draw.addText(cx - sw / 2 + 1, iy + 1, sh, slotHint);
             draw.addText(cx - sw / 2, iy, grn, slotHint);
@@ -1341,6 +1341,12 @@ class WindowHud {
             draw.addRectFilled(hpX, mpY, hpX + mpFill, mpY + mpHeight,
                     ImGui.colorConvertFloat4ToU32(0.22f, 0.45f, 1.0f, 1.0f));
             draw.addRect(hpX, mpY, hpX + hpWidth, mpY + mpHeight, black, 0f, 0, 1.5f);
+            if (win.player.manaFlashTimer > 0f) {
+                float pulse = (float) Math.abs(Math.sin(win.player.manaFlashTimer * 18f));
+                float flashAlpha = Math.min(win.player.manaFlashTimer * 2f, 1f) * 0.7f * pulse;
+                draw.addRectFilled(hpX, mpY, hpX + hpWidth, mpY + mpHeight,
+                        ImGui.colorConvertFloat4ToU32(1.0f, 0.1f, 0.1f, flashAlpha));
+            }
             draw.addText(hpX - 26f, mpY - 2f, ImGui.colorConvertFloat4ToU32(0.55f, 0.7f, 1f, 0.9f), "MP");
             // Mana text label (compact, right-aligned inside bar)
             String mpLabel = String.format("%.0f / %.0f  MP", win.player.mana, win.player.maxMana);
@@ -1409,9 +1415,9 @@ class WindowHud {
         if (win.player.debugMode) {
             FlightController.FlightMode mode = win.player.flightController.getMode();
             String modeLabel = switch (mode) {
-                case SKIM -> "✦ SKIM";
-                case SOAR -> "✦ SOAR";
-                case GRAPPLE -> "✦ GRAPPLE";
+                case SKIM -> "* SKIM";
+                case SOAR -> "* SOAR";
+                case GRAPPLE -> "* GRAPPLE";
             };
             int modeColor = switch (mode) {
                 case SKIM -> ImGui.colorConvertFloat4ToU32(0.4f, 0.9f, 0.4f, 0.9f);
@@ -1436,7 +1442,7 @@ class WindowHud {
                 if (fc.isHooked()) {
                     // Show hook distance
                     float hookDist = new Vector3f(fc.getHookPoint()).sub(win.player.position).length();
-                    String hookedStr = String.format("⦿ ZIPPING  %.0fm  Release to launch", hookDist);
+                    String hookedStr = String.format("[O] ZIPPING  %.0fm  Release to launch", hookDist);
                     draw.addText(cx - 72, cy + 28, black, hookedStr);
                     draw.addText(cx - 73, cy + 27, grappleGold, hookedStr);
 
@@ -1513,16 +1519,16 @@ class WindowHud {
 
         // ── REWIND TRAIL INDICATOR ────────────────────────────────────────────
         if (win.player.abilities.isRewinding) {
-            draw.addText(cx - 42, cy - 90, black, "⟲ REWINDING ⟲");
+            draw.addText(cx - 42, cy - 90, black, "<< REWINDING >>");
             draw.addText(cx - 43, cy - 91,
-                    ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, 1.0f), "⟲ REWINDING ⟲");
+                    ImGui.colorConvertFloat4ToU32(0.3f, 0.6f, 1.0f, 1.0f), "<< REWINDING >>");
         }
 
         // ── SMASH INDICATOR ───────────────────────────────────────────────────
         if (win.player.isSmashing()) {
-            draw.addText(cx - 35, cy - 90, black, "▼ SMASHING ▼");
+            draw.addText(cx - 35, cy - 90, black, "\\/ SMASHING \\/");
             draw.addText(cx - 36, cy - 91,
-                    ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.1f, 1.0f), "▼ SMASHING ▼");
+                    ImGui.colorConvertFloat4ToU32(1.0f, 0.3f, 0.1f, 1.0f), "\\/ SMASHING \\/");
         }
 
         // ── STAND PERSPECTIVE OVERLAY ────────────────────────────────────────
@@ -1927,7 +1933,7 @@ class WindowHud {
             String waveLabel;
             int waveColor;
             if (liveCount >= maxCount) {
-                waveLabel = String.format("WAVE %d  ■ MAX ENEMIES (%d/%d)", waveNum, liveCount, maxCount);
+                waveLabel = String.format("WAVE %d  [!] MAX ENEMIES (%d/%d)", waveNum, liveCount, maxCount);
                 waveColor = ImGui.colorConvertFloat4ToU32(1.0f, 0.4f, 0.15f, 0.95f);
             } else if (waveNum == 0) {
                 waveLabel = String.format("Next wave in %.0fs", waveTimer);
@@ -2220,7 +2226,7 @@ class WindowHud {
         ImGui.spacing();
 
         // ── EASTER EGGS ───────────────────────────────────────────────────────
-        ImGui.textColored(1.0f, 0.55f, 0.9f, 1.0f, "EASTER EGGS  ✦  (hidden secrets)");
+        ImGui.textColored(1.0f, 0.55f, 0.9f, 1.0f, "EASTER EGGS  **  (hidden secrets)");
         ImGui.separator();
         helpRow("[ ` ] (Tilde)", "FLAPPY BIRD MODE — press ` at any time to instantly transform DESCENT into a full 2D side-scrolling Flappy Bird arcade! Press [TAB] to toggle 3D/2D view. How high can you score?");
         helpRow("[ F4 ]", "METEOR STORM — rains flaming meteorites from the sky. Each one dynamically carves a crater into the terrain on impact. The mountain will never be the same.");
@@ -2237,8 +2243,8 @@ class WindowHud {
         helpRow("[ ' ] (Quote)", "Deprivation Domain: Golden absolute-defence hemisphere — any enemy entering is instantly sliced. Forged in the Glowing Groves.");
         helpRow("[ , ] (Comma)", "Quantum Bullet (showcase mode only): Phases through walls, leaving ripple distortions on every surface hit.");
         helpRow("[ F12 ]", "Parkour Mode: Toggles Quake-style momentum physics (frictionless, high-speed).");
-        helpRow("[ T ] → /skip", "Skip the tutorial and jump straight to wave 1.");
-        helpRow("[ T ] → /showcase", "Instantly unlock every ability and arm all 5 weapons — for grading/testing.");
+        helpRow("[ T ] -> /skip", "Skip the tutorial and jump straight to wave 1.");
+        helpRow("[ T ] -> /showcase", "Instantly unlock every ability and arm all 5 weapons — for grading/testing.");
         ImGui.spacing();
 
         // ── YOUR ABILITIES (unlocked vs. still locked) ────────────────────────
@@ -2691,7 +2697,7 @@ class WindowHud {
                 (pp.y - beacon.y) * (pp.y - beacon.y) +
                 (pp.z - beacon.z) * (pp.z - beacon.z));
         String distStr = (d >= 1000f) ? String.format("%.1f km", d / 1000f) : String.format("%.0f m", d);
-        String line1 = "◆  " + dir;
+        String line1 = ">  " + dir;
         String line2 = rew + "        " + distStr + " away";
 
         imgui.ImVec2 s1 = ImGui.calcTextSize(line1);

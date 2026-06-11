@@ -44,6 +44,7 @@ public class Player {
     // All costs are defined in GameConfig so designers can tweak them.
     public float mana    = 100f;
     public float maxMana = 100f;
+    public float manaFlashTimer = 0f;  // pulses mana bar red when set; ticks down each frame
 
     private float   velocityY  = 0.0f;        // velocity ALONG the up axis (not always world-Y)
     private boolean onGround   = false;

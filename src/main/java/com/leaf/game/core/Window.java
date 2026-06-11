@@ -1366,7 +1366,8 @@ public class Window {
             kamuiJustUnlockedThisRevival = true;
             cutscene.startKamuiAwaken();
         } else {
-            cutscene.startRevival();
+            deathCutscenePending = false;
+            showDeathScreen = true;
         }
         ScreenEffectManager.INSTANCE.desaturate(0.7f, 1.5f);
     }
@@ -1680,32 +1681,9 @@ public class Window {
                 // Cutscene just ended — check which kind finished.
                 CutsceneManager.Kind finishedKind = cutscene.getKind();
                 if (finishedKind == CutsceneManager.Kind.KAMUI_AWAKEN) {
-                    // Kamui awakening done: chain into revival, then queue Kamui practice.
-                    cutscene.startRevival();
-                } else if (finishedKind == CutsceneManager.Kind.REVIVAL) {
-                    // Revival done — restore at SPAWN with full HP and immunity.
+                    // Kamui awakening done — show death screen so player can hit ENTER to respawn.
                     deathCutscenePending = false;
-                    player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
-                    player.setVelocityY(0f);
-                    player.pendingGravityReset = true;  // respawn upright if gravity was flipped
-                    atCanyon = false; canyonSettlePending = false;  // died at the canyon → reset F5 toggle
-                    player.health = player.maxHealth;   // full HP — crystal fully healed you
-                    player.mana   = player.maxMana;
-                    player.abilities.isKamui          = false;
-                    player.abilities.kamuiAutoExited  = false;
-                    player.abilities.absorptionCharge = 0f;
-                    player.abilities.isDashing        = false;
-                    immunityTimer = REVIVAL_IMMUNITY_SECS;   // 4 s of invincibility
-                    ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f);
-                    // If Kamui was JUST awakened this death (one-shot flag in RunRecords),
-                    // show its practice tutorial. Never show again on subsequent deaths.
-                    if (kamuiJustUnlockedThisRevival) {
-                        kamuiJustUnlockedThisRevival = false;
-                        practiceQueue.clear();
-                        practiceQueue.add(Progression.Ability.KAMUI);
-                        lastPracticeEnter = true;
-                        startNextPractice();
-                    }
+                    showDeathScreen = true;
                 }
             }
             // Tick immunity — block incoming damage while it's active.
@@ -1718,6 +1696,7 @@ public class Window {
                 immunityTimer = Math.max(immunityTimer, 5f);
             }
             if (damageFlashTimer > 0f) damageFlashTimer -= rawDeltaTime;
+            if (player.manaFlashTimer > 0f) player.manaFlashTimer -= rawDeltaTime;
             float deltaTime = rawDeltaTime * tc.getScale()
                     * ScreenEffectManager.INSTANCE.getHitStopScale();
 
@@ -1876,6 +1855,7 @@ public class Window {
                                 player.position.set(SPAWN_X, spawnSurfaceY, SPAWN_Z);
                                 player.setVelocityY(0f);
                                 player.pendingGravityReset = true;
+                                atCanyon = false; canyonSettlePending = false;
                                 player.health = player.maxHealth;
                                 player.mana   = player.maxMana;
                                 player.abilities.isKamui          = false;
@@ -1883,11 +1863,19 @@ public class Window {
                                 player.abilities.absorptionCharge = 0f;
                                 player.abilities.isDashing        = false;
                                 player.abilities.isCannonballing  = false;
+                                immunityTimer = REVIVAL_IMMUNITY_SECS;
+                                ScreenEffectManager.INSTANCE.desaturate(0f, 0.8f);
                                 enemyManager.resetForNewRun();
                                 practiceAbility = null; practiceSteps = null; practiceQueue.clear();
                                 showUnlockCard  = false; lastCardSpace = false; lastPracticeEnter = false;
                                 deathCutscenePending = false;
                                 gameEnded       = false;
+                                if (kamuiJustUnlockedThisRevival) {
+                                    kamuiJustUnlockedThisRevival = false;
+                                    practiceQueue.add(Progression.Ability.KAMUI);
+                                    lastPracticeEnter = true;
+                                    startNextPractice();
+                                }
                             }
                             lastDeathEnter = en;
                         }
@@ -3513,6 +3501,14 @@ public class Window {
                         }
                         enemyManager.pendingFoodDrops.clear();
                     }
+                    if (!enemyManager.pendingDeathFX.isEmpty()) {
+                        for (float[] df : enemyManager.pendingDeathFX) {
+                            float x = df[0], y = df[1], z = df[2];
+                            fxBurst(x, y, z, 0.35f, 2.8f, 0.28f, 2.8f, 0.5f, 0.15f);
+                            fxRing(x, y - 0.2f, z, 0.6f, 4.5f, 0.40f, 2.2f, 0.4f, 0.1f);
+                        }
+                        enemyManager.pendingDeathFX.clear();
+                    }
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
@@ -3831,6 +3827,14 @@ public class Window {
                                     (int) fd[0], (int) fd[1], (int) fd[2], Block.HOTDOG));
                         }
                         enemyManager.pendingFoodDrops.clear();
+                    }
+                    if (!enemyManager.pendingDeathFX.isEmpty()) {
+                        for (float[] df : enemyManager.pendingDeathFX) {
+                            float x = df[0], y = df[1], z = df[2];
+                            fxBurst(x, y, z, 0.35f, 2.8f, 0.28f, 2.8f, 0.5f, 0.15f);
+                            fxRing(x, y - 0.2f, z, 0.6f, 4.5f, 0.40f, 2.2f, 0.4f, 0.1f);
+                        }
+                        enemyManager.pendingDeathFX.clear();
                     }
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
@@ -4571,9 +4575,11 @@ public class Window {
                     getItemMesh(Block.CRYSTAL_CITRINE).render();
                 }
 
-                // 5. Placed Seals (Normal Pass & Ghost Pass) — always lit so they're visible at night
+                // 5. Placed Seals (Normal Pass & Ghost Pass) — always lit so they're visible at night.
+                // cameraY override prevents abyss fog from darkening seal meshes (local-space Y ≈ 0).
                 if (!player.seals.placedSeals.isEmpty()) {
                     shader.setUniform("ambientStrength", Math.max(dayNight.ambientStrength, 0.80f));
+                    shader.setUniform("cameraY", -1000f);
                     com.leaf.game.render.Texture sealTex = com.leaf.game.render.AssetManager.get().getTexture("seal");
                     if (sealTex != null) {
                         shader.setUniform("useTexture", 1);
@@ -4614,6 +4620,7 @@ public class Window {
                     }
                     glEnable(GL_DEPTH_TEST);
                     shader.setUniform("alphaMultiplier", 1.0f);
+                    shader.setUniform("cameraY", camera.position.y);  // restore
                     shader.setUniform("ambientStrength", dayNight.ambientStrength); // restore
                 }
 
@@ -4959,8 +4966,11 @@ public class Window {
                     }
                 }
 
-                // 7. Render Items — always adequately lit so items visible day and night
+                // 7. Render Items — always adequately lit so items visible day and night.
+                // cameraY must be set far below so the abyss-depth fog (which uses local-space
+                // item Y ≈ 0) never triggers; restored to real camera Y after the loop.
                 shader.setUniform("ambientStrength", Math.max(dayNight.ambientStrength, 0.75f));
+                shader.setUniform("cameraY", -1000f);
                 for (DroppedItem item : droppedItems) {
                     float bob = (float) Math.sin(item.age * 3.0f) * 0.05f;
                     Matrix4f itemModel = new Matrix4f()
@@ -4984,6 +4994,7 @@ public class Window {
                     shader.setUniform("mvp", itemMvp);
                     itemMesh.render();
                 }
+                shader.setUniform("cameraY", camera.position.y);  // restore for terrain
                 shader.setUniform("ambientStrength", dayNight.ambientStrength); // restore
 
                 // 8. Render Remote Player
