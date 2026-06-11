@@ -177,12 +177,12 @@ public class TutorialManager {
             null,
             c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 14f));
 
-        // 5 ── HANDOFF  —  the Voyage begins here.
-        // Grant FLIGHT on enter so "double-tap SPACE" works during this very step.
-        steps.add(new Step("The Crystal Gives You the Sky",
-            "FLIGHT unlocked  -  double-tap [SPACE] to fly. Follow the beam of light to the first shard. [F1] = help.", "Space x2",
-            c -> c.player.progression.unlock(Progression.Ability.FLIGHT),
-            c -> false, 5f));   // auto-advances → finish() hands off to the Voyage
+        // 5 ── BATTLE BEGINS — auto-advances and lets finish() turn waves on.
+        // FLIGHT is granted later, when the Voyage opens after wave 6.
+        steps.add(new Step("Battle Begins",
+            "Enemies are coming!  Defeat each wave to unlock new powers.  Clear 6 waves and the crystal will give you the sky.", "Fight!",
+            null,
+            c -> false, 4f));
     }
 
     private static float angleDiff(float a, float b) {

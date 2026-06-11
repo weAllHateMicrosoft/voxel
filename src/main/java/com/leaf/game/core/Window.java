@@ -2165,12 +2165,17 @@ public class Window {
                         }
                         if (tutorial != null) tutorial.update(deltaTime);
 
-                        // ── THE VOYAGE — begins the moment the quick tutorial ends ──
+                        // ── THE VOYAGE — opens after the player clears wave 6 ──
+                        // Waves 1-6 are the "training ground" where abilities unlock.
+                        // Once the wave-6 card is dismissed and practice is done the
+                        // crystal shatters, FLIGHT is granted, and the journey begins.
                         if (voyage == null) voyage = new Voyage(this);
                         if (!voyageStarted && !showcaseMode && tutorial != null
-                                && tutorial.isFinished() && !voyage.complete) {
+                                && tutorial.isFinished() && !voyage.complete
+                                && !showUnlockCard && practiceAbility == null
+                                && enemyManager.lastClearedWave >= Progression.VOYAGE_START_WAVE) {
                             voyage.start();
-                            enemyManager.wavesEnabled    = false;  // no wave grind — free to explore
+                            enemyManager.wavesEnabled    = false;  // training done — free to explore
                             enemyManager.freeExploreMode = true;   // ambient enemies roam the world
                             voyageStarted = true;
                         }

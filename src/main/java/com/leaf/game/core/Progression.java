@@ -98,6 +98,9 @@ public class Progression {
     /** The wave that triggers the ENDING cutscene and grants FLIGHT. */
     public static final int ENDING_WAVE = 11;
 
+    /** After clearing this many waves the Voyage opens (flight + shard collection). */
+    public static final int VOYAGE_START_WAVE = 6;
+
     /** Always shown on unlock cards  -  the user wants players reminded about mana. */
     public static final String MANA_NOTE = "Most abilities draw MANA  -  the blue bar under your health. It refills over time.";
 
