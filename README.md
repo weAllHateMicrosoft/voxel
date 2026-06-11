@@ -38,15 +38,22 @@ step-by-step — teaching one mechanic at a time and waiting for you to do it be
 
 1. Load the game and press **Play**.
 2. A short tutorial teaches movement and your first weapon — the **Sniper** (hold `C` or
-   Right-Click to charge, release to fire).
-3. **Survive each wave** and the crystal grants a new power — escalating from basic combat
-   and mobility all the way up to the **god-tier arsenal** (Gatling Gun, Radar, Orbital
-   Annihilation, and Time Stop) in the final waves.
-4. Press `F1` at any time for the full in-game reference card — it shows everything you've
-   unlocked plus what's still locked and which wave grants it.
+   Right-Click to charge, release to fire) — then grants **FLIGHT**.
+3. **Follow the beam of light.** The crystal shattered and its shards scattered across the
+   land. A glowing beacon always marks your next shard, with an on-screen waypoint and a
+   "fly here" banner — you can never get lost. Fly to it, claim the shard, and the crystal
+   **forges it into a weapon**:
+   - **Crystal Fields** → Gatling Gun
+   - **Glowing Groves** → Radar Sweep
+   - **Floating Isles** (fly up!) → Stone Cannon
+   - **The Ashlands** → defeat the **Inferno Tower**, then claim the Molten Core → **Orbital
+     Annihilation** (the laser)
+   - Reunite all shards → **The World** (stop time itself)
+4. Press `F1` at any time for the full in-game reference card.
 
-> **For grading / testing:** type `/showcase` in chat (`T`) to instantly unlock everything
-> and fill the hotbar, or `/skip` to jump past the tutorial. See *Developer Cheat Codes* below.
+> **For grading / testing:** type `/showcase` in chat (`T`) to instantly unlock everything,
+> `/skip` to skip the tutorial, or `/biome <name>` to warp to any biome. See *Developer
+> Cheat Codes* below.
 
 ### Core Controls
 
@@ -64,22 +71,26 @@ step-by-step — teaching one mechanic at a time and waiting for you to do it be
 | `T` | Open chat (type commands) |
 | `F1` | Open the in-game Master Ability Guide |
 
-### The Progression — earn your arsenal
+### The Voyage — gather shards, forge your arsenal
 
-You start with only the **Sniper**. Each wave you clear bonds the crystal deeper and grants a
-new power, building toward the god-tier finale:
+The crystal shattered; its shards fused to far-off places. You fly out, follow the beam of
+light to each one, and the crystal forges it into a weapon. The route is strictly ordered and
+always sign-posted (beacon + on-screen waypoint + "fly here" banner) so the journey feels
+purposeful, never aimless:
 
-| Wave | Granted | |
+| Destination | What to do | Forges |
 |---|---|---|
-| Start | **Sniper** | charge-and-release crystal bolt |
-| 1–6 | Slash, Dash, Quagmire, Heal, Lightning, Grab, Blink, Swap, Time Dilation, Stone Pillar, Cannonball, Drone, Substitute, Seal | the core kit — combat, mobility, control, tactics |
-| **7** | **Gatling Gun** | your first true weapon — appears in the hotbar |
-| **8** | **Stone Cannon** + **Radar Sweep** | siege + see enemies through walls (`F10`) |
-| **9** | **Orbital Annihilation** | call down a cinematic strike (`F7` / RMB) |
-| **10** | **The World** (Time Stop) | freeze time itself (`F8` / RMB) |
-| **11** | **Flight** | the ending — the sky is yours |
+| Start | Quick tutorial → **Flight** + Sniper, Slash, Dash | your travelling kit |
+| **Crystal Fields** | follow the violet beam, fly into it | **Gatling Gun** (the gun) |
+| **Glowing Groves** | follow the green beam | **Radar Sweep** (`F10`, see through walls) |
+| **Floating Isles** | **fly UP** into the sky beam | **Stone Cannon** |
+| **The Ashlands** | destroy the **Inferno Tower**, then claim the core | **Orbital Annihilation** (the laser) |
+| — all shards reunited — | automatic | **The World** — stop time itself |
 
-Each new weapon literally appears in your hotbar with a screen-flash the moment you earn it.
+The Inferno Tower is deliberately the late, hard fight — you'll have the Gatling, Radar, and
+Stone Cannon before you face it. Each weapon appears in your hotbar with a screen-flash and a
+lore line the moment it's forged. Enemies roam the world freely as you travel — fight or fly
+past them, your choice.
 
 ---
 
@@ -191,24 +202,23 @@ Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks 
 | `/showcase volcanic` (chat) | Warp to volcanic biome + erect Inferno Tower |
 | `/showcase sakura` (chat) | Warp to cherry-blossom grove |
 | `/showcase off` (chat) | Turn demo mode off |
-| `/biome <name>` (chat) | Warp to any biome (forest, desert, crystal, autumn, mushroom, volcanic…) |
-| `/skip` (chat) | Skip the tutorial → jump straight to waves (abilities still unlock per wave) |
-| `F9` | **Wave Skip** — instantly clears the wave and advances the counter (fast way to the late unlocks) |
+| `/biome <name>` (chat) | Warp to any biome (forest, desert, crystal, autumn, mushroom, volcanic…) — handy to jump straight to a Voyage beacon |
+| `/skip` (chat) | Skip the tutorial → the Voyage begins immediately |
 | `F3` | Open debug overlay (FPS, player coords, time scale) |
 | `P` | Spawn a basic enemy at your crosshair |
 | `0` (zero) | Spawn a boss-tier Guardian Golem |
 
-**The god-tier weapons (after `/showcase`, or earned at the listed wave):**
+**The god-tier weapons (instant via `/showcase`, or forged on the Voyage):**
 
 | Slot / Key | Weapon | How to use |
 |---|---|---|
-| Hotbar slot 1 | **Gatling Gun** (wave 7) | hold Left Click to rapid-fire |
+| Hotbar slot 1 | **Gatling Gun** (Crystal Fields) | hold Left Click to rapid-fire |
 | Hotbar slot 2 | **Sniper** (start) | hold RMB → charge, release → crystal bolt explosion |
-| Hotbar slot 3 / `F7` | **Orbital Annihilation** (wave 9) | RMB → volumetric cinematic strike |
-| Hotbar slot 4 / `F8` | **The World / Time Stop** (wave 10) | RMB → freeze all enemies |
-| Hotbar slot 5 / `I` | **Stone Cannon** (wave 8) | hold RMB near stone → absorb → boulder |
-| `F10` | **Radar Sweep** (wave 8) | ping every enemy through walls |
-| `R` / `Y` | Slow / speed up time | (Time Dilation, wave 4) |
+| Hotbar slot 3 / `F7` | **Orbital Annihilation** (Ashlands tower) | RMB → volumetric cinematic strike |
+| Hotbar slot 4 / `F8` | **The World / Time Stop** (all shards) | RMB → freeze all enemies |
+| Hotbar slot 5 / `I` | **Stone Cannon** (Floating Isles) | hold RMB near stone → absorb → boulder |
+| `F10` | **Radar Sweep** (Glowing Groves) | ping every enemy through walls |
+| `R` / `Y` | Slow / speed up time | (Time Dilation) |
 | `'` (apostrophe) | **Deprivation Domain** — golden hemisphere auto-slasher | |
 | `,` (comma) | **Quantum Bullet** — phase-shift projectile through walls | |
 | `/god` (chat) | Toggle invincibility |

@@ -138,6 +138,9 @@ public class Progression {
         maxTier = TIERS.length;
     }
 
+    /** Grant a single ability directly (used by the Voyage when a weapon is forged). */
+    public void unlock(Ability a) { unlocked.add(a); }
+
     /** The abilities a given wave's tier grants (always  -  independent of unlock history). */
     public List<Ability> abilitiesForWave(int wave) {
         List<Ability> out = new ArrayList<>();

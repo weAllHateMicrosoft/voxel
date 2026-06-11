@@ -1700,10 +1700,10 @@ class WindowHud {
             renderWelcomeBanner(draw, screenW, screenH, win.welcomeTimer);
         }
 
-        // Onboarding objective banner (top-centre)  -  guides new players.
-        // Waits for the welcome banner to fade so they don't overlap.
-        // Skipped in playtest mode (no tutorial → no objectives to show).
-        if (!win.showHelp && win.welcomeTimer <= 0f && !win.playtestMode) {
+        // Onboarding objective banner (top-centre)  -  only during the tutorial.
+        // After the tutorial the Voyage HUD takes over the top banner.
+        if (!win.showHelp && win.welcomeTimer <= 0f && !win.playtestMode
+                && win.tutorial != null && win.tutorial.isActive()) {
             renderObjectiveBanner(draw, screenW, screenH);
         }
 
@@ -1712,6 +1712,11 @@ class WindowHud {
         if (win.playtestMode && !win.showHelp && !win.isPaused
                 && !win.player.stand.isInStandPerspective()) {
             renderPlaytestLegend(draw, screenW, screenH);
+        }
+
+        // ── THE VOYAGE — objective banner, world waypoint + forge reveals ─────
+        if (!win.showHelp && !win.player.stand.isInStandPerspective()) {
+            renderVoyageHUD(draw, camera, screenW, screenH);
         }
 
         // ── CONTEXTUAL HINT BANNER ────────────────────────────────────────────
@@ -1723,7 +1728,8 @@ class WindowHud {
         // ── WAVE COUNTER ──────────────────────────────────────────────────────
         // Top-left: "WAVE N  -  next in Xs" or "MAX ENEMIES REACHED".
         // Hidden in playtest mode — waves are off, so a wave timer would mislead.
-        if (!win.player.stand.isInStandPerspective() && !win.player.debugMode && !win.playtestMode) {
+        if (!win.player.stand.isInStandPerspective() && !win.player.debugMode && !win.playtestMode
+                && !win.voyageStarted) {
             int waveNum = win.enemyManager.getWaveNumber();
             float waveTimer = win.enemyManager.getWaveTimer();
             int liveCount = (int) win.enemyManager.getEnemies().stream().filter(e -> e.alive).count();
@@ -2226,6 +2232,136 @@ class WindowHud {
         draw.addText(cx - ks.x / 2 + 1, y + hs.y + 7f, shadow, kills);
         draw.addText(cx - ks.x / 2,     y + hs.y + 6f,
                 ImGui.colorConvertFloat4ToU32(1.0f, 0.6f, 0.5f, 0.9f), kills);
+    }
+
+    /**
+     * The Voyage HUD: a persistent top objective banner + a world-space waypoint
+     * marker pointing at the beam of light, plus the big forge-reveal banner. This
+     * is what makes the voyage impossible to get lost on.
+     */
+    void renderVoyageHUD(imgui.ImDrawList draw, Camera camera, float screenW, float screenH) {
+        int shadow = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f);
+
+        // ── Forge / directive reveal (big, centred, fades over its last second) ──
+        if (win.voyageMsg != null && win.voyageMsgTimer > 0f) {
+            float a = Math.min(1f, win.voyageMsgTimer / 0.8f);   // fade-out last 0.8 s
+            a = Math.min(a, (7.5f - win.voyageMsgTimer) / 0.4f + 0.001f); // fade-in first 0.4 s
+            a = Math.max(0f, Math.min(1f, a));
+            String msg = win.voyageMsg;
+            // Word-wrap to ~58 chars.
+            java.util.List<String> lines = wrap(msg, 58);
+            float lh = 20f, padX = 22f, padY = 14f;
+            float boxW = 0f;
+            for (String ln : lines) boxW = Math.max(boxW, ImGui.calcTextSize(ln).x);
+            boxW += padX * 2;
+            float boxH = lines.size() * lh + padY * 2;
+            float bx = screenW / 2f - boxW / 2f;
+            float by = screenH * 0.30f;
+            int bg     = ImGui.colorConvertFloat4ToU32(0.05f, 0.04f, 0.10f, 0.86f * a);
+            int border = ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.35f, 0.7f * a);
+            int txt    = ImGui.colorConvertFloat4ToU32(1.0f, 0.95f, 0.8f, a);
+            int sh     = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.8f * a);
+            draw.addRectFilled(bx, by, bx + boxW, by + boxH, bg, 10f);
+            draw.addRect(bx, by, bx + boxW, by + boxH, border, 10f, 0, 2.0f);
+            float ty = by + padY;
+            for (String ln : lines) {
+                float tw = ImGui.calcTextSize(ln).x;
+                draw.addText(screenW / 2f - tw / 2f + 1, ty + 1, sh, ln);
+                draw.addText(screenW / 2f - tw / 2f,     ty,     txt, ln);
+                ty += lh;
+            }
+        }
+
+        if (win.voyage == null || !win.voyageStarted || !win.voyage.active || !win.voyage.beaconReady()) return;
+
+        org.joml.Vector3f beacon = win.voyage.beaconPos();
+        float[] col = win.voyage.beaconColor();
+        if (beacon == null || col == null) return;
+        int beamCol = ImGui.colorConvertFloat4ToU32(col[0], col[1], col[2], 1f);
+        int beamDim = ImGui.colorConvertFloat4ToU32(col[0], col[1], col[2], 0.55f);
+
+        // ── Persistent objective banner (top-centre) ─────────────────────────
+        float cx = screenW * 0.5f;
+        float y  = 44f;
+        String dir = win.voyage.directive();
+        String rew = win.voyage.rewardLine();
+        org.joml.Vector3f pp = win.player.position;
+        float d = (float) Math.sqrt(
+                (pp.x - beacon.x) * (pp.x - beacon.x) +
+                (pp.y - beacon.y) * (pp.y - beacon.y) +
+                (pp.z - beacon.z) * (pp.z - beacon.z));
+        String distStr = (d >= 1000f) ? String.format("%.1f km", d / 1000f) : String.format("%.0f m", d);
+        String line1 = "◆  " + dir;
+        String line2 = rew + "        " + distStr + " away";
+
+        imgui.ImVec2 s1 = ImGui.calcTextSize(line1);
+        imgui.ImVec2 s2 = ImGui.calcTextSize(line2);
+        float maxW = Math.max(s1.x, s2.x) + 30f;
+        int panelBg = ImGui.colorConvertFloat4ToU32(0.05f, 0.07f, 0.12f, 0.66f);
+        draw.addRectFilled(cx - maxW / 2, y - 7f, cx + maxW / 2, y + 38f, panelBg, 8f);
+        draw.addRect(cx - maxW / 2, y - 7f, cx + maxW / 2, y + 38f, beamDim, 8f, 0, 1.6f);
+        draw.addText(cx - s1.x / 2 + 1, y + 1, shadow, line1);
+        draw.addText(cx - s1.x / 2,     y,     beamCol, line1);
+        draw.addText(cx - s2.x / 2 + 1, y + 21f, shadow, line2);
+        draw.addText(cx - s2.x / 2,     y + 20f,
+                ImGui.colorConvertFloat4ToU32(0.9f, 0.95f, 1.0f, 0.95f), line2);
+
+        // ── World-space waypoint marker (points to the beam) ─────────────────
+        Matrix4f vp = new Matrix4f(camera.getProjectionMatrix()).mul(camera.getViewMatrix());
+        org.joml.Vector3f aim = new org.joml.Vector3f(beacon.x, beacon.y + 25f, beacon.z);
+        org.joml.Vector4f clip = new org.joml.Vector4f(aim.x, aim.y, aim.z, 1f).mul(vp);
+        float ecx = screenW * 0.5f, ecy = screenH * 0.5f;
+        boolean behind = clip.w <= 0.001f;
+        float ndcX = behind ? 0 : clip.x / clip.w;
+        float ndcY = behind ? 0 : clip.y / clip.w;
+        boolean onScreen = !behind && ndcX >= -1f && ndcX <= 1f && ndcY >= -1f && ndcY <= 1f;
+
+        if (onScreen) {
+            float sx = (ndcX * 0.5f + 0.5f) * screenW;
+            float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
+            // Diamond marker + distance label hovering over the beam.
+            float r = 9f;
+            draw.addTriangleFilled(sx, sy - r, sx + r, sy, sx, sy + r, beamCol);
+            draw.addTriangleFilled(sx, sy - r, sx - r, sy, sx, sy + r, beamDim);
+            draw.addCircle(sx, sy, r + 3f, beamCol, 16, 1.6f);
+            String lbl = distStr;
+            float tw = ImGui.calcTextSize(lbl).x;
+            draw.addText(sx - tw / 2 + 1, sy + r + 4f + 1, shadow, lbl);
+            draw.addText(sx - tw / 2,     sy + r + 4f,     beamCol, lbl);
+        } else {
+            // Off-screen / behind: edge arrow pointing toward the beacon.
+            float dirx = ndcX, diry = ndcY;
+            if (behind) { dirx = -dirx; diry = -diry; }
+            float ang = (float) Math.atan2(-diry, dirx);
+            float radius = Math.min(ecx, ecy) * 0.78f;
+            float ix = ecx + (float) Math.cos(ang) * radius;
+            float iy = ecy + (float) Math.sin(ang) * radius;
+            float sz = 16f;
+            float ca = (float) Math.cos(ang), sa = (float) Math.sin(ang);
+            float[][] tri = {{ sz, 0 }, { -sz * 0.7f, sz * 0.7f }, { -sz * 0.7f, -sz * 0.7f }};
+            for (float[] p : tri) {
+                float rx = p[0] * ca - p[1] * sa, ry = p[0] * sa + p[1] * ca;
+                p[0] = ix + rx; p[1] = iy + ry;
+            }
+            draw.addTriangleFilled(tri[0][0], tri[0][1], tri[1][0], tri[1][1], tri[2][0], tri[2][1], beamCol);
+            draw.addTriangle(tri[0][0], tri[0][1], tri[1][0], tri[1][1], tri[2][0], tri[2][1], shadow, 1.6f);
+        }
+    }
+
+    /** Greedy word-wrap to a rough character width. */
+    private static java.util.List<String> wrap(String text, int width) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ")) {
+            if (line.length() > 0 && line.length() + word.length() + 1 > width) {
+                out.add(line.toString());
+                line.setLength(0);
+            }
+            if (line.length() > 0) line.append(' ');
+            line.append(word);
+        }
+        if (line.length() > 0) out.add(line.toString());
+        return out;
     }
 
     void renderWelcomeBanner(imgui.ImDrawList draw,

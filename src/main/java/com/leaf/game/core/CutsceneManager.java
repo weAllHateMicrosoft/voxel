@@ -30,16 +30,19 @@ public class CutsceneManager {
     public static final String[][] INTRO = {
         { "You came for the Chakra Crystal.",
           "Buried beneath this mountain for three hundred years." },
-        { "They were already here when you arrived.",
-          "They have always been here.",
-          "Waiting." },
-        { "The crystal bonds with you.",
+        { "It bonds with you now  -  and it is hungry.",
           "Watch the blue bar beneath your health. That is your MANA.",
-          "Every ability you learn will cost it.  It refills on its own." },
-        { "Survive each wave and the crystal teaches you something new.",
-          "Press [ F1 ] anytime to review what you have learned." },
+          "Every power it grants will cost it.  It refills on its own." },
+        { "The crystal is broken. Scattered.",
+          "Its shards fell across the land  -  each one fused to a place:",
+          "the crystal fields, the floating isles, the glowing groves, the ashlands." },
+        { "Gather the shards and the crystal will FORGE them into weapons  -",
+          "guns, cannons, powers no one was meant to hold.",
+          "It will show you the way. A beam of light marks each one." },
+        { "First it gives you the sky.  FLIGHT.",
+          "Follow the light. Claim the shards. Become unstoppable." },
         { "DESCENT",
-          "Survive.   Learn.   Escape." },
+          "Fly.   Gather.   Forge." },
     };
 
     /**

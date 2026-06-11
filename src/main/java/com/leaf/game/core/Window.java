@@ -136,6 +136,38 @@ public class Window {
      *  always-on controls legend so the player never needs to be told anything. */
     public boolean playtestMode = false;
 
+    // ── THE VOYAGE — guided exploration quest (replaces wave grinding) ──────────
+    Voyage  voyage        = null;
+    boolean voyageStarted = false;
+    /** Big centred reveal/directive banner the Voyage pushes (forge moments, next step). */
+    String  voyageMsg     = null;
+    float   voyageMsgTimer = 0f;
+    private float beaconFxTimer = 0f;
+
+    /** Called by {@link Voyage} to flash a directive or forge-reveal on screen. */
+    public void showVoyageForge(String msg) { voyageMsg = msg; voyageMsgTimer = 7.5f; }
+
+    /**
+     * Emit the in-world beam of light marking the current Voyage objective — a tall,
+     * glowing column visible from across the map so the player always knows where to go.
+     */
+    private void renderVoyageBeacon(float dt) {
+        if (voyage == null || !voyage.beaconReady()) return;
+        Vector3f b = voyage.beaconPos();
+        float[] c = voyage.beaconColor();
+        if (b == null || c == null) return;
+        beaconFxTimer -= dt;
+        if (beaconFxTimer > 0f) return;
+        beaconFxTimer = 0.05f;
+        // A 70-block column of upward streaks + a pulsing base ring.
+        for (int i = 0; i < 7; i++) {
+            float y = b.y + i * 10f;
+            fxBolt(b.x, y, b.z, 0f, 1f, 0f, 9f, 0.55f, 0.5f, c[0], c[1], c[2]);
+        }
+        fxRing(b.x, b.y + 0.4f, b.z, 1.0f, 6.5f, 0.7f, c[0], c[1], c[2]);
+        fxBurst(b.x, b.y + 1.2f, b.z, 0.2f, 2.2f, 0.6f, c[0], c[1], c[2]);
+    }
+
     // ── PRACTICE SESSION — multi-step hands-on ability tutorial ──────────────
     /** Which ability is currently being taught; null when no session is active. */
     Progression.Ability practiceAbility  = null;
@@ -2128,6 +2160,19 @@ public class Window {
                             }
                         }
                         if (tutorial != null) tutorial.update(deltaTime);
+
+                        // ── THE VOYAGE — begins the moment the quick tutorial ends ──
+                        if (voyage == null) voyage = new Voyage(this);
+                        if (!voyageStarted && !showcaseMode && tutorial != null
+                                && tutorial.isFinished() && !voyage.complete) {
+                            voyage.start();
+                            enemyManager.wavesEnabled    = false;  // no wave grind — free to explore
+                            enemyManager.freeExploreMode = true;   // ambient enemies roam the world
+                            voyageStarted = true;
+                        }
+                        if (voyageStarted && voyage.active) voyage.update(deltaTime);
+                        if (voyageStarted) renderVoyageBeacon(rawDeltaTime);
+                        if (voyageMsgTimer > 0f) voyageMsgTimer = Math.max(0f, voyageMsgTimer - rawDeltaTime);
 
                         // ── WAVE CLEARED → ending / unlock card ───────────────
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {

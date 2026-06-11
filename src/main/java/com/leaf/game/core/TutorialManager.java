@@ -151,46 +151,26 @@ public class TutorialManager {
     private void buildSteps() {
         final World w = ctx.world;
 
-        // 1 ── LOOK
-        steps.add(new Step("Look Around",
-            "Move your MOUSE to look around.", "Mouse",
-            null,
-            c -> {
-                if (!c.flag) { c.snapshot = c.camera.yaw; c.flag = true; return false; }
-                return Math.abs(angleDiff(c.camera.yaw, c.snapshot)) > 1.2f;
-            }, 12f));
+        // A deliberately SHORT tutorial — just enough to move and shoot, then the
+        // Voyage takes over (Flight + follow-the-beam objectives). No long drills.
 
-        // 2 ── MOVE
+        // 1 ── MOVE + LOOK (combined)
         steps.add(new Step("Move",
-            "Walk with  [W] [A] [S] [D].", "WASD",
-            null, c -> movedFar(c, 4f), 14f));
+            "Use the MOUSE to look and  [W] [A] [S] [D]  to walk.", "WASD + Mouse",
+            null, c -> movedFar(c, 4f), 9f));
 
-        // 3 ── SPRINT
-        steps.add(new Step("Sprint",
-            "Double-tap [W] and keep holding to SPRINT.", "W W",
-            null, c -> c.player.isSprinting() || movedFar(c, 18f), 14f));
-
-        // 4 ── JUMP + FALL SMASH
-        steps.add(new Step("Jump",
-            "Press [SPACE] to jump. While falling, hold [SHIFT] just before landing to GROUND SLAM  -  craters the terrain.", "Space",
-            null,
-            c -> { if (!c.player.isOnGround()) c.flag = true; return c.flag; }, 12f));
-
-        // 5 ── YOUR STARTING TECHNIQUE: SNIPER
-        // The crystal grants the Sniper for free; every other ability unlocks by
-        // surviving waves (see Progression). So the tutorial only teaches movement
-        // plus this one offensive tool, then hands off to the first wave.
+        // 2 ── YOUR FIRST WEAPON: SNIPER
         steps.add(new Step("Your First Weapon",
-            "The crystal wakes one power: the SNIPER. Hold [C] (or Right-Click) to charge a bolt, release to fire.", "C",
+            "The crystal wakes the SNIPER. Hold [C] (or Right-Click) to charge a bolt, release to fire.", "C",
             null,
-            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 22f));
+            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 14f));
 
-        // 6 ── HANDOFF  -  waves (and ability unlocks) begin when this step ends
-        steps.add(new Step("They're Coming",
-            "Survive each wave and the crystal bonds deeper  -  a NEW power every wave. "
-            + "The later ones are devastating. Forgot a control? Press [F1] anytime.", null,
-            null,
-            c -> false, 6f));   // auto-advances after 6 s -> finish() turns on the wave spawner
+        // 3 ── HANDOFF  -  the Voyage (Flight + beam objectives) begins after this.
+        // Grant FLIGHT on enter so "double-tap SPACE" works during this very step.
+        steps.add(new Step("The Crystal Gives You the Sky",
+            "FLIGHT unlocked  -  double-tap [SPACE] to fly. Follow the beam of light to the first shard. [F1] = help.", "Space x2",
+            c -> c.player.progression.unlock(Progression.Ability.FLIGHT),
+            c -> false, 5f));   // auto-advances → finish() hands off to the Voyage
     }
 
     private static float angleDiff(float a, float b) {

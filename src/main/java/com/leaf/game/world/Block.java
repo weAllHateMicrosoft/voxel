@@ -9,6 +9,11 @@ public enum Block {
     GRAPPLING_HOOK(0.15f, 0.70f, 0.25f, 1.0f, 99f),
     TELESCOPE  (0.20f, 0.20f, 0.20f, 1.0f, 99f),
     TORCH      (1.00f, 0.66f, 0.26f, 1.0f, 0.3f), // warm light source: place it, or hold it for a hand-light
+    // ── Voyage materials (collected from biomes to forge weapons) ─────────
+    MAT_CRYSTAL_CORE(0.65f, 0.35f, 0.95f, 1.0f, 99f), // Crystal Fields
+    MAT_AETHER_SHARD(0.55f, 0.85f, 1.00f, 1.0f, 99f), // Sky Islands
+    MAT_GLOW_SPORE  (0.30f, 0.95f, 0.70f, 1.0f, 99f), // Mushroom groves
+    MAT_MOLTEN_CORE (1.00f, 0.45f, 0.12f, 1.0f, 99f), // Volcanic tower
     // ── Ability weapons (equip to hotbar, RMB to fire) ────────────────────
     WPN_ORBITAL    (0.90f, 0.60f, 0.15f, 1.0f, 99f), // Orbital Annihilation — RMB fires
     WPN_SNIPER     (0.40f, 0.20f, 0.85f, 1.0f, 99f), // Sniper — hold RMB to charge

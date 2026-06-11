@@ -1,10 +1,10 @@
 # DESCENT — Demo Script (`/showcase` quick tour)
 
-> **Note:** pressing **PLAY** now starts the real **guided progression** — a tutorial, then
-> a new power earned every wave, climaxing in the god-tier weapons (Gatling → Radar → Orbital
-> → Time Stop → Flight). Let the teacher play *that* for the intended "teach & reward" arc.
-> This script is the **fast `/showcase` tour** for when *you* want to show off everything at
-> once without playing through all the waves.
+> **Note:** pressing **PLAY** now starts the real **Voyage** — a quick tutorial, then Flight,
+> then follow-the-beam exploration: fly to each biome, claim its shard, and the crystal forges
+> a weapon (Gatling → Radar → Stone Cannon → Orbital, then Time Stop). Let the teacher play
+> *that* for the intended "purposeful journey" experience. This script is the **fast `/showcase`
+> tour** for when *you* want to show off everything at once without flying the whole route.
 
 A tight **4–5 minute golden path** using `/showcase` (everything unlocked, slots 1-5 armed).
 
