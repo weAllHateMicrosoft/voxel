@@ -36,13 +36,13 @@ Click **PLAY** on the title screen and the game guides you from there — no exp
 ### Quick-Start
 
 1. Load the game and press **Play**.
-2. A **5-step tutorial** (about 1 minute) teaches: movement, Slash (`F`), Dash (`Q`), and the Sniper (hold **Right-Click** to charge, release to fire). You also start with **Radar Sweep** (`F10`) — ping every enemy through walls.
+2. A **5-step tutorial** (about 1 minute) teaches: movement, Slash (`F`), Dash (`Q`), and the Sniper (hold **Left-Click** to charge, release to fire). You also start with **Radar Sweep** (`F10`) — ping every enemy through walls.
 3. **Survive 6 waves** at spawn. Each wave clears, an unlock card appears, press `ENTER` to continue:
 
    | Wave | New abilities |
    |---|---|
    | 1 | Slash, Dash |
-   | 2 | Quagmire, Heal |
+   | 2 | Quagmire |
    | 3 | Lightning, Grab |
    | 4 | Blink, Position Swap |
    | 5 | Stone Pillar, Cannonball |
@@ -73,8 +73,8 @@ Click **PLAY** on the title screen and the game guides you from there — no exp
 | Double-tap `W` | Sprint |
 | Double-tap `Space` | Toggle flight (after wave 6) · `V` cycles modes |
 | Mouse | Look around |
-| Left Click (hold) | Mine block / fire Gatling Gun |
-| **Right Click** | **Fire the selected weapon** (Sniper, Orbital, Time Stop, Stone Cannon) |
+| **Left Click** | **Fire the selected weapon** (every weapon — Sniper, Gatling, Orbital, Time Stop, Stone Cannon) / mine block |
+| Right Click | Place selected block (e.g. the Torch at night) |
 | `1`–`9` | Select hotbar slot |
 | `Left Alt` | Open backpack (drag weapons to hotbar) |
 | `T` | Open chat (type commands) |
@@ -200,10 +200,10 @@ Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks 
 | Slot / Key | Weapon | How to use |
 |---|---|---|
 | Hotbar slot 1 | **Gatling Gun** (Crystal Fields) | hold Left Click to rapid-fire |
-| Hotbar slot 2 | **Sniper** (start) | hold RMB → charge, release → crystal bolt explosion |
-| Hotbar slot 3 / `F7` | **Orbital Annihilation** (Ashlands tower) | RMB → volumetric cinematic strike |
-| Hotbar slot 4 / `F8` | **The World / Time Stop** (all shards) | RMB → freeze all enemies |
-| Hotbar slot 5 / `I` | **Stone Cannon** (Floating Isles) | hold RMB near stone → absorb → boulder |
+| Hotbar slot 2 | **Sniper** (start) | hold LMB → charge, release → crystal bolt explosion |
+| Hotbar slot 3 / `F7` | **Orbital Annihilation** (Ashlands tower) | LMB → volumetric cinematic strike |
+| Hotbar slot 4 / `F8` | **The World / Time Stop** (all shards) | LMB → freeze all enemies |
+| Hotbar slot 5 / `I` | **Stone Cannon** (Floating Isles) | hold LMB near stone → absorb → boulder |
 | `F10` | **Radar Sweep** (starting kit) | ping every enemy through walls |
 | `'` (apostrophe) | **Deprivation Domain** — golden hemisphere auto-slasher | |
 | `,` (comma) | **Quantum Bullet** — phase-shift projectile through walls | |
@@ -220,10 +220,10 @@ Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks 
 
 | Ability | Key | Description |
 |---|---|---|
-| Sniper | `C` / RMB | Hold to charge a crystal bolt; longer charge = bigger explosion |
+| Sniper | hold LMB | Hold to charge a crystal bolt; longer charge = bigger explosion |
 | Runic Cleave (Slash) | `F` | Wide melee swing that shatters blocks in a 3D crescent |
 | Gatling Gun | Hotbar slot 5 | Hold Left Click to rapid-fire and vaporise terrain |
-| Lightning | `U` | Strike your target; double-tap for AoE; chains between enemies in water |
+| Lightning | `U` | Press once — instant full-power strike on your target |
 | Stone Canon | `I` | Stand near stone, hold to absorb it into a boulder, release to fire |
 | Grab & Slam | `O` | Grab an enemy overhead and slam them into the ground |
 | Knife Combo | `;` | Three rapid high-damage melee slashes |
@@ -248,7 +248,7 @@ Want to see the whole arsenal without playing all 11 waves? `/showcase` unlocks 
 | Kamui | `Z` | Phase into another dimension — invincible; hold Left Click to vortex-suck enemies |
 | Paper Substitute | Hold `V` | Prime a decoy; the next hit is absorbed, you blink back, decoy explodes |
 | Quagmire | `M` | Fire a mud wave along the ground that traps enemies |
-| Heal | `L` | Channel healing over time (you cannot move while channelling) |
+| **Hotdogs!** | walk over | Enemies drop hotdogs when they die — walk over one to eat it (+25 HP) |
 | Manhattan Transfer | `X` / `Tab` | Deploy a combat drone that auto-fires; `Tab` to pilot it yourself |
 
 ---

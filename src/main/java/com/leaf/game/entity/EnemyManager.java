@@ -64,6 +64,10 @@ public class EnemyManager {
     /** Damage dealt to the player since last drain. Window reads and zeroes this. */
     public float pendingPlayerDamage = 0f;
 
+    // ── Food drops — positions where a hotdog should spawn (drained by Window) ─
+    /** Each entry = {x, y, z} of an enemy that just finished dying. */
+    public final List<float[]> pendingFoodDrops = new ArrayList<>();
+
     // ── Wave spawning state ───────────────────────────────────────────────────
     private float waveTimer  = GameConfig.spawnWaveInterval; // (legacy; unused by clear-based waves)
     private int   waveNumber = 0;
@@ -342,6 +346,15 @@ public class EnemyManager {
                 if (e.type == Enemy.Type.INFERNO_TOWER) {
                     towerDeathHandled.remove(e.id);
                     towerIdToSite.remove(e.id);   // site already moved to destroyed in handleTowerDeath
+                    // A felled tower is a feast — drop a trio of hotdogs.
+                    for (int h = 0; h < 3; h++)
+                        pendingFoodDrops.add(new float[]{
+                                e.position.x + (float)(Math.random() - 0.5) * 3f,
+                                e.position.y + 1f,
+                                e.position.z + (float)(Math.random() - 0.5) * 3f });
+                } else {
+                    // Every kill feeds you: drop a hotdog where the enemy fell.
+                    pendingFoodDrops.add(new float[]{ e.position.x, e.position.y + 0.5f, e.position.z });
                 }
             }
             return cull;

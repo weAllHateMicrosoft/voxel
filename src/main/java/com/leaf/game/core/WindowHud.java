@@ -1906,6 +1906,13 @@ class WindowHud {
             renderCombatKeyStrip(draw, screenW, screenH);
         }
 
+        // ── TRY IT prompt — big key chip for the ability just unlocked ───────
+        if (!win.showHelp && !win.isPaused && !win.showUnlockCard
+                && win.weaponRevealTimer <= 0f
+                && (win.tryAbility != null || win.tryDoneAbility != null)) {
+            renderTryPrompt(draw, screenW, screenH);
+        }
+
         // ── PLAYTEST CONTROLS LEGEND ──────────────────────────────────────────
         // Always-on compact legend so the player discovers every system unaided.
         if (win.playtestMode && !win.showHelp && !win.isPaused
@@ -2244,8 +2251,9 @@ class WindowHud {
         ImGui.separator();
         Progression prog = win.player.progression;
         for (Progression.Ability a : prog.allAbilities()) {
-            // TIME is showcase-only now — don't advertise a locked row for it.
-            if (a == Progression.Ability.TIME && !prog.isUnlocked(a)) continue;
+            // TIME and HEAL are showcase-only now — don't advertise locked rows.
+            if ((a == Progression.Ability.TIME || a == Progression.Ability.HEAL)
+                    && !prog.isUnlocked(a)) continue;
             if (prog.isUnlocked(a)) {
                 helpRow(a.key, a.label + "  -  " + a.desc);
             } else {
@@ -2473,6 +2481,86 @@ class WindowHud {
     }
 
     /**
+     * Big TRY IT prompt for a freshly unlocked ability: gold header, giant
+     * pulsing key chip, ability name — then a green NICE! burst on success.
+     * Non-blocking: the wave keeps running underneath.
+     */
+    void renderTryPrompt(imgui.ImDrawList draw, float screenW, float screenH) {
+        ImFont font = ImGui.getFont();
+        float  base = ImGui.getFontSize();
+        float  cx   = screenW * 0.5f;
+        float  top  = screenH * 0.14f;
+        int shadow = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f);
+
+        // ── Celebration phase ─────────────────────────────────────────────────
+        if (win.tryDoneAbility != null) {
+            float t = win.tryDoneTimer;                 // 1.4 → 0
+            float a = Math.min(1f, t / 0.4f);           // fade out at the end
+            float size = base * (2.6f + 0.25f * (float) Math.sin(t * 18f));  // excited jitter
+            String nice = "NICE!";
+            float nw = ImGui.calcTextSize(nice).x * (size / base);
+            draw.addText(font, size, cx - nw / 2 + 2, top + 2,
+                    ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f * a), nice);
+            draw.addText(font, size, cx - nw / 2, top,
+                    ImGui.colorConvertFloat4ToU32(0.45f, 1.0f, 0.55f, a), nice);
+            String got = win.tryDoneAbility.label + "  learned!";
+            float gw = ImGui.calcTextSize(got).x * 1.2f;
+            draw.addText(font, base * 1.2f, cx - gw / 2 + 1, top + size + 7f,
+                    ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.85f * a), got);
+            draw.addText(font, base * 1.2f, cx - gw / 2, top + size + 6f,
+                    ImGui.colorConvertFloat4ToU32(0.9f, 1.0f, 0.92f, a), got);
+            return;
+        }
+
+        // ── Prompt phase ──────────────────────────────────────────────────────
+        Progression.Ability a = win.tryAbility;
+        if (a == null) return;
+        float pulse = 0.70f + 0.30f * (float) Math.sin(glfwGetTime() * 4.5);
+
+        String header = "NEW POWER  -  TRY IT!";
+        float headerSize = base * 1.3f;
+        float hw = ImGui.calcTextSize(header).x * (headerSize / base);
+
+        String key = a.key;
+        float keySize = base * 1.9f;
+        float keyTxtW = ImGui.calcTextSize(key).x * (keySize / base);
+        float chipW = keyTxtW + 40f, chipH = keySize + 18f;
+
+        String name = a.label;
+        float nameSize = base * 1.5f;
+        float nw = ImGui.calcTextSize(name).x * (nameSize / base);
+
+        float maxW = Math.max(hw, Math.max(chipW, nw));
+        float pad = 26f;
+        float panelH = 14f + headerSize + 10f + chipH + 10f + nameSize + 14f;
+        draw.addRectFilled(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
+                ImGui.colorConvertFloat4ToU32(0.03f, 0.05f, 0.10f, 0.72f), 12f);
+        draw.addRect(cx - maxW / 2 - pad, top, cx + maxW / 2 + pad, top + panelH,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 0.4f * pulse + 0.2f), 12f, 0, 2f);
+
+        float yy = top + 14f;
+        draw.addText(font, headerSize, cx - hw / 2 + 1, yy + 1, shadow, header);
+        draw.addText(font, headerSize, cx - hw / 2, yy,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.35f, 1f), header);
+        yy += headerSize + 10f;
+
+        float x0 = cx - chipW / 2f;
+        draw.addRectFilled(x0, yy + 4f, x0 + chipW, yy + chipH + 4f,
+                ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.06f, 0.95f), 9f);
+        draw.addRectFilled(x0, yy, x0 + chipW, yy + chipH,
+                ImGui.colorConvertFloat4ToU32(0.12f, 0.14f, 0.24f, 0.97f), 9f);
+        draw.addRect(x0, yy, x0 + chipW, yy + chipH,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.30f, pulse), 9f, 0, 2.5f);
+        draw.addText(font, keySize, cx - keyTxtW / 2, yy + (chipH - keySize) / 2f,
+                ImGui.colorConvertFloat4ToU32(1.0f, 0.96f, 0.80f, 1f), key);
+        yy += chipH + 10f;
+
+        draw.addText(font, nameSize, cx - nw / 2 + 1, yy + 1, shadow, name);
+        draw.addText(font, nameSize, cx - nw / 2, yy,
+                ImGui.colorConvertFloat4ToU32(0.92f, 0.95f, 1.0f, 1f), name);
+    }
+
+    /**
      * Always-on key reminders, centred just above the hotbar.
      * Shows the three core combat keys during the wave phase, and the flight
      * keys once the Voyage opens — because nobody remembers a keybind they
@@ -2485,14 +2573,15 @@ class WindowHud {
             entries = new String[][] {
                 { "SPACE x2", "FLY" },
                 { "V", "FLIGHT MODE" },
-                { "RMB", "FIRE WEAPON" },
+                { "LMB", "FIRE WEAPON" },
             };
         } else {
             java.util.List<String[]> list = new java.util.ArrayList<>();
-            list.add(new String[]{ "RMB hold", "SNIPE" });
+            list.add(new String[]{ "LMB hold", "SNIPE" });
             if (prog.isUnlocked(Progression.Ability.SLASH)) list.add(new String[]{ "F", "SLASH" });
             if (prog.isUnlocked(Progression.Ability.DASH))  list.add(new String[]{ "Q", "DASH" });
             list.add(new String[]{ "F10", "RADAR" });
+            list.add(new String[]{ "F9", "SKIP WAVE" });
             entries = list.toArray(new String[0][]);
         }
 
@@ -2513,8 +2602,9 @@ class WindowHud {
 
         float chipH = keySize + 10f;
         float x = screenW / 2f - total / 2f;
-        // Sits above the hotbar (slots are 40px tall, 10px from the bottom edge)
-        float yTop = screenH - 40f - 24f - chipH;
+        // Sits ABOVE the health bar (HP bar top edge = screenH - 80) so the
+        // strip never overlaps HP/MP — that overlap was a playtest complaint.
+        float yTop = screenH - 80f - 14f - chipH;
 
         int chipBg  = ImGui.colorConvertFloat4ToU32(0.07f, 0.09f, 0.16f, 0.82f);
         int chipBdr = ImGui.colorConvertFloat4ToU32(0.85f, 0.75f, 0.4f, 0.75f);

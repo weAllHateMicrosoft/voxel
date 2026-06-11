@@ -87,11 +87,11 @@ public class Voyage {
         objectives.add(new Objective(null, true,
                 "the Floating Isles", "Aether Shard", "Stone Cannon",
                 Block.MAT_AETHER_SHARD, Progression.Ability.STONE_CANON, new float[]{0.55f, 0.85f, 1.0f}, false,
-                "The STONE CANNON is yours. Stand near stone, hold Right-Click to absorb it, release to fire a boulder."));
+                "The STONE CANNON is yours. Stand near stone, hold Left-Click to absorb it, release to fire a boulder."));
         objectives.add(new Objective(Biome.VOLCANIC, false,
                 "the Ashlands", "Molten Core", "Orbital Annihilation (the Laser)",
                 Block.MAT_MOLTEN_CORE, Progression.Ability.ORBITAL, new float[]{1.0f, 0.45f, 0.12f}, true,
-                "From the tower's molten heart the crystal forges the LASER  -  Orbital Annihilation. Press [F7] to call down the sky."));
+                "From the tower's molten heart the crystal forges the LASER  -  Orbital Annihilation. Select it and Left-Click to call down the sky."));
 
         current = 0; active = true; complete = false;
 
@@ -223,7 +223,7 @@ public class Voyage {
         win.player.progression.unlock(Progression.Ability.TIME);
         ScreenEffectManager.INSTANCE.flash(0.6f, 0.9f, 1.0f, 0.8f, 0.8f);
         AudioManager.play("seal_collect");
-        win.showVoyageForge("Every shard reunited. The crystal forges THE WORLD  -  press [F8] to stop time itself. "
+        win.showVoyageForge("Every shard reunited. The crystal forges THE WORLD  -  select it and Left-Click to stop time itself. "
                 + "The voyage is complete. The world is yours.");
     }
 

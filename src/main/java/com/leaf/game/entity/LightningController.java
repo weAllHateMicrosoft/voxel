@@ -130,65 +130,20 @@ public class LightningController {
         boolean uHeld = glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS
                 && player.can(com.leaf.game.core.Progression.Ability.LIGHTNING);
 
-        // ── Tick pending single strike ────────────────────────────────────────
-        // When U is released after charging, we queue the strike for doubleTapWindow
-        // seconds rather than firing immediately.  If U is pressed again in that
-        // window, we cancel the single and fire AOE instead.
-        if (pendingSingleStrike) {
-            if (uHeld && !lastU) {
-                // Second tap within window → AOE burst, cancel the queued single
-                if (cooldown <= 0f) {
-                    if (player.mana >= GameConfig.manaLightningAoe) {
-                        player.mana -= GameConfig.manaLightningAoe;
-                        fireAoeBurst(world);
-                        cooldown = GameConfig.lightningAoeCooldown;
-                        stormIntensity = 1.0f;
-                    }
-                }
-                pendingSingleStrike = false;
-                lastU = uHeld;
-                return;
+        // ── SIMPLE MODE: one press = one full-power strike at your crosshair ──
+        // The old hold-to-charge + double-tap-AOE combo confused playtesters;
+        // now the key does exactly what it says, every time, at max damage.
+        if (uHeld && !lastU && cooldown <= 0f) {
+            if (player.mana >= GameConfig.manaLightningBase) {
+                player.mana -= GameConfig.manaLightningBase;
+                fireAimedStrike(camera, world, 1.0f);
+                cooldown = GameConfig.lightningCooldown;
+                stormIntensity = 1.0f;
             }
-            pendingStrikeDelay -= dt;
-            if (pendingStrikeDelay <= 0f) {
-                // Double-tap window expired — fire the queued single strike
-                if (cooldown <= 0f) {
-                    float manaCost = GameConfig.manaLightningBase
-                            + savedChargeFrac * (GameConfig.manaLightningMax - GameConfig.manaLightningBase);
-                    if (player.mana >= manaCost) {
-                        player.mana -= manaCost;
-                        fireAimedStrike(camera, world, savedChargeFrac);
-                        cooldown = GameConfig.lightningCooldown;
-                    }
-                }
-                pendingSingleStrike = false;
-            }
-            // Don't start a new charge while a strike is pending
-            lastU = uHeld;
-            return;
         }
-
-        // ── Charge buildup (hold U) ───────────────────────────────────────────
-        if (uHeld && cooldown <= 0f) {
-            if (!isCharging) isCharging = true;
-            com.leaf.game.core.AudioManager.playContinuous("lightening_charging");
-            chargeTimer    = Math.min(GameConfig.lightningMaxCharge, chargeTimer + dt);
-            stormIntensity = Math.min(1f, stormIntensity + dt * 0.8f);
-        }
-
-        // ── Release → queue single strike (don't fire immediately) ───────────
-        // The brief hold lets a second tap cancel it in favour of AOE.
-        if (!uHeld && lastU && isCharging) {
-            com.leaf.game.core.AudioManager.stopContinuous("lightening_charging");
-            savedChargeFrac     = getChargeFrac();
-            pendingSingleStrike = true;
-            pendingStrikeDelay  = GameConfig.lightningDoubleTapWindow;
-            isCharging          = false;
-            chargeTimer         = 0f;
-        }
-
-        // Cancel charge counter if key is not held
-        if (!uHeld && !isCharging) chargeTimer = 0f;
+        isCharging = false;
+        chargeTimer = 0f;
+        pendingSingleStrike = false;
         com.leaf.game.core.AudioManager.stopContinuous("lightening_charging");
 
         lastU = uHeld;

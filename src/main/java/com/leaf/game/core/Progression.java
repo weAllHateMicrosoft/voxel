@@ -28,12 +28,12 @@ public class Progression {
     //  (used by BOTH the unlock cards and the F1 reference, so they stay in sync)
     // ═══════════════════════════════════════════════════════════════════════
     public enum Ability {
-        SNIPE      ("Sniper",           "[C] / RMB",  "Hold to charge a crystal bolt, release to fire. Longer charge = bigger blast."),
+        SNIPE      ("Sniper",           "HOLD LMB",   "Hold Left-Click to charge a crystal bolt, release to fire. Longer charge = bigger blast."),
         SLASH      ("Slash",            "[F]",        "Wide melee swing  -  hits every enemy in a cone in front of you."),
         DASH       ("Dash",             "[Q]",        "Instant burst in your move direction. Short cooldown, leaves a ghost trail."),
         QUAGMIRE   ("Quagmire",         "[M]",        "Fire a mud wave along the ground. Traps the enemy it hits for several seconds."),
-        LIGHTNING  ("Lightning",        "[U]",        "Strike the enemy you aim at with lightning. Double-tap [U] for an area burst."),
-        HEAL       ("Heal",             "[L]",        "Hold to channel healing  -  restores health over time. You can't move while channeling."),
+        LIGHTNING  ("Lightning",        "[U]",        "Press to strike the enemy you aim at with a full-power lightning bolt."),
+        HEAL       ("Heal",             "[L]",        "Hold to channel healing. (Showcase only  -  in normal play, eat the HOTDOGS enemies drop!)"),
         GRAB       ("Grab & Slam",      "[O]",        "Grab the enemy in your crosshair, hoist them up, then slam them into the ground."),
         BLINK      ("Blink",            "[E]",        "Teleport to the point you're looking at (up to ~22 blocks)."),
         SWAP       ("Position Swap",    "[J]",        "Instantly swap places with the nearest enemy  -  perfect for escapes."),
@@ -45,11 +45,11 @@ public class Progression {
         SUBSTITUTE ("Substitute",       "[V]",        "Hold to prime. The next hit is absorbed  -  you blink back and leave an exploding decoy."),
         // ── GOD-TIER ARSENAL — earned late, the climax of the run ────────────────
         GATLING    ("Gatling Gun",      "Slot + LMB", "A roaring gatling gun. Equip it and hold Left-Click to shred everything in your sights."),
-        STONE_CANON ("Stone Cannon",      "[I] / RMB",  "Near stone, hold to absorb it into a giant boulder. Release to fire a wrecking shot."),
+        STONE_CANON ("Stone Cannon",      "HOLD LMB",   "Near stone, hold Left-Click to absorb it into a giant boulder. Release to fire a wrecking shot."),
         RADAR       ("Radar Sweep",       "[F10]",      "A pulse that paints every enemy through walls and terrain. You see everything."),
         DEPRIVATION ("Deprivation Domain","[ ' ]",      "A golden hemisphere erupts around you. Any enemy that enters is instantly sliced. Press once to start, again to end early."),
-        ORBITAL     ("Orbital Annihilation","[F7] / RMB","Call a cinematic strike from orbit. The sky splits and the ground is erased."),
-        DOMAIN     ("The World",        "[F8] / RMB", "Stop time itself. Everything freezes while you move freely — the ultimate power."),
+        ORBITAL     ("Orbital Annihilation","LMB",      "Left-Click to call a cinematic strike from orbit. The sky splits and the ground is erased."),
+        DOMAIN     ("The World",        "LMB",        "Left-Click to stop time itself. Everything freezes while you move freely — the ultimate power."),
         KAMUI      ("Kamui",            "[Z]",        "Phase into another dimension  -  invincible while active. Drains mana fast."),
         FLIGHT     ("Flight",           "[Space x2]", "Double-tap Space to fly. [V] cycles flight modes (skim / soar / grapple).");
 
@@ -67,7 +67,9 @@ public class Progression {
     private static final Ability[][] TIERS = {
         /* start  */ { Ability.SNIPE, Ability.RADAR },               // Sniper + Radar from the start
         /* wave 1 */ { Ability.SLASH, Ability.DASH },               // close combat + mobility
-        /* wave 2 */ { Ability.QUAGMIRE, Ability.HEAL },            // control + sustain
+        /* wave 2 */ { Ability.QUAGMIRE },                          // control
+        // HEAL (hold L) is out of the natural run — enemies drop HOTDOGS now;
+        // walking over one heals +25. Still available via /showcase.
         /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
         /* wave 4 */ { Ability.BLINK, Ability.SWAP },               // escape kit
         // TIME (dilation, R/Y) is deliberately out of the natural run — too many

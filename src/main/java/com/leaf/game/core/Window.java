@@ -144,6 +144,17 @@ public class Window {
     int                 weaponRevealSlot    = -1;
     float               weaponRevealTimer   = 0f;
     private final java.util.ArrayDeque<Progression.Ability> weaponRevealQueue = new java.util.ArrayDeque<>();
+
+    // ── TRY IT prompts — after each unlock card, one big non-blocking prompt per
+    //    new ability. Completes (chime + flash + NICE!) the moment the player
+    //    actually uses the ability; times out quietly otherwise. ──────────────
+    private final java.util.ArrayDeque<Progression.Ability> tryQueue = new java.util.ArrayDeque<>();
+    Progression.Ability tryAbility    = null;   // currently prompted ability
+    float               tryTimer      = 0f;     // countdown until silent skip
+    Progression.Ability tryDoneAbility = null;  // shows the NICE! celebration
+    float               tryDoneTimer  = 0f;
+    private float   trySnapshot  = 0f;
+    private boolean trySnapInit  = false;
     // Night-time torch hint (shown once)
     boolean shownNightHint = false;
     /** Big centred reveal/directive banner the Voyage pushes (forge moments, next step). */
@@ -218,7 +229,7 @@ public class Window {
     // (see grantWeaponForAbility). Block selectors fill in as the player mines.
     final Block[] hotbar = {
             Block.WPN_SNIPER, Block.AIR, Block.AIR, Block.AIR,
-            Block.AIR, Block.TELESCOPE, Block.GRASS, Block.DIRT, Block.STONE
+            Block.AIR, Block.TELESCOPE, Block.TORCH, Block.DIRT, Block.STONE
     };
 
     final List<DroppedItem> droppedItems = new ArrayList<>();
@@ -1002,8 +1013,13 @@ public class Window {
                 boolean standConsumedLMB = player.stand.isInStandPerspective()
                         || player.stand.autoAimedThisFrame;
                 boolean kamuiConsumedLMB = player != null && player.abilities.isKamui;
-                boolean gunHeld          = hotbar[selectedSlot] == Block.GATLING_GUN;  // LMB = shoot, not break
-                boolean scopeHeld        = hotbar[selectedSlot] == Block.TELESCOPE;
+                // Any held weapon turns LMB into FIRE, never break — one button for
+                // every tool keeps the game straightforward.
+                Block heldLmb = hotbar[selectedSlot];
+                boolean gunHeld   = heldLmb == Block.GATLING_GUN
+                        || heldLmb == Block.WPN_SNIPER  || heldLmb == Block.WPN_ORBITAL
+                        || heldLmb == Block.WPN_TIMESTOP|| heldLmb == Block.WPN_STONE_CANNON;
+                boolean scopeHeld = heldLmb == Block.TELESCOPE;
                 if (!standConsumedLMB && !kamuiConsumedLMB && !gunHeld && !scopeHeld) {
                     breakingActive = (action == GLFW_PRESS || action == GLFW_REPEAT);
                     if (action == GLFW_RELEASE) { breakProgress = 0.0f; digPreDelay = 0.0f; }
@@ -1174,6 +1190,42 @@ public class Window {
             case DOMAIN -> 3; case STONE_CANON -> 4;
             default -> -1;
         };
+    }
+
+    /**
+     * 0..1 "ready" fraction for the TRY IT detector (1 = ready, drops on use).
+     * Abilities without a cooldown report 1 and rely on the boolean detector.
+     */
+    private float tryFracFor(Progression.Ability a) {
+        return switch (a) {
+            case SLASH      -> player.attacks.getMeleeCooldownFrac();
+            case DASH       -> player.abilities.getDashCooldownFrac();
+            case QUAGMIRE   -> quagmireCooldown <= 0f ? 1f
+                    : 1f - quagmireCooldown / GameConfig.quagmireCooldown;
+            case LIGHTNING  -> player.lightning.getCooldownFrac();
+            case GRAB       -> player.grab.getCooldownFrac();
+            case BLINK      -> player.abilities.getBlinkCooldownFrac();
+            case SWAP       -> todoSwapCooldown <= 0f ? 1f
+                    : 1f - todoSwapCooldown / GameConfig.todoCooldown;
+            case PILLAR     -> player.abilities.getPillarCooldownFrac();
+            case CANNONBALL -> player.abilities.getCannonCooldownFrac();
+            case SNIPE      -> player.attacks.getSnipeIconFrac();
+            default         -> 1f;
+        };
+    }
+
+    /** True the moment the prompted ability is actually used. */
+    private boolean tryUsedDetect(Progression.Ability a, float liveFrac) {
+        // Boolean-state abilities first.
+        switch (a) {
+            case STAND:      return player.stand.isDeployed();
+            case SEAL:       return player.seals.getSealCount() > 0
+                                  || !player.seals.inFlightSeals.isEmpty();
+            case SUBSTITUTE: return false;  // no clean signal — timeout advances it
+            default: break;
+        }
+        // Cooldown-dip detection: ready fraction fell below the entry snapshot.
+        return liveFrac < trySnapshot - 0.15f;
     }
 
     /**
@@ -1946,38 +1998,43 @@ public class Window {
                             telescope.update(camera, dayNight);  // Always update compass and tracking math
                         }
 
-                        // ── ABILITY WEAPONS — RMB fires the equipped ability ───
-                        boolean rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-                        boolean rmbEdge = rmbNow && !lastRMB;
+                        // ── ABILITY WEAPONS — LEFT-CLICK fires the equipped ability
+                        //    (RMB still works too, but every tool answers to LMB so
+                        //     there is exactly ONE button to remember) ───────────
                         Block heldWpn = hotbar[selectedSlot];
+                        boolean fireWpnHeld = heldWpn == Block.WPN_SNIPER || heldWpn == Block.WPN_ORBITAL
+                                || heldWpn == Block.WPN_TIMESTOP || heldWpn == Block.WPN_STONE_CANNON;
+                        boolean rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS
+                                || (fireWpnHeld && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+                        boolean rmbEdge = rmbNow && !lastRMB;
 
-                        // Sniper (WPN_SNIPER): hold RMB to charge, release fires
+                        // Sniper (WPN_SNIPER): hold to charge, release fires
                         player.attacks.weaponCHeld = (heldWpn == Block.WPN_SNIPER) && rmbNow;
 
-                        // Orbital Annihilation (WPN_ORBITAL): one-shot on RMB press
+                        // Orbital Annihilation (WPN_ORBITAL): one-shot on press
                         if (heldWpn == Block.WPN_ORBITAL && rmbEdge && !orbitalActive
                                 && player.can(Progression.Ability.ORBITAL)) {
                             startOrbitalStrike(camera);
                         }
 
-                        // Time Domain (WPN_TIMESTOP): toggle on RMB press
+                        // Time Domain (WPN_TIMESTOP): toggle on press
                         if (heldWpn == Block.WPN_TIMESTOP && rmbEdge
                                 && player.can(Progression.Ability.DOMAIN)) {
                             if (timeStopActive) stopTimeStop();
                             else if (!timeStopActive) startTimeStop();
                         }
 
-                        // Stone Cannon (WPN_STONE_CANNON): RMB acts as I key (handled below via iHeld)
+                        // Stone Cannon (WPN_STONE_CANNON): fire button acts as I key (handled below via iHeld)
                         lastRMB = rmbNow;
 
-                        // Selected-weapon hint so the teacher always knows what RMB does
+                        // Selected-weapon hint so the player always knows what Left-Click does
                         if (hintTimer <= 0.1f) {
                             String wpnHint = switch (heldWpn) {
-                                case WPN_ORBITAL     -> "Orbital Annihilation  —  RMB to fire";
-                                case WPN_SNIPER      -> "Sniper  —  hold RMB to charge, release to fire";
-                                case WPN_TIMESTOP    -> "Time Domain  —  RMB to toggle";
-                                case WPN_STONE_CANNON-> "Stone Cannon  —  hold RMB to charge, release to fire";
-                                case GATLING_GUN     -> "Gatling Gun  —  hold LMB to fire";
+                                case WPN_ORBITAL     -> "Orbital Annihilation  —  Left-Click to fire";
+                                case WPN_SNIPER      -> "Sniper  —  hold Left-Click to charge, release to fire";
+                                case WPN_TIMESTOP    -> "Time Domain  —  Left-Click to toggle";
+                                case WPN_STONE_CANNON-> "Stone Cannon  —  hold Left-Click near stone, release to fire";
+                                case GATLING_GUN     -> "Gatling Gun  —  hold Left-Click to fire";
                                 case GRAPPLING_HOOK  -> "Grappling Hook  —  hold LMB to swing";
                                 case TELESCOPE       -> "Telescope  —  hold RMB to look";
                                 default -> null;
@@ -2207,6 +2264,9 @@ public class Window {
                             enemyManager.wavesEnabled    = false;  // training done — free to explore
                             enemyManager.freeExploreMode = true;   // ambient enemies roam the world
                             voyageStarted = true;
+                            // Don't carry stale ground-combat TRY IT prompts into the sky.
+                            tryQueue.clear();
+                            tryAbility = null;
                         }
                         if (voyageStarted && voyage.active) voyage.update(deltaTime);
                         if (voyageStarted) renderVoyageBeacon(rawDeltaTime);
@@ -2226,8 +2286,8 @@ public class Window {
                         if (!shownNightHint && world != null && player != null
                                 && dayNight.ambientStrength < 0.30f) {
                             shownNightHint = true;
-                            hintText  = "It's getting dark!  Open your backpack [Left Alt] and equip a Torch, then place it with RMB.";
-                            hintTimer = 7f;
+                            hintText  = "It's getting dark!  Press [7] for the TORCH, then Right-Click the ground to light it up.";
+                            hintTimer = 8f;
                         }
 
                         // ── WAVE CLEARED → ending / unlock card ───────────────
@@ -2283,10 +2343,42 @@ public class Window {
                             if (en && !lastCardSpace) {
                                 showUnlockCard = false;
                                 lastPracticeEnter = true;
+                                // Queue a big TRY IT prompt for each fresh power —
+                                // the next wave is already coming, so they get to
+                                // try it on live targets immediately.
+                                tryQueue.clear();
+                                tryQueue.addAll(unlockCardAbilities);
                                 enemyManager.beginNextWave();
                                 enemyManager.wavesEnabled = true;
                             }
                             lastCardSpace = en;
+                        }
+
+                        // ── TRY IT prompt tick ───────────────────────────────
+                        if (tryDoneTimer > 0f) {
+                            tryDoneTimer -= rawDeltaTime;
+                            if (tryDoneTimer <= 0f) tryDoneAbility = null;
+                        }
+                        if (tryAbility == null && tryDoneTimer <= 0f && !tryQueue.isEmpty()
+                                && !showUnlockCard && practiceAbility == null) {
+                            tryAbility  = tryQueue.poll();
+                            tryTimer    = 14f;
+                            trySnapInit = false;
+                        }
+                        if (tryAbility != null) {
+                            tryTimer -= rawDeltaTime;
+                            float frac = tryFracFor(tryAbility);
+                            if (!trySnapInit) { trySnapshot = frac; trySnapInit = true; }
+                            boolean used = tryUsedDetect(tryAbility, frac);
+                            if (used) {
+                                AudioManager.play("cystal_click", 0.9f);
+                                ScreenEffectManager.INSTANCE.flash(0.45f, 1.0f, 0.6f, 0.30f, 0.35f);
+                                tryDoneAbility = tryAbility;
+                                tryDoneTimer   = 1.4f;
+                                tryAbility     = null;
+                            } else if (tryTimer <= 0f) {
+                                tryAbility = null;   // timed out — move on quietly
+                            }
                         }
 
                         // ── PRACTICE SESSION tick (multi-step) ───────────────
@@ -3298,14 +3390,31 @@ public class Window {
                     }
 
                     int[] pk = network.pollPickup();
+                    // Drain enemy hotdog drops into the world item list.
+                    if (!enemyManager.pendingFoodDrops.isEmpty()) {
+                        for (float[] fd : enemyManager.pendingFoodDrops) {
+                            droppedItems.add(new DroppedItem(
+                                    (int) fd[0], (int) fd[1], (int) fd[2], Block.HOTDOG));
+                        }
+                        enemyManager.pendingFoodDrops.clear();
+                    }
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
                         DroppedItem item = droppedItems.get(i);
                         item.update(timeStopActive ? 0f : deltaTime, player.position);
                         if (chestPos.distance(item.position) < 0.5f) {
-                            inventory.addBlock(item.blockType);
-                            addBlockToHotbar(item.blockType);
+                            if (item.blockType == Block.HOTDOG) {
+                                // Nom — hotdogs heal instead of entering the inventory.
+                                player.health = Math.min(player.maxHealth, player.health + 25f);
+                                AudioManager.play("cystal_click", 0.9f, 0.7f);
+                                ScreenEffectManager.INSTANCE.flash(0.4f, 1.0f, 0.5f, 0.18f, 0.25f);
+                                hintText  = "HOTDOG!  +25 HP";
+                                hintTimer = 1.2f;
+                            } else {
+                                inventory.addBlock(item.blockType);
+                                addBlockToHotbar(item.blockType);
+                            }
                             item.alive = false;
                             if (network != null && network.connected)
                                 network.sendPickup(item.originX, item.originY, item.originZ);
@@ -3600,14 +3709,31 @@ public class Window {
                         }
                     }
 
+                    // Drain enemy hotdog drops into the world item list.
+                    if (!enemyManager.pendingFoodDrops.isEmpty()) {
+                        for (float[] fd : enemyManager.pendingFoodDrops) {
+                            droppedItems.add(new DroppedItem(
+                                    (int) fd[0], (int) fd[1], (int) fd[2], Block.HOTDOG));
+                        }
+                        enemyManager.pendingFoodDrops.clear();
+                    }
                     Vector3f chestPos = new Vector3f(player.position.x,
                             player.position.y + 0.9f, player.position.z);
                     for (int i = droppedItems.size() - 1; i >= 0; i--) {
                         DroppedItem item = droppedItems.get(i);
                         item.update(timeStopActive ? 0f : deltaTime, player.position);
                         if (chestPos.distance(item.position) < 0.5f) {
-                            inventory.addBlock(item.blockType);
-                            addBlockToHotbar(item.blockType);
+                            if (item.blockType == Block.HOTDOG) {
+                                // Nom — hotdogs heal instead of entering the inventory.
+                                player.health = Math.min(player.maxHealth, player.health + 25f);
+                                AudioManager.play("cystal_click", 0.9f, 0.7f);
+                                ScreenEffectManager.INSTANCE.flash(0.4f, 1.0f, 0.5f, 0.18f, 0.25f);
+                                hintText  = "HOTDOG!  +25 HP";
+                                hintTimer = 1.2f;
+                            } else {
+                                inventory.addBlock(item.blockType);
+                                addBlockToHotbar(item.blockType);
+                            }
                             item.alive = false;
                             if (network != null && network.connected)
                                 network.sendPickup(item.originX, item.originY, item.originZ);
@@ -4718,11 +4844,24 @@ public class Window {
 
                 // 7. Render Items
                 for (DroppedItem item : droppedItems) {
-                    Mesh itemMesh = getItemMesh(item.blockType);
                     float bob = (float) Math.sin(item.age * 3.0f) * 0.05f;
                     Matrix4f itemModel = new Matrix4f()
                             .translate(item.position.x, item.position.y + bob, item.position.z)
                             .rotateY(item.age * 1.5f);
+                    if (item.blockType == Block.HOTDOG) {
+                        // Sausage in a bun: two bread-coloured boxes + a longer red
+                        // sausage nested between them. Pure block-colour meshes.
+                        Matrix4f bun = new Matrix4f(itemModel).scale(1.0f, 0.55f, 0.85f);
+                        shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(bun));
+                        getItemMesh(Block.SAND).render();
+                        Matrix4f sausage = new Matrix4f(itemModel)
+                                .translate(0f, 0.07f, 0f)
+                                .scale(1.35f, 0.38f, 0.38f);
+                        shader.setUniform("mvp", new Matrix4f(projection).mul(view).mul(sausage));
+                        getItemMesh(Block.HOTDOG).render();
+                        continue;
+                    }
+                    Mesh itemMesh = getItemMesh(item.blockType);
                     Matrix4f itemMvp = new Matrix4f(projection).mul(view).mul(itemModel);
                     shader.setUniform("mvp", itemMvp);
                     itemMesh.render();

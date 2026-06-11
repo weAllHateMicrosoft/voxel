@@ -183,7 +183,7 @@ public class TutorialManager {
 
         // 4 ── SNIPER  —  the ranged weapon already in slot 1
         steps.add(new Step("SNIPER",
-            "Hold to charge...  release to FIRE!", "HOLD RIGHT-CLICK",
+            "Hold to charge...  release to FIRE!", "HOLD LEFT-CLICK",
             null,
             c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 14f));
 

@@ -347,13 +347,13 @@ public class GameConfig {
     /** Seconds between automatic wave spawns. */
     public static float spawnWaveInterval = 30f;
     /** Minimum horizontal spawn distance from player (blocks). */
-    public static float spawnMinDist      = 22f;
+    public static float spawnMinDist      = 12f;
     /** Maximum horizontal spawn distance from player (blocks). */
-    public static float spawnMaxDist      = 38f;
+    public static float spawnMaxDist      = 24f;
     /** Maximum total live enemies before spawning is suppressed. */
     public static int   spawnMaxEnemies   = 24;
     /** Base enemies per wave (scales with wave number). */
-    public static int   spawnWaveBase     = 3;
+    public static int   spawnWaveBase     = 5;
 
     public static float pillarRiseSpeed = 16.0f;   // Blocks/sec upward velocity
     public static float pillarMaxHeight = 40.0f;   // Max altitude gained per cast

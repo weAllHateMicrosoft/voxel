@@ -125,7 +125,10 @@ public enum Block {
     MAPLE_LOG       (0.36f, 0.24f, 0.16f, 1.0f,  2.0f),  // warm brown bark
     MAPLE_LEAVES_RED   (0.78f, 0.18f, 0.12f, 0.90f, 0.2f),  // crimson canopy
     MAPLE_LEAVES_GOLD  (0.90f, 0.70f, 0.16f, 0.90f, 0.2f),  // gold canopy
-    MAPLE_LEAVES_ORANGE(0.88f, 0.45f, 0.12f, 0.90f, 0.2f);  // orange canopy
+    MAPLE_LEAVES_ORANGE(0.88f, 0.45f, 0.12f, 0.90f, 0.2f),  // orange canopy
+
+    // ── Pickups (appended LAST — chunk saves store ordinals) ─────
+    HOTDOG          (0.78f, 0.32f, 0.12f, 1.0f, 99f);  // heal pickup dropped by enemies
     public final float r, g, b, a;
     public final float hardness;
 
