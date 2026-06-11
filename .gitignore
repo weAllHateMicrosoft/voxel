@@ -4,9 +4,10 @@ build/
 out/
 bin/
 *.class
-*.jar
 *.war
 *.ear
+# Allow the pre-built launcher JAR in the repo root
+!game.jar
 
 # --- INTELLIJ ---
 .idea/
