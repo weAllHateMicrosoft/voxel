@@ -38,6 +38,9 @@ public class Window {
     long window;
     Player player;
     World world;
+    com.leaf.game.util.Camera camera;
+    /** The endgame: summons -> portal -> arena gauntlet -> ascension. */
+    FinaleManager finale;
     WorldGen worldGen;
 
 
@@ -240,11 +243,6 @@ public class Window {
     private boolean lastPracticeEnter = false;
     /** Set after the wave-9 ending cutscene fires; stops further waves. */
     boolean gameEnded = false;
-    /** True while the victory screen (stats + grade) is showing between wave-clear and ending cutscene. */
-    boolean showVictoryScreen = false;
-    private boolean lastVictoryEnter = false;
-    /** Firework timer — fires particle bursts every 0.4s during victory screen and ending cutscene. */
-    private float fireworkTimer = 0f;
     /** Camera yaw snapped each frame for AbilityPractice.spawnDummy. */
     float lastCameraYaw = 0f;
 
@@ -939,7 +937,9 @@ public class Window {
             }
 
             // ── FLAPPY BIRD MODE (Tilde key ` - Dynamic Toggle) ──
-            if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS && !showChat) {
+            // (Locked during the finale's bird trial — the crystal insists.)
+            if (key == GLFW_KEY_GRAVE_ACCENT && action == GLFW_PRESS && !showChat
+                    && (finale == null || !finale.isFlappyTrial())) {
                 if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY) {
                     // Already in Flappy Mode -> EXIT and return to standard world
                     player.useTestMovement = false;
@@ -1356,6 +1356,18 @@ public class Window {
         }
         if (network != null && network.connected) network.sendDeath(px, py, pz);
 
+        // ── FINALE OVERRIDES — the trial handles its own deaths ──
+        if (finale != null && finale.isFlappyTrial()) {
+            // Crashed during THE CRYSTAL MOCKS YOU: instant retry, no menu.
+            ScreenEffectManager.INSTANCE.flash(1f, 1f, 1f, 0.5f, 0.2f);
+            finaleRestartFlappy();
+            return;
+        }
+        if (finale != null && finale.handlesDeath()) {
+            finale.onPlayerDeath();
+            return;
+        }
+
         // ── FLAPPY BIRD ARCADE OVERRIDE ──
         if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY) {
             showDeathScreen = true; // Instantly show the GAME OVER menu. Skip the cinematic!
@@ -1556,7 +1568,7 @@ public class Window {
         org.lwjgl.opengl.GL20.glEnableVertexAttribArray(1);
         org.lwjgl.opengl.GL30.glBindVertexArray(0);
 
-        Camera camera = new Camera();
+        camera = new Camera();
         setupMouseLook(camera);
         hud = new WindowHud(this);
 
@@ -1619,6 +1631,7 @@ public class Window {
         // ── ENEMY SYSTEM ─────────────────────────────────────────────────────
         this.enemyManager = new EnemyManager();
         enemyManager.setWorldGen(worldGen);   // biome queries for tower sites + ambient mix
+        this.finale = new FinaleManager(this);
         player.stand.setEnemyManager(enemyManager);
         player.attacks.setEnemyManager(enemyManager);
         player.seals.setEnemyManager(enemyManager);      // enables seal-on-enemy attachment
@@ -1678,29 +1691,8 @@ public class Window {
             if (cutscene.isActive()) {
                 cutscene.update(rawDeltaTime);
             }
-            // Fireworks during ending cutscene
-            if (cutscene.isActive() && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
-                fireworkTimer -= rawDeltaTime;
-                if (fireworkTimer <= 0f) {
-                    fireworkTimer = 0.4f;
-                    float px = player.position.x + (float)(Math.random() - 0.5) * 10f;
-                    float py = player.position.y + 1f + (float)(Math.random() * 5f);
-                    float pz = player.position.z + (float)(Math.random() - 0.5) * 10f;
-                    float[] c = new float[][]{{3f,1f,0.3f},{0.3f,3f,0.5f},{0.5f,0.8f,3f},{3f,0.3f,1f}}[(int)(Math.random()*4)];
-                    fxBurst(px, py, pz, 0.2f, 3.5f, 0.5f, c[0], c[1], c[2]);
-                }
-            }
-            // Ending cutscene just finished  -  activate flight immediately so the
-            // player is already flying when the world comes back.
-            if (cutsceneWasActive && !cutscene.isActive()
-                    && cutscene.getKind() == CutsceneManager.Kind.ENDING) {
-                if (player.progression.isUnlocked(Progression.Ability.FLIGHT)) {
-                    player.debugMode = true;   // debugMode is the flight-active flag
-                }
-                // Unlock ALL abilities so the player can rampage freely
-                player.progression.unlockAll();
-                immunityTimer = 999f;  // invincible post-ending
-            }
+            // (The old wave-11 ENDING cutscene was replaced by the FinaleManager
+            //  portal trial — Voyage completion now triggers the true ending.)
             if (!cutscene.isActive() && deathCutscenePending) {
                 // Cutscene just ended  -  check which kind finished.
                 CutsceneManager.Kind finishedKind = cutscene.getKind();
@@ -1710,6 +1702,15 @@ public class Window {
                     showDeathScreen = true;
                 }
             }
+            // ── THE FINALE — endgame state machine (summons → arena → ascension) ──
+            if (finale != null && !isPaused) {
+                finale.update(camera, rawDeltaTime);
+                // The normal updateFx call lives inside the player-input block,
+                // which is gated during finale cinematics — tick it here instead
+                // so warp/tear/ascension particles keep moving.
+                if (finale.locksPlayer()) updateFx(rawDeltaTime);
+            }
+
             // Tick immunity  -  block incoming damage while it's active.
             if (immunityTimer > 0f) immunityTimer -= rawDeltaTime;
             // Showcase/demo mode: never run out of mana, never die  -  so the user can
@@ -1831,38 +1832,6 @@ public class Window {
                         }
                     }
 
-                    // ── VICTORY SCREEN INPUT HANDLER ─────────────────────────
-                    if (showVictoryScreen) {
-                        // Periodic fireworks
-                        fireworkTimer -= rawDeltaTime;
-                        if (fireworkTimer <= 0f) {
-                            fireworkTimer = 0.35f;
-                            float px = player.position.x + (float)(Math.random() - 0.5) * 8f;
-                            float py = player.position.y + 2f + (float)(Math.random() * 4f);
-                            float pz = player.position.z + (float)(Math.random() - 0.5) * 8f;
-                            float[] c = new float[][]{{3f,1f,0.3f},{0.3f,3f,0.5f},{0.5f,0.8f,3f},{3f,0.3f,1f}}[(int)(Math.random()*4)];
-                            fxBurst(px, py, pz, 0.2f, 3.5f, 0.5f, c[0], c[1], c[2]);
-                            fxRing (px, py - 0.3f, pz, 0.3f, 5f, 0.4f, c[0]*0.6f, c[1]*0.6f, c[2]*0.6f);
-                        }
-                        boolean en = glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS
-                                || glfwGetKey(window, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
-                        if (en && !lastVictoryEnter) {
-                            showVictoryScreen = false;
-                            // Launch the player skyward as a celebration
-                            player.setVelocityY(35f);
-                            fxBurst(player.position.x, player.position.y + 1f, player.position.z, 0.6f, 8f, 0.8f, 3.5f, 1.5f, 0.4f);
-                            fxRing (player.position.x, player.position.y, player.position.z, 1f, 14f, 0.9f, 3.5f, 1.0f, 0.3f);
-                            float elapsed = (float) glfwGetTime() - RunRecords.INSTANCE.runStartTime;
-                            int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
-                            cutscene.endingStat = String.format(
-                                    "Enemies defeated: %d      Time: %d:%02d",
-                                    enemyManager.totalKills, em, es);
-                            cutscene.startEnding();
-                            fireworkTimer = 0f;
-                        }
-                        lastVictoryEnter = en;
-                    }
-
                     // ── DEATH SCREEN INPUT HANDLER ───────────────────────────
                     if (showDeathScreen) {
                         if (player.useTestMovement && player.testMovement.state == TestMovementController.State.FLAPPY) {
@@ -1939,7 +1908,7 @@ public class Window {
                         RunRecords.INSTANCE.newRun((float) org.lwjgl.glfw.GLFW.glfwGetTime());
                     }
 
-                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending) {
+                    if (!showChat && !showNoiseViewer && !isPaused && !showHelp && !cutscene.isActive() && !showDeathScreen && !deathCutscenePending && !finale.locksPlayer()) {
                         // ── MP DUEL SETUP  -  runs BEFORE abilities so PvP hits land ─
                         updateMpProxyEarly();
 
@@ -2460,29 +2429,12 @@ public class Window {
                         if (enemyManager.awaitingNextWave && !showUnlockCard && practiceAbility == null) {
                             int waveJustCleared = enemyManager.lastClearedWave;
 
-                            if (waveJustCleared >= Progression.ENDING_WAVE && !gameEnded) {
-                                // ── WAVE 11 = VICTORY ─────────────────────────
-                                player.progression.unlockForWave(Progression.ENDING_WAVE); // grant FLIGHT
-                                enemyManager.wavesEnabled = false;
-                                enemyManager.freeExploreMode = true;
-                                enemyManager.beginNextWave();
-                                gameEnded = true;
-                                showVictoryScreen = true;
-                                fireworkTimer = 0f;
-                                // Big bang — player death FX re-used as victory explosion
-                                float px = player.position.x, py = player.position.y + 1f, pz = player.position.z;
-                                fxBurst(px, py, pz, 0.5f, 6.0f, 0.8f, 3.5f, 1.2f, 0.4f);
-                                fxRing (px, py - 0.5f, pz, 0.8f, 12f, 0.9f, 3.5f, 1.0f, 0.3f);
-                                for (int i = 0; i < 12; i++) {
-                                    double a = i / 12.0 * Math.PI * 2;
-                                    fxBolt(px, py, pz, (float)Math.cos(a)*0.3f, 0.8f, (float)Math.sin(a)*0.3f, 8f, 0.12f, 0.9f, 3.0f, 1.0f, 0.4f);
-                                }
-                                ScreenEffectManager.INSTANCE.flash(1.0f, 1.0f, 0.85f, 0.7f, 0.5f);
-                                AudioManager.play("cystal_click", 1.0f);
-                            } else {
-                                // Normal wave: unlock this tier. Card only when something
-                                // is genuinely NEW  -  wave 1 (Slash/Dash, already taught by
-                                // the tutorial) flows straight into the next wave.
+                            {
+                                // Every wave is a normal wave now — the TRUE ending is the
+                                // FinaleManager portal trial, triggered by Voyage completion.
+                                // Unlock this tier. Card only when something is genuinely
+                                // NEW  -  wave 1 (Slash/Dash, already taught by the
+                                // tutorial) flows straight into the next wave.
                                 java.util.List<Progression.Ability> gained =
                                         player.progression.unlockForWave(waveJustCleared);
                                 gained.removeIf(g -> g == Progression.Ability.SLASH
@@ -3806,7 +3758,8 @@ public class Window {
                     // ── DAY / NIGHT CYCLE  -  advance the sky + light mood ───────────
                     // "Made in Heaven": HOLD '[' to ramp the cycle up to ~400×, so the
                     // sun & moon race across the sky. Eases in/out so it accelerates.
-                    boolean mih = glfwGetKey(window, KeyBindings.TIME_ACCEL) == GLFW_PRESS;
+                    boolean mih = glfwGetKey(window, KeyBindings.TIME_ACCEL) == GLFW_PRESS
+                            || (finale != null && finale.wantsTimeRush());
                     mihRamp = mih ? Math.min(1f, mihRamp + rawDeltaTime * 3.5f)
                                   : Math.max(0f, mihRamp - rawDeltaTime * 2.0f);
                     GameConfig.dayNightSpeed = 1f + mihRamp * mihRamp * 400f;
@@ -5226,8 +5179,7 @@ public class Window {
                     if (weaponRevealTimer > 0f && weaponRevealAbility != null)
                         hud.renderWeaponReveal((float)ww[0], (float)wh[0]);
                     if (showDeathScreen)         hud.renderDeathScreen((float)ww[0], (float)wh[0]);
-                    if (showVictoryScreen)       hud.renderVictoryScreen((float)ww[0], (float)wh[0], enemyManager.totalKills,
-                            (float)glfwGetTime() - RunRecords.INSTANCE.runStartTime, RunRecords.INSTANCE.totalDeaths());
+                    if (finale != null && finale.active()) hud.renderFinale((float)ww[0], (float)wh[0]);
                     hud.renderChocolateDiscoConsole();
                     // (The Orbital Annihilation cinematic is now drawn as real 3D
                     //  geometry during the world pass  -  see renderOrbital3D.)
@@ -6913,25 +6865,25 @@ public class Window {
         e.s0 = s0; e.s1 = s1; e.life = life; e.r = r; e.g = g; e.b = b;
         pushFx(e);
     }
-    private void fxRing(float x, float y, float z, float r0, float r1, float life,
+    void fxRing(float x, float y, float z, float r0, float r1, float life,
                         float r, float g, float b) {
         fxRingN(x, y, z, 0f, 1f, 0f, r0, r1, life, r, g, b);   // default horizontal (axis +Y)
     }
     /** Expanding ring whose plane is perpendicular to axis (nx,ny,nz). */
-    private void fxRingN(float x, float y, float z, float nx, float ny, float nz,
+    void fxRingN(float x, float y, float z, float nx, float ny, float nz,
                          float r0, float r1, float life, float r, float g, float b) {
         Fx e = new Fx(FX_RING, x, y, z);
         e.dx = nx; e.dy = ny; e.dz = nz;
         e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
         pushFx(e);
     }
-    private void fxBurst(float x, float y, float z, float r0, float r1, float life,
+    void fxBurst(float x, float y, float z, float r0, float r1, float life,
                          float r, float g, float b) {
         Fx e = new Fx(FX_BURST, x, y, z);
         e.s0 = r0; e.s1 = r1; e.life = life; e.r = r; e.g = g; e.b = b;
         pushFx(e);
     }
-    private void fxBolt(float x, float y, float z, float dx, float dy, float dz,
+    void fxBolt(float x, float y, float z, float dx, float dy, float dz,
                         float len, float thick, float life, float r, float g, float b) {
         Fx e = new Fx(FX_BOLT, x, y, z);
         e.dx = dx; e.dy = dy; e.dz = dz; e.s0 = len; e.s1 = thick;
@@ -6958,6 +6910,61 @@ public class Window {
         meteorSpawnTimer = 0f;       // first one drops immediately
         hintText = "METEOR STORM"; hintTimer = 3f;
         AudioManager.play("fall_light", 0.8f);
+    }
+
+    /** Finale hook: meteor storm with custom duration, no hint text. */
+    void startMeteorStorm(float seconds) {
+        meteorStormTimer = Math.max(meteorStormTimer, seconds);
+        meteorSpawnTimer = 0f;
+    }
+
+    /** Finale hook: end the boss-fight meteor rain immediately. */
+    void stopMeteorStorm() {
+        meteorStormTimer = 0f;
+    }
+
+    /** Finale hook: violent camera shake on demand. */
+    void requestShake(float amplitude, float duration) {
+        activeShakeAmplitude = amplitude;
+        activeShakeDuration  = duration;
+        smashShakeTimer      = Math.max(smashShakeTimer, duration);
+    }
+
+    /** Finale hook: drop the player into Flappy Bird mode for the arena trial. */
+    void finaleEnterFlappy() {
+        player.useTestMovement = true;
+        player.testMovement.state = TestMovementController.State.FLAPPY;
+        player.health = player.maxHealth;
+        player.testMovement.flappyScore = 0;
+        player.testMovement.lastPassedPipeX = 5010;
+        player.testMovement.flappyWaitingToStart = true;
+        player.position.set(4980f, 230f, 5000f);
+        player.testMovement.velocity.set(0f, 0f, 0f);
+        world.clearAllChunks();
+    }
+
+    /** Finale hook: leave Flappy mode and land at the given arena position. */
+    void finaleExitFlappy(float x, float y, float z) {
+        player.useTestMovement = false;
+        player.testMovement.state = TestMovementController.State.AIRBORNE;
+        player.health = player.maxHealth;
+        player.position.set(x, y, z);
+        player.setVelocityY(0f);
+        player.highestY = y;
+        camera.pitch = 0f;
+        world.clearAllChunks();
+    }
+
+    /** Finale hook: instantly restart the flappy run after crashing (no GAME OVER menu). */
+    void finaleRestartFlappy() {
+        player.health = player.maxHealth;
+        player.testMovement.flappyScore = 0;
+        player.testMovement.lastPassedPipeX = 5010;
+        player.testMovement.flappyWaitingToStart = true;
+        player.position.set(4980f, 230f, 5000f);
+        player.testMovement.velocity.set(0f, 0f, 0f);
+        camera.yaw = 0f; camera.pitch = 0f;
+        world.clearAllChunks();
     }
 
     /** Launch one meteorite high above, streaking down toward near the player. */

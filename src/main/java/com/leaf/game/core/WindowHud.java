@@ -575,84 +575,249 @@ class WindowHud {
                 ImGui.colorConvertFloat4ToU32(0.85f, 0.88f, 1.0f, pa), prompt);
     }
 
-    void renderVictoryScreen(float w, float h, int kills, float elapsed, int deaths) {
-        imgui.ImDrawList draw = ImGui.getForegroundDrawList();
+    // ─────────────────────────────────────────────────────────────────────────
+    //  THE FINALE — every overlay of the endgame, switched on FinaleManager state
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Centered text with shadow at a given scale. Returns the height drawn. */
+    private float finText(imgui.ImDrawList draw, float w, float y, float scale,
+                          float r, float g, float b, float a, String text) {
         ImFont font = ImGui.getFont();
+        float sz = font.getFontSize() * scale;
+        float tw = ImGui.calcTextSize(text).x * scale;
+        float x = (w - tw) * 0.5f;
+        draw.addText(font, sz, x + 2, y + 2, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a), text);
+        draw.addText(font, sz, x, y, ImGui.colorConvertFloat4ToU32(r, g, b, a), text);
+        return sz;
+    }
 
-        // Deep semi-transparent dark overlay with gold tint at edges
-        draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0.02f, 0.05f, 0.88f));
-        // Gold border vignette
-        draw.addRect(20, 20, w - 20, h - 20,
-                ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.55f), 12f, 0, 2.5f);
+    void renderFinale(float w, float h) {
+        FinaleManager f = win.finale;
+        imgui.ImDrawList draw = ImGui.getForegroundDrawList();
+        float t = f.t;
 
-        float cy = h * 0.5f - 140f;
-
-        // Title line  -  DESCENT COMPLETE
-        String title = "DESCENT  COMPLETE";
-        float tsz = font.getFontSize() * 3.0f;
-        float tw = ImGui.calcTextSize(title).x * (tsz / font.getFontSize());
-        float tx = (w - tw) * 0.5f;
-        // Shadow
-        draw.addText(font, tsz, tx + 3, cy + 3, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), title);
-        // Gold text with pulsing brightness
-        float pulse = 0.85f + 0.15f * (float) Math.abs(Math.sin(ImGui.getTime() * 1.8));
-        draw.addText(font, tsz, tx, cy, ImGui.colorConvertFloat4ToU32(1.0f, 0.88f * pulse, 0.25f * pulse, 1f), title);
-        cy += tsz + 16f;
-
-        // Sub-line
-        String sub = "You survived 11 waves. Every hunter. Everything it sent.";
-        float subW = ImGui.calcTextSize(sub).x;
-        draw.addText((w - subW) * 0.5f + 1, cy + 1, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.9f), sub);
-        draw.addText((w - subW) * 0.5f, cy, ImGui.colorConvertFloat4ToU32(0.8f, 0.9f, 1.0f, 0.9f), sub);
-        cy += 36f;
-
-        // Divider
-        draw.addLine(w * 0.25f, cy, w * 0.75f, cy,
-                ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.4f), 1.5f);
-        cy += 20f;
-
-        // Stats block
-        int em = (int)(elapsed / 60f), es = (int)(elapsed % 60f);
-        String[] stats = {
-            String.format("ENEMIES DEFEATED   %d", kills),
-            String.format("TIME               %d:%02d", em, es),
-            String.format("DEATHS             %d", deaths),
-        };
-        // Grade based on deaths
-        String grade = deaths == 0 ? "S" : deaths <= 2 ? "A" : deaths <= 5 ? "B" : "C";
-        int gradeCol = switch (grade) {
-            case "S" -> ImGui.colorConvertFloat4ToU32(1.0f, 0.88f, 0.2f, 1f);
-            case "A" -> ImGui.colorConvertFloat4ToU32(0.4f, 1.0f, 0.5f, 1f);
-            case "B" -> ImGui.colorConvertFloat4ToU32(0.4f, 0.7f, 1.0f, 1f);
-            default  -> ImGui.colorConvertFloat4ToU32(0.8f, 0.8f, 0.8f, 1f);
-        };
-
-        for (String stat : stats) {
-            float sw = ImGui.calcTextSize(stat).x;
-            draw.addText((w - sw) * 0.5f + 1, cy + 1, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.9f), stat);
-            draw.addText((w - sw) * 0.5f, cy, ImGui.colorConvertFloat4ToU32(1.0f, 1.0f, 0.85f, 0.9f), stat);
-            cy += 26f;
+        switch (f.state) {
+            case SUMMONS -> {
+                // Giant pulsing banner: impossible to miss what's going on.
+                float pulse = 0.8f + 0.2f * (float) Math.abs(Math.sin(ImGui.getTime() * 2.2));
+                finText(draw, w, 50f, 2.2f, 1.0f, 0.85f * pulse, 0.3f * pulse, 1f,
+                        "ALL POWERS CLAIMED  -  THE CRYSTAL CALLS YOU HOME");
+                float dx = win.player.position.x - f.portalX();
+                float dz = win.player.position.z - f.portalZ();
+                float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                if (dist > 12f) {
+                    finText(draw, w, 96f, 1.3f, 0.85f, 0.9f, 1.0f, 0.95f,
+                            String.format("RETURN TO SPAWN  -  enter the portal    %.0f m", dist));
+                    drawPortalArrow(draw, w, h, f);
+                } else {
+                    float pa = 0.55f + 0.45f * (float) Math.abs(Math.sin(ImGui.getTime() * 3.0));
+                    finText(draw, w, h * 0.62f, 1.8f, 0.85f, 0.55f, 1.0f, pa,
+                            "STEP INTO THE PORTAL");
+                }
+                drawFinaleSubtitle(draw, w, h, f);
+            }
+            case PORTAL_WARP -> {
+                // Purple vortex vignette closing in, then white-out.
+                float closeT = Math.min(1f, t / 1.6f);
+                int purple = ImGui.colorConvertFloat4ToU32(0.45f, 0.1f, 0.8f, 0.55f * closeT);
+                float edge = h * 0.45f * closeT;
+                draw.addRectFilledMultiColor(0, 0, w, edge, purple, purple, 0, 0);
+                draw.addRectFilledMultiColor(0, h - edge, w, h, 0, 0, purple, purple);
+                float white = Math.max(0f, (t - 1.2f) / 0.8f);
+                white = Math.min(1f, white) * (t < 2.4f ? 1f : Math.max(0f, 1f - (t - 2.4f) / 0.6f));
+                if (white > 0f)
+                    draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, white));
+            }
+            case ARENA_INTRO -> {
+                float a = Math.min(1f, t / 0.8f) * (t > 3.7f ? Math.max(0f, 1f - (t - 3.7f) / 0.8f) : 1f);
+                finText(draw, w, h * 0.34f, 3.2f, 1.0f, 0.3f, 0.25f, a, "THE FINAL TRIAL");
+                finText(draw, w, h * 0.34f + 64f, 1.2f, 0.9f, 0.85f, 0.8f, a,
+                        "Five trials stand between you and freedom.  Survive them all.");
+                finText(draw, w, h * 0.34f + 96f, 1.0f, 0.7f, 0.7f, 0.75f, a * 0.9f,
+                        "Fall, and wake at the portal.  The trial will wait.");
+            }
+            case PHASE_BANNER -> {
+                float a = Math.min(1f, t / 0.5f) * (t > 2.5f ? Math.max(0f, 1f - (t - 2.5f) / 0.7f) : 1f);
+                finText(draw, w, h * 0.30f, 1.2f, 0.8f, 0.75f, 0.7f, a, "TRIAL  " + f.phase + "  OF  5");
+                finText(draw, w, h * 0.30f + 34f, 2.8f, 1.0f, 0.35f, 0.3f, a, f.phaseName());
+                finText(draw, w, h * 0.30f + 96f, 1.15f, 0.95f, 0.9f, 0.8f, a, f.phaseSub());
+            }
+            case FIGHT -> {
+                finText(draw, w, 40f, 1.1f, 1.0f, 0.5f, 0.4f, 0.9f,
+                        "TRIAL " + f.phase + " / 5   " + f.phaseName());
+                finText(draw, w, 66f, 1.0f, 0.95f, 0.9f, 0.85f, 0.85f,
+                        "ENEMIES LEFT:  " + f.enemiesLeft());
+                if (f.phase >= 4) {
+                    float pa = 0.4f + 0.6f * (float) Math.abs(Math.sin(ImGui.getTime() * 4.0));
+                    finText(draw, w, 94f, 1.05f, 1.0f, 0.25f, 0.15f, pa,
+                            "! THE ARENA IS COLLAPSING  -  STAY OFF THE EDGE !");
+                }
+            }
+            case FLAPPY_TRIAL -> {
+                finText(draw, w, 34f, 1.9f, 1.0f, 0.55f, 0.9f, 1f, "THE CRYSTAL MOCKS YOU");
+                finText(draw, w, 78f, 1.25f, 0.95f, 0.92f, 0.85f, 0.95f,
+                        "BECOME THE BIRD.   [SPACE] to flap.   Crash = instant retry.");
+                int score = win.player.testMovement.flappyScore;
+                float pulse = score >= 10 ? 0.7f + 0.3f * (float) Math.abs(Math.sin(ImGui.getTime() * 5.0)) : 1f;
+                finText(draw, w, 116f, 2.2f, 0.4f, 1.0f * pulse, 0.5f, 1f,
+                        "SCORE   " + score + "  /  15");
+            }
+            case DEFEAT_FADE -> {
+                float a = Math.min(1f, f.wakeEyelid());
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a));
+            }
+            case DEFEAT_WAKE -> {
+                // Eyelids: two soft black shutters meeting in the middle.
+                float e = f.wakeEyelid();
+                if (e > 0.001f) {
+                    float cover = h * 0.5f * e;
+                    int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f);
+                    draw.addRectFilled(0, 0, w, cover, black);
+                    draw.addRectFilled(0, h - cover, w, h, black);
+                    // Soft blurred lid edge
+                    int soft = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.55f);
+                    draw.addRectFilled(0, cover, w, cover + 26f, soft);
+                    draw.addRectFilled(0, h - cover - 26f, w, h - cover, soft);
+                }
+                // Groggy dark vignette while standing up
+                float groggy = Math.max(0f, 1f - t / 7f) * 0.45f;
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0.02f, 0.01f, 0.04f, groggy));
+                drawFinaleSubtitle(draw, w, h, f);
+            }
+            case VICTORY_TEAR -> {
+                finText(draw, w, h * 0.25f, 2.6f, 1.0f, 0.95f, 0.7f, Math.min(1f, t / 0.5f),
+                        "THE TRIAL IS COMPLETE");
+                finText(draw, w, h * 0.25f + 58f, 1.2f, 0.95f, 0.9f, 0.85f, Math.min(1f, t / 0.8f),
+                        "The dimension cannot bear your power.  It is tearing apart.");
+                // White tear: flickering bright gash growing from the centre.
+                float tear = Math.max(0f, (t - 1.0f) / 3.0f);
+                float flicker = 0.85f + 0.15f * (float) Math.sin(ImGui.getTime() * 40.0);
+                if (tear > 0f) {
+                    float tw2 = w * tear * flicker, th2 = h * tear * tear * flicker;
+                    int whiteC = ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, Math.min(1f, tear * 1.3f));
+                    draw.addTriangleFilled(w / 2f - tw2 / 2f, h / 2f, w / 2f + tw2 / 2f, h / 2f,
+                            w / 2f, h / 2f - th2 / 2f, whiteC);
+                    draw.addTriangleFilled(w / 2f - tw2 / 2f, h / 2f, w / 2f + tw2 / 2f, h / 2f,
+                            w / 2f, h / 2f + th2 / 2f, whiteC);
+                }
+                if (t > 3.4f)
+                    draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f,
+                            Math.min(1f, (t - 3.4f) / 0.6f)));
+            }
+            case MADE_IN_HEAVEN -> {
+                // Fade back in from the white tear
+                if (t < 1.2f)
+                    draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 1f - t / 1.2f));
+                drawLetterbox(draw, w, h, Math.min(1f, t / 1.5f));
+                // Faint golden grade over everything — the golden wind
+                float gold = 0.10f + 0.05f * (float) Math.sin(ImGui.getTime() * 1.3);
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.3f, gold));
+                drawFinaleSubtitle(draw, w, h, f);
+            }
+            case ASCENSION -> {
+                drawLetterbox(draw, w, h, 1f);
+                float wo = f.whiteout();
+                if (wo > 0f)
+                    draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, wo));
+            }
+            case WHITEOUT -> {
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 1f));
+                String line = f.whiteoutLine();
+                if (line != null) {
+                    // typewriter reveal within each line's window
+                    finText(draw, w, h * 0.46f, 1.6f, 0.25f, 0.22f, 0.28f, 1f, line);
+                }
+                // ease to black at the very end
+                if (t > 12.0f)
+                    draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f,
+                            Math.min(1f, (t - 12.0f) / 1.5f)));
+            }
+            case THE_END -> {
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f));
+                float a1 = Math.min(1f, t / 1.5f);
+                finText(draw, w, h * 0.38f, 3.4f, 0.92f, 0.88f, 0.8f, a1, "D E S C E N T");
+                float a2 = Math.min(1f, Math.max(0f, (t - 1.2f) / 1.5f));
+                finText(draw, w, h * 0.38f + 80f, 1.4f, 0.75f, 0.72f, 0.68f, a2, "THE  END");
+                if (t > 2.5f) {
+                    int em = (int) (f.endTime / 60f), es = (int) (f.endTime % 60f);
+                    finText(draw, w, h * 0.38f + 130f, 1.0f, 0.55f, 0.53f, 0.5f, Math.min(1f, (t - 2.5f) / 1f),
+                            String.format("Enemies defeated: %d      Time: %d:%02d", f.endKills, em, es));
+                }
+                if (t > 4f) {
+                    float pa = 0.35f + 0.35f * (float) Math.abs(Math.sin(ImGui.getTime() * 2.0));
+                    finText(draw, w, h * 0.78f, 1.0f, 0.6f, 0.62f, 0.55f, pa,
+                            "[ ENTER ]   remain in the world, eternal");
+                }
+            }
+            default -> { }
         }
-        cy += 8f;
+    }
 
-        // Grade display
-        String gradeLabel = "GRADE   " + grade;
-        float gsz = font.getFontSize() * 2.2f;
-        float gw = ImGui.calcTextSize(gradeLabel).x * (gsz / font.getFontSize());
-        float gx = (w - gw) * 0.5f;
-        draw.addText(font, gsz, gx + 2, cy + 2, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f), gradeLabel);
-        draw.addText(font, gsz, gx, cy, gradeCol, gradeLabel);
-        cy += gsz + 28f;
+    /** Cinematic letterbox bars (alpha 0..1). */
+    private void drawLetterbox(imgui.ImDrawList draw, float w, float h, float a) {
+        float bar = h * 0.11f;
+        int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.92f * a);
+        draw.addRectFilled(0, 0, w, bar, black);
+        draw.addRectFilled(0, h - bar, w, h, black);
+    }
 
-        // Blinking prompt
-        float pa = 0.55f + 0.45f * (float) Math.abs(Math.sin(ImGui.getTime() * 2.5));
-        String prompt = "[ ENTER ]   TAKE FLIGHT";
-        float psz = font.getFontSize() * 1.6f;
-        float pw = ImGui.calcTextSize(prompt).x * (psz / font.getFontSize());
-        draw.addText(font, psz, (w - pw) * 0.5f + 1, cy + 1,
-                ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, pa * 0.9f), prompt);
-        draw.addText(font, psz, (w - pw) * 0.5f, cy,
-                ImGui.colorConvertFloat4ToU32(0.9f, 1.0f, 0.6f, pa), prompt);
+    /** Lower-third subtitle with typewriter reveal, shared by several states. */
+    private void drawFinaleSubtitle(imgui.ImDrawList draw, float w, float h, FinaleManager f) {
+        if (f.subtitle == null) return;
+        int visible = (int) (f.subtitleAge * 32);
+        String shown = visible >= f.subtitle.length() ? f.subtitle : f.subtitle.substring(0, Math.max(0, visible));
+        if (shown.isEmpty()) return;
+        finText(draw, w, h * 0.80f, 1.35f, 0.95f, 0.92f, 0.82f, 0.96f, shown);
+    }
+
+    /** Edge arrow pointing toward the portal during the SUMMONS. */
+    private void drawPortalArrow(imgui.ImDrawList draw, float w, float h, FinaleManager f) {
+        Camera cam = win.camera;
+        if (cam == null) return;
+        Vector3f target = new Vector3f(f.portalX(), f.portalCY(), f.portalZ());
+
+        Matrix4f viewProj = new Matrix4f(cam.getProjectionMatrix()).mul(cam.getViewMatrix());
+        org.joml.Vector4f clip = new org.joml.Vector4f(target.x, target.y, target.z, 1.0f).mul(viewProj);
+        boolean inFront = clip.w > 0.0f;
+        float ndcX = clip.x / Math.abs(clip.w);
+        float ndcY = clip.y / Math.abs(clip.w);
+        boolean onScreen = inFront && Math.abs(ndcX) <= 1.0f && Math.abs(ndcY) <= 1.0f;
+
+        int gold = ImGui.colorConvertFloat4ToU32(1.0f, 0.8f, 0.25f, 0.95f);
+        if (onScreen) {
+            // Diamond marker hovering on the portal itself
+            float sx = (ndcX * 0.5f + 0.5f) * w;
+            float sy = (1f - (ndcY * 0.5f + 0.5f)) * h;
+            float d = 10f + 4f * (float) Math.abs(Math.sin(ImGui.getTime() * 3.0));
+            draw.addLine(sx, sy - d, sx + d, sy, gold, 3f);
+            draw.addLine(sx + d, sy, sx, sy + d, gold, 3f);
+            draw.addLine(sx, sy + d, sx - d, sy, gold, 3f);
+            draw.addLine(sx - d, sy, sx, sy - d, gold, 3f);
+            String lbl = "THE PORTAL";
+            float lw = ImGui.calcTextSize(lbl).x;
+            draw.addText(sx - lw / 2, sy - d - 22f, gold, lbl);
+        } else {
+            // Edge triangle pointing the way (same dot-product trick as the drone arrow)
+            Vector3f to = new Vector3f(target).sub(cam.position).normalize();
+            Vector3f right = cam.getRight();
+            Vector3f up = new Vector3f(right).cross(cam.getLookDirection()).normalize();
+            float dirX = to.dot(right);
+            float dirY = -to.dot(up);
+            float ang = (float) Math.atan2(dirY, dirX);
+            float cx = w / 2f, cy = h / 2f;
+            float radius = Math.min(cx, cy) * 0.82f;
+            float ax = cx + (float) Math.cos(ang) * radius;
+            float ay = cy + (float) Math.sin(ang) * radius;
+            float ca = (float) Math.cos(ang), sa = (float) Math.sin(ang);
+            // triangle: tip + two base corners, rotated by ang
+            float[][] p = {{26f, 0f}, {-12f, 16f}, {-12f, -16f}};
+            float[] xs = new float[3], ys = new float[3];
+            for (int i = 0; i < 3; i++) {
+                xs[i] = ax + p[i][0] * ca - p[i][1] * sa;
+                ys[i] = ay + p[i][0] * sa + p[i][1] * ca;
+            }
+            draw.addTriangleFilled(xs[0], ys[0], xs[1], ys[1], xs[2], ys[2], gold);
+        }
     }
 
     void renderChatBox(int screenHeight) {
@@ -1902,7 +2067,7 @@ class WindowHud {
                 float sx = (ndcX * 0.5f + 0.5f) * screenW;
                 float sy = (1f - (ndcY * 0.5f + 0.5f)) * screenH;
 
-                float hpFrac = Math.max(0f, enemy.health / enemy.maxHealth);
+                float hpFrac = Math.max(0f, enemy.health / (enemy.maxHealth * enemy.healthScale));
                 float barW = 44f, barH = 6f;
                 float barX = sx - barW / 2f, barY = sy - barH;
 

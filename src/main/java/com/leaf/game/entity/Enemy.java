@@ -90,6 +90,21 @@ public class Enemy {
     public final float collisionRadius;
     public final float halfHeight;
 
+    /**
+     * Finale GIANT support: multiplies render scale and hitbox dimensions.
+     * healthScale keeps the HP bar fraction correct when health was boosted
+     * beyond the type's (final) maxHealth.
+     */
+    public float scaleMul    = 1f;
+    public float healthScale = 1f;
+
+    /** Turn this enemy into a giant: bigger body, bigger hitbox, more HP. */
+    public void makeGiant(float sizeMul, float hpMul) {
+        scaleMul    = sizeMul;
+        healthScale = hpMul;
+        health      = maxHealth * hpMul;
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     //  World state
     // ═════════════════════════════════════════════════════════════════════════
@@ -1153,13 +1168,22 @@ public class Enemy {
     }
 
     public boolean isHitByPlayer(Vector3f p) {
-        if (p.y < position.y || p.y > position.y + 2f * halfHeight) return false;
+        if (p.y < position.y || p.y > position.y + 2f * halfHeight * scaleMul) return false;
         float dx = p.x - position.x;
         float dz = p.z - position.z;
-        return (dx * dx + dz * dz) <= collisionRadius * collisionRadius;
+        float r  = collisionRadius * scaleMul;
+        return (dx * dx + dz * dz) <= r * r;
     }
 
     public float[] renderScaleVec() {
+        float[] base = baseScaleVec();
+        if (scaleMul != 1f) {
+            base = new float[]{ base[0] * scaleMul, base[1] * scaleMul, base[2] * scaleMul };
+        }
+        return base;
+    }
+
+    private float[] baseScaleVec() {
         return switch (type) {
             case GOLEM    -> new float[]{ 1.40f, 1.60f, 1.40f };
             case THROWER  -> new float[]{ 0.48f, 0.92f, 0.48f };

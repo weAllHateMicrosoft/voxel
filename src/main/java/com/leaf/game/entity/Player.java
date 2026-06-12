@@ -530,8 +530,12 @@ public class Player {
     /** Comfort damping: full-strength roll/FOV pumping made playtesters dizzy. */
     private static final float CAMERA_COMFORT = 0.4f;
 
+    /** Extra roll forced by cinematic sequences (finale wake-up). Not comfort-damped. */
+    public float externalRoll = 0f;
+
     public float getCameraRoll() {
-        return (flightController.getCameraRoll() + abilities.getCameraRoll()) * CAMERA_COMFORT;
+        return (flightController.getCameraRoll() + abilities.getCameraRoll()) * CAMERA_COMFORT
+                + externalRoll;
     }
     public float getCameraFovBoost() {
         if (isSmashing) return -8f * CAMERA_COMFORT;
