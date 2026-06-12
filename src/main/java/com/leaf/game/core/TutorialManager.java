@@ -192,7 +192,7 @@ public class TutorialManager {
         // 5 ── BATTLE BEGINS — auto-advances and lets finish() turn waves on.
         // FLIGHT is granted later, when the Voyage opens after wave 6.
         steps.add(new Step("BATTLE BEGINS",
-            "Survive 6 waves  -  every wave unlocks a NEW POWER.", "GO!",
+            "Survive 4 waves  -  every wave unlocks NEW POWERS.", "GO!",
             null,
             c -> false, 2.5f));
     }

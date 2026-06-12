@@ -2672,7 +2672,7 @@ class WindowHud {
                         ? "Locked  -  defeat wave " + wv + " at spawn to unlock."
                         : (a == Progression.Ability.KAMUI)
                         ? "Locked  -  a secret. Keep playing."
-                        : "Locked  -  forge on the Voyage (follow the beam after wave 6).";
+                        : "Locked  -  forge on the Voyage (follow the beam after wave 4).";
                 ImGui.textDisabled(lockMsg);
                 ImGui.popTextWrapPos();
             }

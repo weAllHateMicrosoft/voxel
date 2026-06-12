@@ -64,47 +64,34 @@ public class Progression {
      * It is a death-earned easter egg granted by RunRecords after 3 deaths.
      * Progression.grantKamui() handles it separately.
      */
+    // Compressed to FOUR training waves (was six) — the pre-Voyage grind
+    // dragged. Every ability still unlocks, just faster. God-tier weapons
+    // (Gatling / Stone Cannon / Orbital / The World / Flight) are forged on
+    // the Voyage, not granted by waves.
     private static final Ability[][] TIERS = {
-        /* start  */ { Ability.SNIPE, Ability.RADAR },               // Sniper + Radar from the start
+        /* start  */ { Ability.SNIPE, Ability.RADAR },              // Sniper + Radar from the start
         /* wave 1 */ { Ability.SLASH, Ability.DASH },               // close combat + mobility
-        /* wave 2 */ { Ability.QUAGMIRE },                          // control
         // HEAL (hold L) is out of the natural run  -  enemies drop HOTDOGS now;
-        // walking over one heals +25. Still available via /showcase.
-        /* wave 3 */ { Ability.LIGHTNING, Ability.GRAB },           // power + grapple
-        /* wave 4 */ { Ability.BLINK },                             // escape
-        // TIME (dilation) and SWAP (position swap) are deliberately out of the
-        // natural run  -  too many keybinds overwhelmed playtesters. /showcase only.
-        /* wave 5 */ { Ability.PILLAR, Ability.CANNONBALL },        // launch yourself
-        /* wave 6 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL }, // tactician's toolkit
-        // ── THE ASCENSION  -  the crystal stops holding back. God-tier weapons. ──
-        /* wave 7 */ { Ability.GATLING },                           // first true weapon
-        /* wave 8 */ { Ability.STONE_CANON },                        // siege weapon
-        /* wave 9 */ { Ability.ORBITAL },                           // annihilation from orbit
-        /* wave 10*/ { Ability.DOMAIN },                            // stop time  -  the ultimate
-        /* wave 11*/ { Ability.FLIGHT },                            // final gift  -  the ending
+        // TIME and SWAP are /showcase-only (too many keybinds overwhelmed playtesters).
+        /* wave 2 */ { Ability.QUAGMIRE, Ability.LIGHTNING, Ability.GRAB },  // control + power
+        /* wave 3 */ { Ability.BLINK, Ability.PILLAR, Ability.CANNONBALL },  // escape + launch
+        /* wave 4 */ { Ability.STAND, Ability.SUBSTITUTE, Ability.SEAL },    // tactician's toolkit
     };
 
     /** Story headline shown on each wave's unlock card (index = wave cleared). */
     private static final String[] FLAVOR = {
         "The crystal stirs. Its first gift is yours.",
         "They're closing in. Move faster  -  strike harder.",
-        "Hold them. Outlast them.",
         "Their numbers grow. Answer with thunder.",
-        "Slip through every trap. Bend space to escape.",
-        "The earth itself launches you skyward.",
+        "Slip every trap  -  and let the earth launch you skyward.",
         "Lay your traps. Command the battlefield.",
-        "Enough holding back. The crystal hands you a WEAPON.",
-        "Tear through stone  -  and see every foe through it.",
-        "Look up. Call the sky down upon them.",
-        "Time bows to you now. The world holds its breath.",
-        "One last gift. The mountain releases you. The sky is yours.",
     };
 
-    /** The wave that triggers the ENDING cutscene and grants FLIGHT. */
-    public static final int ENDING_WAVE = 11;
+    /** (Legacy — the true ending is the FinaleManager portal trial now.) */
+    public static final int ENDING_WAVE = 99;
 
     /** After clearing this many waves the Voyage opens (flight + shard collection). */
-    public static final int VOYAGE_START_WAVE = 6;
+    public static final int VOYAGE_START_WAVE = 4;
 
     /** Always shown on unlock cards  -  the user wants players reminded about mana. */
     public static final String MANA_NOTE = "Most abilities draw MANA  -  the blue bar under your health. It refills over time.";

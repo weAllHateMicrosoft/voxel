@@ -92,8 +92,10 @@ public class FinaleManager {
     private final List<float[]> geysers = new ArrayList<>();
     private float geyserTimer = 0f;
     private float lightningTimer = 0f;
-    /** Trial 5 boss. */
+    /** The Avatar boss. */
     private Enemy boss = null;
+    /** Countdown to the next meteor PULSE during the Avatar fight. */
+    private float bossMeteorTimer = 0f;
     private float barrageTimer = 0f;
     /** Pending barrage strikes: {x, y, z, countdown}. */
     private final List<float[]> barrage = new ArrayList<>();
@@ -591,15 +593,17 @@ public class FinaleManager {
             }
             case 6 -> {
                 // The Avatar DESCENDS: spawns high above and crashes into the arena.
-                boss = spawnGiant(0.0, 16f, Enemy.Type.GOLEM, 5.0f, 30f);
+                // (HP was 30x — an attrition marathon under permanent meteor rain
+                //  that nobody survived. 12x ends the fight before the player.)
+                boss = spawnGiant(0.0, 16f, Enemy.Type.GOLEM, 5.0f, 12f);
                 if (boss != null) {
                     giants.add(boss);
                     boss.position.y = ARENA_Y + 30f;
                     bossEntryPending = true;
                 }
-                win.startMeteorStorm(99999f);
+                bossMeteorTimer = 6f;     // meteors come in PULSES now, not forever
                 barrageTimer    = 6f;
-                bossAttackTimer = 4f;
+                bossAttackTimer = 5f;
                 bossAttackIdx   = 0;
                 stompTimer      = 9f;
                 win.requestShake(0.3f, 1.2f);
@@ -747,6 +751,34 @@ public class FinaleManager {
     }
 
     /** Aimed volley: lobbed shots leading the player. */
+    /**
+     * A violet LASER: an instant beam from the caster's eye to where the
+     * player stood at the moment of firing. The half-second aim-glint before
+     * each shot is the dodge window — sidestep and the beam scorches stone.
+     */
+    private void fireLaser(Enemy caster, float dmg) {
+        Vector3f p = win.player.position;
+        float sx = caster.position.x, sy = caster.position.y + 2f * caster.scaleMul, sz = caster.position.z;
+        float tx = p.x, ty = p.y + 0.9f, tz = p.z;
+        float dx = tx - sx, dy = ty - sy, dz = tz - sz;
+        float len = Math.max(0.001f, (float) Math.sqrt(dx * dx + dy * dy + dz * dz));
+        float nx = dx / len, ny = dy / len, nz = dz / len;
+        // The beam: overlapping bolt segments along the whole line, fired at once
+        for (float d = 0f; d < len; d += 2.2f) {
+            win.fxBolt(sx + nx * d, sy + ny * d, sz + nz * d, nx, ny, nz,
+                    3.2f, 0.16f, 0.22f, 2.6f, 0.4f, 2.9f);
+        }
+        // Muzzle flare + impact burst
+        win.fxBurst(sx, sy, sz, 0.2f, 1.6f, 0.25f, 2.6f, 0.5f, 2.9f);
+        win.fxBurst(tx, ty, tz, 0.3f, 2.8f, 0.35f, 2.6f, 0.5f, 2.9f);
+        win.fxRing(tx, ty - 0.5f, tz, 0.3f, 3.5f, 0.35f, 2.4f, 0.5f, 2.8f);
+        AudioManager.play("snipe_loadgun", 0.55f);
+        // Hit check in full 3D — airborne dodges count, but so do airborne hits.
+        Vector3f now = win.player.position;
+        float hx = now.x - tx, hy = (now.y + 0.9f) - ty, hz = now.z - tz;
+        if (hx * hx + hy * hy + hz * hz < 2.2f * 2.2f) hurtPlayer(dmg);
+    }
+
     private void volley(Enemy caster, int shots, float dmg) {
         Vector3f p = win.player.position;
         float y = caster.position.y + 2f * caster.scaleMul;
@@ -883,13 +915,13 @@ public class FinaleManager {
             win.fxBurst(x, ARENA_Y + 1f, z, 0.5f, 4f, 0.5f, 2.6f, 0.9f, 0.5f);
             win.requestShake(0.22f, 0.5f);
             AudioManager.play("fall_light", 0.9f);
-            // The shockwave: if the player is grounded within 9 blocks — launched + hurt.
+            // The shockwave: if the player is grounded within 7 blocks — launched + hurt.
             Vector3f p = win.player.position;
             float dx = p.x - x, dz = p.z - z;
             float distSq = dx * dx + dz * dz;
-            if (distSq < 81f && p.y < ARENA_Y + 3f) {
-                hurtPlayer(14f);
-                win.player.setVelocityY(13f);   // jump the shockwave or get thrown
+            if (distSq < 49f && p.y < ARENA_Y + 3f) {
+                hurtPlayer(10f);
+                win.player.setVelocityY(12f);   // jump the shockwave or get thrown
             }
         }
     }
@@ -922,7 +954,7 @@ public class FinaleManager {
             }
             if (giantAbility[i] <= 0f) {
                 giantAbility[i] = 4.2f;
-                volley(s, 2, 10f);
+                fireLaser(s, 12f);
             }
         }
     }
@@ -994,7 +1026,7 @@ public class FinaleManager {
                     0f, -1f, 0f, 8f, 0.4f, 0.3f, 2.4f, 0.7f, 2.9f);
             if (boss.position.y <= ARENA_Y + 3f) {
                 bossEntryPending = false;
-                landSlam(boss.position.x, boss.position.z, 11f, 18f);
+                landSlam(boss.position.x, boss.position.z, 9f, 12f);
                 ScreenEffectManager.INSTANCE.flash(0.8f, 0.4f, 1.0f, 0.6f, 0.7f);
                 win.requestShake(0.5f, 1.4f);
                 say("THE  AVATAR  OF  THE  CRYSTAL.");
@@ -1006,6 +1038,7 @@ public class FinaleManager {
         if (!adds66 && frac > 0f && frac < 0.66f) {
             adds66 = true;
             for (int i = 0; i < 3; i++) spawnAt(i / 3.0 * Math.PI * 2, 20f, Enemy.Type.ZOMBIE);
+            dropMercyHotdogs(3);
             say("THE  AVATAR  CALLS  FOR  AID.");
             ScreenEffectManager.INSTANCE.flash(0.8f, 0.3f, 1.0f, 0.4f, 0.5f);
         }
@@ -1014,38 +1047,46 @@ public class FinaleManager {
             enraged = true;
             boss.speedMul = 3.2f;
             for (int i = 0; i < 3; i++) spawnAt(i / 3.0 * Math.PI * 2 + 0.5, 22f, Enemy.Type.SLIME);
+            dropMercyHotdogs(3);
             say("THE  AVATAR  RAGES.");
             ScreenEffectManager.INSTANCE.flash(1.0f, 0.15f, 0.1f, 0.55f, 0.8f);
             win.requestShake(0.3f, 1.2f);
         }
 
+        // ── Meteor PULSES: a few seconds of skyfall, then a breather ──
+        bossMeteorTimer -= dt;
+        if (bossMeteorTimer <= 0f) {
+            bossMeteorTimer = enraged ? 9f : 13f;
+            win.startMeteorStorm(3.5f);
+        }
+
         // The arena tightens around the duel.
         if (liveRadius > 18) {
             crumbleTimer -= dt;
-            if (crumbleTimer <= 0f) { crumbleTimer = enraged ? 6f : 9f; crumbleRing(); }
+            if (crumbleTimer <= 0f) { crumbleTimer = enraged ? 9f : 13f; crumbleRing(); }
         }
-        tickStomps(dt, enraged ? 5f : 7f);
+        tickStomps(dt, enraged ? 6f : 8f);
 
         // ── ATTACK CYCLE ──
         bossAttackTimer -= dt;
         if (bossAttackTimer <= 0f && boss.alive) {
-            bossAttackTimer = enraged ? 3.6f : 5.2f;
+            bossAttackTimer = enraged ? 4.5f : 6.5f;
             switch (bossAttackIdx % 4) {
                 case 0 -> {   // CRYSTAL BARRAGE
                     Vector3f p = win.player.position;
-                    int shots = enraged ? 6 : 4;
+                    int shots = enraged ? 5 : 3;
                     for (int i = 0; i < shots; i++) {
                         double a = rng.nextDouble() * Math.PI * 2;
                         float r = 1.5f + rng.nextFloat() * 5f;
                         barrage.add(new float[]{ p.x + (float) Math.cos(a) * r, ARENA_Y,
-                                                 p.z + (float) Math.sin(a) * r, 0.95f });
+                                                 p.z + (float) Math.sin(a) * r, 1.2f });
                     }
                     win.fxBurst(boss.position.x, boss.position.y + 6f, boss.position.z,
                             0.5f, 5f, 0.5f, 2.2f, 0.6f, 2.9f);
                 }
-                case 1 -> nova(boss, enraged ? 16 : 12, 13f, 9f);          // RADIAL NOVA
-                case 2 -> startLeap(boss, 9f, 18f);                        // LEAP SLAM
-                case 3 -> volley(boss, enraged ? 5 : 3, 14f);              // AIMED VOLLEY
+                case 1 -> nova(boss, enraged ? 16 : 12, 9f, 9f);           // RADIAL NOVA
+                case 2 -> startLeap(boss, 9f, 12f);                        // LEAP SLAM
+                case 3 -> volley(boss, enraged ? 4 : 3, 10f);              // AIMED VOLLEY
             }
             bossAttackIdx++;
         }
@@ -1059,9 +1100,20 @@ public class FinaleManager {
             } else {
                 win.fxBurst(b[0], ARENA_Y + 1f, b[2], 0.3f, 3.2f, 0.4f, 2.4f, 0.6f, 2.9f);
                 win.fxBolt(b[0], ARENA_Y + 12f, b[2], 0f, -1f, 0f, 12f, 0.4f, 0.3f, 2.2f, 0.6f, 2.9f);
-                hurtPlayerNear(b[0], b[2], 2.6f, 16f);
+                hurtPlayerNear(b[0], b[2], 2.2f, 10f);
                 barrage.remove(i);
             }
+        }
+    }
+
+    /** The crystal offers mercy: hotdogs scatter near the player mid-bossfight. */
+    private void dropMercyHotdogs(int n) {
+        Vector3f p = win.player.position;
+        for (int i = 0; i < n; i++) {
+            double a = rng.nextDouble() * Math.PI * 2;
+            float r = 3f + rng.nextFloat() * 4f;
+            win.enemyManager.pendingFoodDrops.add(new float[]{
+                    p.x + (float) Math.cos(a) * r, ARENA_Y + 1.5f, p.z + (float) Math.sin(a) * r });
         }
     }
 
