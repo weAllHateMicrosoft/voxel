@@ -128,7 +128,9 @@ public enum Block {
     MAPLE_LEAVES_ORANGE(0.88f, 0.45f, 0.12f, 0.90f, 0.2f),  // orange canopy
 
     // ── Pickups (appended LAST — chunk saves store ordinals) ─────
-    HOTDOG          (0.78f, 0.32f, 0.12f, 1.0f, 99f);  // heal pickup dropped by enemies
+    HOTDOG          (0.78f, 0.32f, 0.12f, 1.0f, 99f),  // heal pickup dropped by enemies
+    // (appended after HOTDOG to keep saved ordinals stable)
+    WPN_DEPRIVATION (0.95f, 0.78f, 0.20f, 1.0f, 99f);  // Deprivation Domain — golden hemisphere, LMB toggles
     public final float r, g, b, a;
     public final float hardness;
 

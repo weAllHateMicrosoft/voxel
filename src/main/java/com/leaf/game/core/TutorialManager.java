@@ -164,35 +164,37 @@ public class TutorialManager {
         // chip by WindowHud.renderObjectiveBanner — playtesting showed long
         // sentences in small type are read once and instantly forgotten.
 
+        // (Timeouts trimmed so the run reaches the action fast.)
+
         // 1 ── MOVE + LOOK (combined)
         steps.add(new Step("MOVE",
             "Mouse to look around.  Walk forward!", "W A S D",
-            null, c -> movedFar(c, 4f), 9f));
+            null, c -> movedFar(c, 4f), 5f));
 
         // 2 ── SLASH  —  grants on enter so the key is immediately usable
         steps.add(new Step("SLASH",
             "Your blade. Swing it!", "F",
             c -> c.player.progression.unlock(Progression.Ability.SLASH),
-            c -> usedCooldown(c, c.player.attacks.getMeleeCooldownFrac()), 8f));
+            c -> usedCooldown(c, c.player.attacks.getMeleeCooldownFrac()), 5f));
 
         // 3 ── DASH  —  grants on enter
         steps.add(new Step("DASH",
             "A burst of speed. Try it!", "Q",
             c -> c.player.progression.unlock(Progression.Ability.DASH),
-            c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 8f));
+            c -> usedCooldown(c, c.player.abilities.getDashCooldownFrac()), 5f));
 
         // 4 ── SNIPER  —  the ranged weapon already in slot 1
         steps.add(new Step("SNIPER",
             "Hold to charge...  release to FIRE!", "HOLD LEFT-CLICK",
             null,
-            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 10f));
+            c -> usedCooldown(c, c.player.attacks.getSnipeIconFrac()), 7f));
 
         // 5 ── BATTLE BEGINS — auto-advances and lets finish() turn waves on.
         // FLIGHT is granted later, when the Voyage opens after wave 6.
         steps.add(new Step("BATTLE BEGINS",
             "Survive 6 waves  -  every wave unlocks a NEW POWER.", "GO!",
             null,
-            c -> false, 5f));
+            c -> false, 2.5f));
     }
 
     private static float angleDiff(float a, float b) {

@@ -632,19 +632,20 @@ class WindowHud {
                 float a = Math.min(1f, t / 0.8f) * (t > 3.7f ? Math.max(0f, 1f - (t - 3.7f) / 0.8f) : 1f);
                 finText(draw, w, h * 0.34f, 3.2f, 1.0f, 0.3f, 0.25f, a, "THE FINAL TRIAL");
                 finText(draw, w, h * 0.34f + 64f, 1.2f, 0.9f, 0.85f, 0.8f, a,
-                        "Five trials stand between you and freedom.  Survive them all.");
+                        "Six trials stand between you and freedom.  Survive them all.");
                 finText(draw, w, h * 0.34f + 96f, 1.0f, 0.7f, 0.7f, 0.75f, a * 0.9f,
                         "Fall, and wake at the portal.  The trial will wait.");
             }
             case PHASE_BANNER -> {
                 float a = Math.min(1f, t / 0.5f) * (t > 2.5f ? Math.max(0f, 1f - (t - 2.5f) / 0.7f) : 1f);
-                finText(draw, w, h * 0.30f, 1.2f, 0.8f, 0.75f, 0.7f, a, "TRIAL  " + f.phase + "  OF  5");
+                finText(draw, w, h * 0.30f, 1.2f, 0.8f, 0.75f, 0.7f, a,
+                        "TRIAL  " + f.phase + "  OF  " + FinaleManager.PHASES);
                 finText(draw, w, h * 0.30f + 34f, 2.8f, 1.0f, 0.35f, 0.3f, a, f.phaseName());
                 finText(draw, w, h * 0.30f + 96f, 1.15f, 0.95f, 0.9f, 0.8f, a, f.phaseSub());
             }
             case FIGHT -> {
                 finText(draw, w, 40f, 1.1f, 1.0f, 0.5f, 0.4f, 0.9f,
-                        "TRIAL " + f.phase + " / 5   " + f.phaseName());
+                        "TRIAL " + f.phase + " / " + FinaleManager.PHASES + "   " + f.phaseName());
                 float infoY = 66f;
                 String swl = f.subWaveLabel();
                 if (swl != null) {
@@ -672,7 +673,7 @@ class WindowHud {
                             ImGui.colorConvertFloat4ToU32(1.0f, 0.8f, 0.25f, 0.85f), 3f, 0, 1.5f);
                     infoY += bh + 10f;
                 }
-                if (f.phase >= 4) {
+                if (f.phase >= 5) {
                     float pa = 0.4f + 0.6f * (float) Math.abs(Math.sin(ImGui.getTime() * 4.0));
                     finText(draw, w, infoY, 1.05f, 1.0f, 0.25f, 0.15f, pa,
                             "! THE ARENA IS COLLAPSING  -  STAY OFF THE EDGE !");
@@ -1745,7 +1746,8 @@ class WindowHud {
                 boolean tool = (b == Block.GATLING_GUN || b == Block.TORCH || b == Block.TELESCOPE
                         || b == Block.GRAPPLING_HOOK
                         || b == Block.WPN_ORBITAL || b == Block.WPN_SNIPER
-                        || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON);
+                        || b == Block.WPN_TIMESTOP || b == Block.WPN_STONE_CANNON
+                        || b == Block.WPN_DEPRIVATION);
                 if (b != Block.AIR && (tool || count > 0)) {
                     float s = 8.0f;
                     float ix0 = x + s, iy0 = startY + s, ix1 = x + slotSize - s, iy1 = startY + slotSize - s;
@@ -1758,6 +1760,7 @@ class WindowHud {
                         case WPN_ORBITAL     -> drawOrbitalIcon(draw, ix0, iy0, ix1, iy1);
                         case WPN_TIMESTOP    -> drawTimeStopIcon(draw, ix0, iy0, ix1, iy1);
                         case WPN_STONE_CANNON-> drawStoneCannonIcon(draw, ix0, iy0, ix1, iy1);
+                        case WPN_DEPRIVATION -> drawBlockIcon(draw, b, ix0, iy0, ix1, iy1);
                         default -> {
                             drawBlockIcon(draw, b, ix0, iy0, ix1, iy1);
                             String countStr = String.valueOf(count);
@@ -1765,6 +1768,41 @@ class WindowHud {
                             draw.addText(x + slotSize - 15, startY + slotSize - 19, white, countStr);
                         }
                     }
+                }
+
+                // ── COOLDOWN WHEEL: a golden time-circle sweeps closed while the
+                //    weapon recharges (THE WORLD / Deprivation / Stone Cannon). ──
+                float cdLeft = 0f, cdMax = 0f;
+                if (b == Block.WPN_TIMESTOP && win.timeStopCooldown > 0f) {
+                    cdLeft = win.timeStopCooldown;  cdMax = GameConfig.timeStopCooldownSecs;
+                } else if (b == Block.WPN_DEPRIVATION && win.depCooldown > 0f) {
+                    cdLeft = win.depCooldown;       cdMax = GameConfig.depCooldownSecs;
+                } else if (b == Block.WPN_STONE_CANNON && win.stoneCanonCooldownTimer > 0f) {
+                    cdLeft = win.stoneCanonCooldownTimer; cdMax = GameConfig.stoneCanonCooldown;
+                }
+                if (cdLeft > 0f && cdMax > 0f) {
+                    float frac = Math.min(1f, cdLeft / cdMax);     // 1 = just used
+                    float ccx = x + slotSize / 2f, ccy = startY + slotSize / 2f;
+                    // Dim the slot while recharging
+                    draw.addRectFilled(x, startY, x + slotSize, startY + slotSize,
+                            ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.55f), 4.0f);
+                    // The time circle: golden arc shrinking clockwise as it recharges
+                    float a0 = -(float) Math.PI / 2f;
+                    draw.pathClear();
+                    draw.pathArcTo(ccx, ccy, slotSize * 0.32f, a0, a0 + (float) Math.PI * 2f * frac, 32);
+                    draw.pathStroke(ImGui.colorConvertFloat4ToU32(1.0f, 0.82f, 0.25f, 0.95f), 0, 3.5f);
+                    // Seconds remaining, centred
+                    String secs = String.valueOf((int) Math.ceil(cdLeft));
+                    float tw2 = ImGui.calcTextSize(secs).x;
+                    draw.addText(ccx - tw2 / 2f + 1, ccy - 7f + 1, black, secs);
+                    draw.addText(ccx - tw2 / 2f, ccy - 7f,
+                            ImGui.colorConvertFloat4ToU32(1f, 0.95f, 0.7f, 1f), secs);
+                }
+                // Active-state glow: golden pulse while the Deprivation cage is up
+                if (b == Block.WPN_DEPRIVATION && win.depActive) {
+                    float pa = 0.5f + 0.4f * (float) Math.abs(Math.sin(glfwGetTime() * 4.0));
+                    draw.addRect(x - 1, startY - 1, x + slotSize + 1, startY + slotSize + 1,
+                            ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.2f, pa), 5f, 0, 2.5f);
                 }
             }
         } // end !isInStandPerspective (health bar + win.hotbar guard)

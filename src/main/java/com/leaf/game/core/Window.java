@@ -590,6 +590,8 @@ public class Window {
     // feet; everything inside is inverted + shifted to electric blue, enemies and
     // their projectiles freeze, then the domain collapses back. Pure spectacle.
     private boolean timeStopActive = false;
+    /** Seconds until THE WORLD can stop time again (HUD draws the slot wheel). */
+    float timeStopCooldown = 0f;
     private float   timeStopT      = 0f;
     private float   tsCenterX, tsCenterY, tsCenterZ;   // anchored at activation
     private float   tsRadiusNow    = 0f;               // live radius (world units)
@@ -646,9 +648,9 @@ public class Window {
     // the golden hemisphere is instantly counter-struck with a lingering golden thread
     // and a dimensional-slash ring. Thread web builds over time. All configurable via
     // GameConfig (depRadius, depDuration, depDamage, …).
-    private boolean depActive    = false;
+    boolean depActive    = false;   // (HUD reads it for the slot glow)
     private float   depT         = 0f;   // seconds since domain activated
-    private float   depCooldown  = 0f;   // seconds until usable again (counts down)
+    float   depCooldown  = 0f;   // seconds until usable again (HUD draws the slot wheel)
     private float   depStrike    = 0f;   // 0->1 strike flash (decays 6×/sec); fed to shader
     private boolean lastApostr   = false;
     private float   depX, depY, depZ;   // player position frozen at activation
@@ -1052,7 +1054,8 @@ public class Window {
                 Block heldLmb = hotbar[selectedSlot];
                 boolean gunHeld   = heldLmb == Block.GATLING_GUN
                         || heldLmb == Block.WPN_SNIPER  || heldLmb == Block.WPN_ORBITAL
-                        || heldLmb == Block.WPN_TIMESTOP|| heldLmb == Block.WPN_STONE_CANNON;
+                        || heldLmb == Block.WPN_TIMESTOP|| heldLmb == Block.WPN_STONE_CANNON
+                        || heldLmb == Block.WPN_DEPRIVATION;
                 boolean scopeHeld = heldLmb == Block.TELESCOPE;
                 if (!standConsumedLMB && !kamuiConsumedLMB && !gunHeld && !scopeHeld) {
                     breakingActive = (action == GLFW_PRESS || action == GLFW_REPEAT);
@@ -1198,7 +1201,7 @@ public class Window {
             case ORBITAL     -> { w = Block.WPN_ORBITAL;      slot = 2; }
             case DOMAIN      -> { w = Block.WPN_TIMESTOP;     slot = 3; }
             case STONE_CANON -> { w = Block.WPN_STONE_CANNON; slot = 4; }
-            case DEPRIVATION -> { }  // no hotbar item  -  activated by ' key
+            case DEPRIVATION -> { w = Block.WPN_DEPRIVATION;  slot = 5; }  // ' key still works too
             default          -> { return null; }
         }
         if (slot >= 0 && w != null) {
@@ -1221,7 +1224,7 @@ public class Window {
     private static int weaponSlotFor(Progression.Ability a) {
         return switch (a) {
             case SNIPE -> 0; case GATLING -> 1; case ORBITAL -> 2;
-            case DOMAIN -> 3; case STONE_CANON -> 4;
+            case DOMAIN -> 3; case STONE_CANON -> 4; case DEPRIVATION -> 5;
             default -> -1;
         };
     }
@@ -2129,7 +2132,8 @@ public class Window {
                         //     there is exactly ONE button to remember) ───────────
                         Block heldWpn = hotbar[selectedSlot];
                         boolean fireWpnHeld = heldWpn == Block.WPN_SNIPER || heldWpn == Block.WPN_ORBITAL
-                                || heldWpn == Block.WPN_TIMESTOP || heldWpn == Block.WPN_STONE_CANNON;
+                                || heldWpn == Block.WPN_TIMESTOP || heldWpn == Block.WPN_STONE_CANNON
+                                || heldWpn == Block.WPN_DEPRIVATION;
                         boolean rmbNow = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS
                                 || (fireWpnHeld && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
                         boolean rmbEdge = rmbNow && !lastRMB;
@@ -2143,11 +2147,18 @@ public class Window {
                             startOrbitalStrike(camera);
                         }
 
-                        // Time Domain (WPN_TIMESTOP): toggle on press
+                        // Time Domain (WPN_TIMESTOP): toggle on press; cooldown after it ends
                         if (heldWpn == Block.WPN_TIMESTOP && rmbEdge
                                 && player.can(Progression.Ability.DOMAIN)) {
                             if (timeStopActive) stopTimeStop();
-                            else if (!timeStopActive) startTimeStop();
+                            else if (timeStopCooldown <= 0f) startTimeStop();
+                        }
+
+                        // Deprivation Domain (WPN_DEPRIVATION): toggle on press (also the ' key)
+                        if (heldWpn == Block.WPN_DEPRIVATION && rmbEdge
+                                && player.can(Progression.Ability.DEPRIVATION)) {
+                            if (depActive) stopDeprivationDomain();
+                            else if (depCooldown <= 0f) startDeprivationDomain();
                         }
 
                         // Stone Cannon (WPN_STONE_CANNON): fire button acts as I key (handled below via iHeld)
@@ -2159,7 +2170,8 @@ public class Window {
                                 case WPN_ORBITAL     -> "Orbital Annihilation   -   Left-Click to fire";
                                 case WPN_SNIPER      -> "Sniper   -   hold Left-Click to charge, release to fire";
                                 case WPN_TIMESTOP    -> "Time Domain   -   Left-Click to toggle";
-                                case WPN_STONE_CANNON-> "Stone Cannon   -   hold Left-Click near stone, release to fire";
+                                case WPN_STONE_CANNON-> "Stone Cannon   -   hold Left-Click to absorb earth, release to fire";
+                                case WPN_DEPRIVATION -> "Deprivation Domain   -   Left-Click to erupt the golden cage";
                                 case GATLING_GUN     -> "Gatling Gun   -   hold Left-Click to fire";
                                 case GRAPPLING_HOOK  -> "Grappling Hook   -   hold LMB to swing";
                                 case TELESCOPE       -> "Telescope   -   hold RMB to look";
@@ -2986,7 +2998,7 @@ public class Window {
                                 && player.can(Progression.Ability.STONE_CANON);
 
                         if (!isChargingStoneCanon && iHeld && !lastI
-                                && !player.debugMode && stoneCanonCooldownTimer <= 0f
+                                && stoneCanonCooldownTimer <= 0f
                                 && player.mana >= GameConfig.manaStoneCanonBase) {
                             // Start charging  -  lock position
                             isChargingStoneCanon     = true;
@@ -3043,7 +3055,7 @@ public class Window {
                                     for (int bx2 = px-r; bx2 <= px+r; bx2++) {
                                         for (int bz2 = pz-r; bz2 <= pz+r; bz2++) {
                                             for (int by2 = py-r; by2 <= py+r; by2++) {
-                                                if (world.getBlock(bx2, by2, bz2) == Block.STONE) {
+                                                if (isStoneCanonFuel(world.getBlock(bx2, by2, bz2))) {
                                                     world.setBlock(bx2, by2, bz2, Block.AIR);
                                                     world.rebuildChunkAt(bx2, by2, bz2);
                                                     // Stone flies toward player
@@ -3063,10 +3075,13 @@ public class Window {
                                 }
                             }
 
-                            // Release I or exceed max charge -> fire
+                            // Release I or exceed max charge -> fire.
+                            // ALWAYS fires after a real charge — consumed earth only makes
+                            // the boulder bigger. (It used to silently fizzle with no
+                            // stone nearby, which read as "the weapon is broken".)
                             if (!iHeld || stoneCanonCharge >= GameConfig.stoneCanonMaxCharge) {
                                 isChargingStoneCanon = false;
-                                if (stoneCanonBlocksConsumed > 0) {
+                                if (stoneCanonCharge >= 0.20f) {
                                     float chargeF = Math.min(1f,
                                             stoneCanonCharge / GameConfig.stoneCanonMaxCharge);
                                     // One-time fire cost (charge-scaled; deduct whatever's left)
@@ -3809,6 +3824,7 @@ public class Window {
                     lastApostr = apostrNow;
                     // Tick cooldown + strike flash decay every frame (outside domain too)
                     depCooldown = Math.max(0f, depCooldown - rawDeltaTime);
+                    timeStopCooldown = Math.max(0f, timeStopCooldown - rawDeltaTime);
                     depStrike   = Math.max(0f, depStrike   - rawDeltaTime * 6f);
                     if (depActive) updateDeprivationDomain(rawDeltaTime, world, camera);
                     updateFx(rawDeltaTime);   // age shared ability VFX
@@ -4780,8 +4796,12 @@ public class Window {
                             }
 
                             float[] sv = enemy.renderScaleVec();
+                            // Models' origins sit slightly below their feet, so bodies
+                            // visually sink into the floor — worse the bigger the scale.
+                            // Lift proportionally to render height.
+                            float lift = 0.15f * sv[1];
                             Matrix4f worldMat = new Matrix4f()
-                                    .translate(enemy.position.x, enemy.position.y, enemy.position.z)
+                                    .translate(enemy.position.x, enemy.position.y + lift, enemy.position.z)
                                     .rotateY(faceY)
                                     .scale(sv[0], sv[1], sv[2]);
 
@@ -4836,7 +4856,7 @@ public class Window {
                             if (alpha < 0.02f) continue;
                             float[] sv = enemy.renderScaleVec();
                             Matrix4f enemyMat = new Matrix4f()
-                                    .translate(enemy.position.x, enemy.position.y,
+                                    .translate(enemy.position.x, enemy.position.y + 0.15f * sv[1],
                                                enemy.position.z)
                                     .scale(sv[0], sv[1], sv[2]);
                             shader.setUniform("alphaMultiplier", alpha);
@@ -6127,6 +6147,7 @@ public class Window {
     /** F8: anchor the domain, pause all world audio, start the ZA WARUDO sequence. */
     private void stopTimeStop() {
         timeStopActive = false; tsRadiusNow = 0f;
+        timeStopCooldown = GameConfig.timeStopCooldownSecs;
         AudioManager.stopContinuous("clock_ticking");
         AudioManager.resumeAll();
     }
@@ -6925,6 +6946,20 @@ public class Window {
     /** Finale hook: end the boss-fight meteor rain immediately. */
     void stopMeteorStorm() {
         meteorStormTimer = 0f;
+    }
+
+    /**
+     * Blocks the Stone Cannon can absorb. It used to demand pure STONE, which
+     * is buried under most biomes — standing on grass meant the weapon
+     * appeared completely dead. Any common earth now feeds the boulder.
+     */
+    private static boolean isStoneCanonFuel(Block b) {
+        return switch (b) {
+            case STONE, GRAVEL, DIRT, GRASS, SAND, RED_SAND, CLAY, SNOW,
+                 ISLAND_STONE, FOSSIL_STONE, MEGALITH, CRYSTAL_BASE,
+                 AUTUMN_GRASS, ANCIENT_SOIL, MESA_SAND -> true;
+            default -> false;
+        };
     }
 
     /** Finale hook: violent camera shake on demand. */

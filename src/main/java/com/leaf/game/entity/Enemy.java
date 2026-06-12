@@ -905,6 +905,23 @@ public class Enemy {
         boolean blockedX = isSolidColumn(world, nx, footY, position.z);
         boolean blockedZ = isSolidColumn(world, position.x, footY, nz);
 
+        // ── 1-BLOCK STEP-UP ──────────────────────────────────────────────────
+        // A single ledge used to stop walkers dead (they'd just grind against
+        // it). If the obstacle is exactly one block tall with headroom above,
+        // climb it and keep moving — enemies now chase properly over terrain.
+        if (onGround && (blockedX || blockedZ)) {
+            int sbx = (int) Math.floor(blockedX ? nx : position.x);
+            int sbz = (int) Math.floor(blockedZ ? nz : position.z);
+            if (world.getBlock(sbx, footY, sbz).isSolid()
+                    && !world.getBlock(sbx, footY + 1, sbz).isSolid()
+                    && !world.getBlock(sbx, footY + 2, sbz).isSolid()) {
+                position.y = footY + 1f;
+                position.x = nx;
+                position.z = nz;
+                return;
+            }
+        }
+
         // Wall-slide along the open axis
         if (blockedX && !blockedZ) {
             position.z += Math.signum(ndz) * step * 1.5f;

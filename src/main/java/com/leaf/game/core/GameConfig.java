@@ -79,7 +79,9 @@ public class GameConfig {
     // radius is instantly counter-struck with a golden thread and killed.
     public static float depRadius          = 8f;    // tight kill-bubble radius (blocks) — anyone who steps in dies
     public static float depDuration        = 10f;   // max stance seconds before auto-exit
-    public static float depCooldownSecs    = 1f;    // recovery cooldown after stance ends
+    public static float depCooldownSecs    = 18f;   // recovery cooldown after stance ends (hotbar wheel shows it)
+    /** THE WORLD: seconds before time can be stopped again after it resumes. */
+    public static float timeStopCooldownSecs = 20f;
     public static float depDamage          = 9999f; // counter-strike damage (instant kill)
     public static float depDetectMinVel    = 0.22f; // min movement per detection tick to trigger
     public static float depDetectTick      = 0.07f; // how often movement is sampled (seconds)

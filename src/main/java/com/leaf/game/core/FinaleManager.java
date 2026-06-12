@@ -105,7 +105,7 @@ public class FinaleManager {
     }
     private final List<Leap> leaps = new ArrayList<>();
     /** Per-giant ability clocks (index matches spawn order in {@link #giants}). */
-    private final float[] giantAbility = new float[4];
+    private final float[] giantAbility = new float[6];
     /** Boss attack cycle. */
     private float bossAttackTimer = 0f;
     private int   bossAttackIdx = 0;
@@ -167,9 +167,9 @@ public class FinaleManager {
         return (state == State.FIGHT && phase == 1) ? "WAVE  " + subWave + "  /  3" : null;
     }
 
-    /** Boss HP fraction during trial 5, or -1 when no boss bar should show. */
+    /** Boss HP fraction during the Avatar trial, or -1 when no boss bar should show. */
     public float bossFrac() {
-        if (state != State.FIGHT || phase != 5 || boss == null || !boss.alive) return -1f;
+        if (state != State.FIGHT || phase != PHASES || boss == null || !boss.alive) return -1f;
         return Math.max(0f, boss.health / (boss.maxHealth * boss.healthScale));
     }
 
@@ -391,9 +391,9 @@ public class FinaleManager {
                 else if (rng.nextInt(30) == 0) b = Block.CRYSTAL_AMETHYST;    // veins
                 else                           b = Block.MEGALITH;
                 win.world.setBlock(cx + dx, ARENA_Y - 1, cz + dz, b);
-                // Bowl underside: thick near rim, tapering toward centre.
-                int depth = d > ARENA_R - 8 ? 4 : d > ARENA_R - 20 ? 2 : 1;
-                for (int u = 2; u <= 1 + depth; u++)
+                // Solid 6-deep slab: meteor craters and ability blasts can scar the
+                // surface but NEVER punch a hole through to the void below.
+                for (int u = 2; u <= 7; u++)
                     win.world.setBlock(cx + dx, ARENA_Y - u, cz + dz, Block.MEGALITH);
             }
         }
@@ -493,13 +493,17 @@ public class FinaleManager {
         win.camera.position.set(ARENA_X, ARENA_Y + 1.05f + 1.62f, ARENA_Z);
     }
 
+    /** Total number of trials. */
+    public static final int PHASES = 6;
+
     public String phaseName() {
         return switch (phase) {
             case 1  -> "THE SWARM";
             case 2  -> "THE GIANTS";
             case 3  -> "THE CRYSTAL MOCKS YOU";
-            case 4  -> "THE FLOOR BETRAYS YOU";
-            case 5  -> "AVATAR OF THE CRYSTAL";
+            case 4  -> "EYES OF THE CRYSTAL";
+            case 5  -> "THE FLOOR BETRAYS YOU";
+            case 6  -> "AVATAR OF THE CRYSTAL";
             default -> "";
         };
     }
@@ -509,8 +513,9 @@ public class FinaleManager {
             case 1  -> "Three waves.  Skyfire walks among them.  Hold the centre.";
             case 2  -> "Three names.  Three colossi.  DODGE THE STOMP.";
             case 3  -> "Become the bird.  Score 15 to be taken seriously again.";
-            case 4  -> "The ground erupts where you stand.  NEVER stop moving.";
-            case 5  -> "The crystal itself takes form.  End this.";
+            case 4  -> "Six crystal eyes watch from the pillars.  SHOOT THEM DOWN.";
+            case 5  -> "The ground erupts where you stand.  NEVER stop moving.";
+            case 6  -> "The crystal itself takes form.  End this.";
             default -> "";
         };
     }
@@ -556,6 +561,25 @@ public class FinaleManager {
                 stompTimer = 5f;
             }
             case 4 -> {
+                // EYES OF THE CRYSTAL: six sentinels perched on alternating
+                // colonnade pillars. They cannot move — but they SHOOT.
+                for (int i = 0; i < 6; i++) {
+                    double a = (i * 2) / 12.0 * Math.PI * 2 + Math.PI / 12.0;  // every other pillar
+                    float px = ARENA_X + (float) (Math.cos(a) * 37);
+                    float pz = ARENA_Z + (float) (Math.sin(a) * 37);
+                    Enemy s = win.enemyManager.spawnAt(px, ARENA_Y + 13.2f, pz, Enemy.Type.DUMMY);
+                    if (s != null) {
+                        s.scaleMul    = 1.5f;
+                        s.health      = 140f;
+                        s.healthScale = 140f / s.maxHealth;   // HP bar reads correctly
+                        s.speedMul    = 0f;
+                        giants.add(s);
+                        win.fxBurst(px, ARENA_Y + 14f, pz, 0.3f, 2.5f, 0.5f, 2.0f, 0.6f, 2.9f);
+                    }
+                    giantAbility[i] = 2.5f + i * 0.8f;   // staggered first volleys
+                }
+            }
+            case 5 -> {
                 for (int i = 0; i < 8; i++) {
                     double a = i / 8.0 * Math.PI * 2;
                     spawnAt(a, 20f, (i % 2 == 0) ? Enemy.Type.ZOMBIE : Enemy.Type.THROWER);
@@ -565,7 +589,7 @@ public class FinaleManager {
                 stompTimer  = 7f;
                 geyserTimer = 3.5f;
             }
-            case 5 -> {
+            case 6 -> {
                 // The Avatar DESCENDS: spawns high above and crashes into the arena.
                 boss = spawnGiant(0.0, 16f, Enemy.Type.GOLEM, 5.0f, 30f);
                 if (boss != null) {
@@ -757,8 +781,9 @@ public class FinaleManager {
         switch (phase) {
             case 1 -> tickSwarm(dt);
             case 2 -> tickGiants(dt);
-            case 4 -> tickFloor(dt);
-            case 5 -> tickAvatar(dt);
+            case 4 -> tickSentinels(dt);
+            case 5 -> tickFloor(dt);
+            case 6 -> tickAvatar(dt);
         }
 
         boolean spawningMore = (phase == 1 && subWave < 3) || (phase == 2 && giantQueue > 0);
@@ -767,7 +792,7 @@ public class FinaleManager {
             AudioManager.play("seal_collect", 1.0f);
             ScreenEffectManager.INSTANCE.flash(1.0f, 0.9f, 0.4f, 0.5f, 0.5f);
             subtitle = null;
-            if (phase >= 5) {
+            if (phase >= PHASES) {
                 beginVictory();
             } else {
                 phase++;
@@ -869,7 +894,40 @@ public class FinaleManager {
         }
     }
 
-    /** Trial 4: crumbling floor + geysers that erupt where you linger + a pouncing spider. */
+    /**
+     * Trial 4: EYES OF THE CRYSTAL — six immobile sentinels on the pillar tops.
+     * Each one is shrouded in violet light and fires aimed volleys on its own
+     * rhythm; the more you destroy, the angrier the survivors get.
+     */
+    private void tickSentinels(float dt) {
+        int aliveCount = 0;
+        for (Enemy s : giants) if (s != null && s.alive) aliveCount++;
+        float rage = 1f + (6 - aliveCount) * 0.12f;   // survivors fire faster
+
+        for (int i = 0; i < giants.size() && i < giantAbility.length; i++) {
+            Enemy s = giants.get(i);
+            if (s == null || !s.alive) continue;
+            // Violet shroud so they read as glowing crystal eyes, not dummies
+            win.fxBurst(s.position.x + (rng.nextFloat() - 0.5f) * 0.8f,
+                        s.position.y + 1f + rng.nextFloat() * 1.2f,
+                        s.position.z + (rng.nextFloat() - 0.5f) * 0.8f,
+                        0.05f, 0.5f, 0.30f, 2.0f, 0.6f, 2.9f);
+            // Aim-line glint toward the player just before firing
+            giantAbility[i] -= dt * rage;
+            if (giantAbility[i] < 0.5f && giantAbility[i] > 0f && ((int) (t * 10)) % 2 == 0) {
+                Vector3f p = win.player.position;
+                Vector3f dir = new Vector3f(p.x - s.position.x, p.y - s.position.y, p.z - s.position.z).normalize();
+                win.fxBolt(s.position.x, s.position.y + 1.5f, s.position.z,
+                        dir.x, dir.y, dir.z, 4f, 0.06f, 0.15f, 2.4f, 0.5f, 2.9f);
+            }
+            if (giantAbility[i] <= 0f) {
+                giantAbility[i] = 4.2f;
+                volley(s, 2, 10f);
+            }
+        }
+    }
+
+    /** Trial 5: crumbling floor + geysers that erupt where you linger + a pouncing spider. */
     private void tickFloor(float dt) {
         if (liveRadius > 16) {
             crumbleTimer -= dt;
@@ -1037,7 +1095,7 @@ public class FinaleManager {
             for (int dz = -liveRadius; dz <= liveRadius; dz++) {
                 float d = (float) Math.sqrt(dx * dx + dz * dz);
                 if (d > liveRadius || d <= newR) continue;
-                for (int dyy = -4; dyy <= 20; dyy++)
+                for (int dyy = -8; dyy <= 20; dyy++)
                     if (win.world.getBlock(cx + dx, ARENA_Y + dyy, cz + dz).isSolid())
                         win.world.setBlock(cx + dx, ARENA_Y + dyy, cz + dz, Block.AIR);
                 if (rng.nextInt(10) == 0)
