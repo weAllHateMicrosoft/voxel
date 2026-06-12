@@ -966,6 +966,7 @@ public class Window {
                     flappyPrevZ = player.position.z;
                     flappyPrevWaves = enemyManager.wavesEnabled;
 
+                    player.debugMode = false;   // no skim/soar inside the bird
                     player.useTestMovement = true;
                     player.testMovement.state = TestMovementController.State.FLAPPY;
 
@@ -1363,7 +1364,10 @@ public class Window {
             finaleRestartFlappy();
             return;
         }
-        if (finale != null && finale.handlesDeath()) {
+        if (finale != null && finale.active()) {
+            // The finale owns every death while it runs: trial deaths become the
+            // wake-up sequence; deaths during the ending cinematics are ignored
+            // (you are past dying by then).
             finale.onPlayerDeath();
             return;
         }
@@ -6932,6 +6936,7 @@ public class Window {
 
     /** Finale hook: drop the player into Flappy Bird mode for the arena trial. */
     void finaleEnterFlappy() {
+        player.debugMode = false;            // no skim/soar inside the bird
         player.useTestMovement = true;
         player.testMovement.state = TestMovementController.State.FLAPPY;
         player.health = player.maxHealth;

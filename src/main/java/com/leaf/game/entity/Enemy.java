@@ -97,6 +97,8 @@ public class Enemy {
      */
     public float scaleMul    = 1f;
     public float healthScale = 1f;
+    /** Movement-speed multiplier (finale arena enemies are far more aggressive). */
+    public float speedMul    = 1f;
 
     /** Turn this enemy into a giant: bigger body, bigger hitbox, more HP. */
     public void makeGiant(float sizeMul, float hpMul) {
@@ -894,7 +896,7 @@ public class Enemy {
         float   moveSpeed = guardianPatrol         ? GameConfig.guardianPatrolSpeed
                 : (state == State.RETREATING) ? GameConfig.throwerRetreatSpeed
                   : speed;
-        float step = moveSpeed * dt * (onMud ? 0.10f : 1.0f);
+        float step = moveSpeed * speedMul * dt * (onMud ? 0.10f : 1.0f);
 
         float nx = position.x + ndx * step;
         float nz = position.z + ndz * step;

@@ -160,7 +160,8 @@ public class Player {
         boolean currentSpace = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (currentSpace && !lastSpace) {
             // Flight is a late unlock; allow exiting if already flying, but block entering until learned.
-            boolean flightAllowed = debugMode || can(Progression.Ability.FLIGHT);
+            // Never toggle in test-movement modes (flappy spams SPACE = accidental skim/soar).
+            boolean flightAllowed = (debugMode || can(Progression.Ability.FLIGHT)) && !useTestMovement;
             if (now - lastSpaceTime < 0.3 && !stand.isInStandPerspective() && flightAllowed) {
                 debugMode = !debugMode;
                 velocityY = 0f;

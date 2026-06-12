@@ -645,21 +645,52 @@ class WindowHud {
             case FIGHT -> {
                 finText(draw, w, 40f, 1.1f, 1.0f, 0.5f, 0.4f, 0.9f,
                         "TRIAL " + f.phase + " / 5   " + f.phaseName());
-                finText(draw, w, 66f, 1.0f, 0.95f, 0.9f, 0.85f, 0.85f,
+                float infoY = 66f;
+                String swl = f.subWaveLabel();
+                if (swl != null) {
+                    finText(draw, w, infoY, 1.0f, 0.85f, 0.7f, 1.0f, 0.95f, swl);
+                    infoY += 24f;
+                }
+                finText(draw, w, infoY, 1.0f, 0.95f, 0.9f, 0.85f, 0.85f,
                         "ENEMIES LEFT:  " + f.enemiesLeft());
+                infoY += 26f;
+
+                // Boss bar — the Avatar's health, big and unmistakable.
+                float bf = f.bossFrac();
+                if (bf >= 0f) {
+                    finText(draw, w, infoY, 1.0f, 1.0f, 0.6f, 1.0f, 0.95f, "AVATAR  OF  THE  CRYSTAL");
+                    infoY += 22f;
+                    float bw = w * 0.42f, bh = 14f;
+                    float bx = (w - bw) / 2f;
+                    draw.addRectFilled(bx - 2, infoY - 2, bx + bw + 2, infoY + bh + 2,
+                            ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.75f));
+                    int fillCol = f.isEnraged()
+                            ? ImGui.colorConvertFloat4ToU32(1.0f, 0.2f, 0.15f, 0.95f)
+                            : ImGui.colorConvertFloat4ToU32(0.75f, 0.25f, 0.95f, 0.95f);
+                    draw.addRectFilled(bx, infoY, bx + bw * bf, infoY + bh, fillCol);
+                    draw.addRect(bx - 2, infoY - 2, bx + bw + 2, infoY + bh + 2,
+                            ImGui.colorConvertFloat4ToU32(1.0f, 0.8f, 0.25f, 0.85f), 3f, 0, 1.5f);
+                    infoY += bh + 10f;
+                }
                 if (f.phase >= 4) {
                     float pa = 0.4f + 0.6f * (float) Math.abs(Math.sin(ImGui.getTime() * 4.0));
-                    finText(draw, w, 94f, 1.05f, 1.0f, 0.25f, 0.15f, pa,
+                    finText(draw, w, infoY, 1.05f, 1.0f, 0.25f, 0.15f, pa,
                             "! THE ARENA IS COLLAPSING  -  STAY OFF THE EDGE !");
                 }
+                // Enrage: the whole screen breathes red.
+                if (f.isEnraged()) {
+                    float ra = 0.10f + 0.08f * (float) Math.abs(Math.sin(ImGui.getTime() * 3.2));
+                    drawRadialVignette(draw, w, h, 0.9f, 0.05f, 0.05f, ra * 2.4f);
+                }
+                drawFinaleSubtitle(draw, w, h, f);   // giant names, avatar callouts
             }
             case FLAPPY_TRIAL -> {
-                finText(draw, w, 34f, 1.9f, 1.0f, 0.55f, 0.9f, 1f, "THE CRYSTAL MOCKS YOU");
-                finText(draw, w, 78f, 1.25f, 0.95f, 0.92f, 0.85f, 0.95f,
+                finText(draw, w, h * 0.035f, 1.9f, 1.0f, 0.55f, 0.9f, 1f, "THE CRYSTAL MOCKS YOU");
+                finText(draw, w, h * 0.035f + 44f, 1.15f, 0.95f, 0.92f, 0.85f, 0.95f,
                         "BECOME THE BIRD.   [SPACE] to flap.   Crash = instant retry.");
                 int score = win.player.testMovement.flappyScore;
                 float pulse = score >= 10 ? 0.7f + 0.3f * (float) Math.abs(Math.sin(ImGui.getTime() * 5.0)) : 1f;
-                finText(draw, w, 116f, 2.2f, 0.4f, 1.0f * pulse, 0.5f, 1f,
+                finText(draw, w, h * 0.16f, 2.4f, 1.0f, 0.85f * pulse, 0.25f, 1f,
                         "SCORE   " + score + "  /  15");
             }
             case DEFEAT_FADE -> {
@@ -667,21 +698,31 @@ class WindowHud {
                 draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, a));
             }
             case DEFEAT_WAKE -> {
-                // Eyelids: two soft black shutters meeting in the middle.
+                // Curved eyelids: two enormous black discs whose arcs sweep open
+                // like real lids, with layered translucent rings for a soft,
+                // blurred edge instead of a hard line.
                 float e = f.wakeEyelid();
                 if (e > 0.001f) {
-                    float cover = h * 0.5f * e;
+                    float R = w * 1.35f;
+                    float cover = (h * 0.62f) * e;
                     int black = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f);
-                    draw.addRectFilled(0, 0, w, cover, black);
-                    draw.addRectFilled(0, h - cover, w, h, black);
-                    // Soft blurred lid edge
-                    int soft = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.55f);
-                    draw.addRectFilled(0, cover, w, cover + 26f, soft);
-                    draw.addRectFilled(0, h - cover - 26f, w, h - cover, soft);
+                    draw.addCircleFilled(w / 2f, cover - R, R, black, 80);
+                    draw.addCircleFilled(w / 2f, h - cover + R, R, black, 80);
+                    for (int i = 1; i <= 4; i++) {
+                        int soft = ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 0.45f - i * 0.10f);
+                        draw.addCircleFilled(w / 2f, cover - R + i * 12f, R, soft, 80);
+                        draw.addCircleFilled(w / 2f, h - cover + R - i * 12f, R, soft, 80);
+                    }
                 }
-                // Groggy dark vignette while standing up
-                float groggy = Math.max(0f, 1f - t / 7f) * 0.45f;
-                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0.02f, 0.01f, 0.04f, groggy));
+                // Groggy radial vignette that breathes, fading as you stand.
+                float groggy = Math.max(0f, 1f - t / 8f);
+                float vig = groggy * (0.55f + 0.10f * (float) Math.sin(ImGui.getTime() * 1.7));
+                drawRadialVignette(draw, w, h, 0f, 0f, 0f, vig);
+                // Brief desaturated blue haze right after the eyes open
+                if (t > 3.0f && t < 6.5f) {
+                    float haze = (1f - (t - 3.0f) / 3.5f) * 0.18f;
+                    draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0.4f, 0.5f, 0.8f, haze));
+                }
                 drawFinaleSubtitle(draw, w, h, f);
             }
             case VICTORY_TEAR -> {
@@ -714,8 +755,44 @@ class WindowHud {
                 draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1.0f, 0.85f, 0.3f, gold));
                 drawFinaleSubtitle(draw, w, h, f);
             }
+            case UPHEAVAL -> {
+                drawLetterbox(draw, w, h, 1f);
+                // SEASONS STROBE PAST: spring green → summer gold → autumn fire →
+                // winter pale, blending continuously as years race by.
+                float[][] seasons = {
+                        {0.45f, 0.95f, 0.45f}, {1.0f, 0.85f, 0.30f},
+                        {0.95f, 0.45f, 0.18f}, {0.80f, 0.90f, 1.0f}};
+                float cyc = (t * 0.55f) % 4f;
+                int i0 = (int) cyc, i1 = (i0 + 1) % 4;
+                float ft = cyc - i0;
+                float sr2 = seasons[i0][0] + (seasons[i1][0] - seasons[i0][0]) * ft;
+                float sg = seasons[i0][1] + (seasons[i1][1] - seasons[i0][1]) * ft;
+                float sb = seasons[i0][2] + (seasons[i1][2] - seasons[i0][2]) * ft;
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(sr2, sg, sb, 0.15f));
+                drawRadialVignette(draw, w, h, 0f, 0f, 0f, 0.30f);
+                drawFinaleSubtitle(draw, w, h, f);
+            }
             case ASCENSION -> {
                 drawLetterbox(draw, w, h, 1f);
+                // The sky deepens into space as you climb
+                float space = Math.min(0.55f, t / 18f * 0.7f);
+                draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0.02f, 0.02f, 0.09f, space));
+                // Star streaks racing downward — speed builds with the climb
+                java.util.Random srng = new java.util.Random(42);
+                int stars = (int) Math.min(80, t * 7);
+                double now = ImGui.getTime();
+                for (int i = 0; i < stars; i++) {
+                    float sx = srng.nextFloat() * w;
+                    float spd = 180f + srng.nextFloat() * 520f;
+                    float len = 24f + srng.nextFloat() * 70f * Math.min(3f, t / 5f);
+                    float sy = (float) ((srng.nextFloat() * h + now * spd * (0.4f + t * 0.10f)) % (h + len)) - len;
+                    draw.addLine(sx, sy, sx, sy + len,
+                            ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 0.20f + srng.nextFloat() * 0.30f), 1.5f);
+                }
+                // Golden aura intensifying around the edges
+                float gold = 0.10f + 0.06f * (float) Math.sin(now * 2.2);
+                drawRadialVignette(draw, w, h, 1.0f, 0.82f, 0.30f, gold * 2.2f);
+                drawFinaleSubtitle(draw, w, h, f);
                 float wo = f.whiteout();
                 if (wo > 0f)
                     draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, wo));
@@ -724,33 +801,69 @@ class WindowHud {
                 draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(1f, 1f, 1f, 1f));
                 String line = f.whiteoutLine();
                 if (line != null) {
-                    // typewriter reveal within each line's window
-                    finText(draw, w, h * 0.46f, 1.6f, 0.25f, 0.22f, 0.28f, 1f, line);
+                    if (f.whiteoutClimax()) {
+                        // The last truth, burned in gold.
+                        float ca = Math.min(1f, (t - 13.5f) / 0.8f);
+                        finText(draw, w, h * 0.44f, 2.6f, 0.85f, 0.62f, 0.05f, ca, line);
+                    } else {
+                        finText(draw, w, h * 0.46f, 1.6f, 0.25f, 0.22f, 0.28f, 1f, line);
+                    }
                 }
                 // ease to black at the very end
-                if (t > 12.0f)
+                if (t > 16.0f)
                     draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f,
-                            Math.min(1f, (t - 12.0f) / 1.5f)));
+                            Math.min(1f, (t - 16.0f) / 1.5f)));
             }
             case THE_END -> {
                 draw.addRectFilled(0, 0, w, h, ImGui.colorConvertFloat4ToU32(0f, 0f, 0f, 1f));
-                float a1 = Math.min(1f, t / 1.5f);
-                finText(draw, w, h * 0.38f, 3.4f, 0.92f, 0.88f, 0.8f, a1, "D E S C E N T");
-                float a2 = Math.min(1f, Math.max(0f, (t - 1.2f) / 1.5f));
-                finText(draw, w, h * 0.38f + 80f, 1.4f, 0.75f, 0.72f, 0.68f, a2, "THE  END");
-                if (t > 2.5f) {
+                // A sparse field of slowly breathing stars — eternity.
+                java.util.Random erng = new java.util.Random(7);
+                double now = ImGui.getTime();
+                for (int i = 0; i < 60; i++) {
+                    float sx = erng.nextFloat() * w, sy = erng.nextFloat() * h;
+                    float tw2 = 0.25f + 0.20f * (float) Math.sin(now * (0.4 + erng.nextFloat()) + i);
+                    draw.addCircleFilled(sx, sy, 1.2f + erng.nextFloat(),
+                            ImGui.colorConvertFloat4ToU32(1f, 1f, 0.95f, Math.max(0.05f, tw2)));
+                }
+                float a1 = Math.min(1f, t / 2.0f);
+                finText(draw, w, h * 0.34f, 3.4f, 1.0f, 0.85f, 0.35f, a1, "D E S C E N T");
+                float a2 = Math.min(1f, Math.max(0f, (t - 1.6f) / 1.6f));
+                finText(draw, w, h * 0.34f + 78f, 1.3f, 0.8f, 0.78f, 0.72f, a2,
+                        "A S C E N S I O N    C O M P L E T E");
+                if (t > 3.4f) {
                     int em = (int) (f.endTime / 60f), es = (int) (f.endTime % 60f);
-                    finText(draw, w, h * 0.38f + 130f, 1.0f, 0.55f, 0.53f, 0.5f, Math.min(1f, (t - 2.5f) / 1f),
+                    float a3 = Math.min(1f, (t - 3.4f) / 1f);
+                    finText(draw, w, h * 0.34f + 128f, 1.0f, 0.55f, 0.53f, 0.5f, a3,
                             String.format("Enemies defeated: %d      Time: %d:%02d", f.endKills, em, es));
                 }
-                if (t > 4f) {
-                    float pa = 0.35f + 0.35f * (float) Math.abs(Math.sin(ImGui.getTime() * 2.0));
-                    finText(draw, w, h * 0.78f, 1.0f, 0.6f, 0.62f, 0.55f, pa,
-                            "[ ENTER ]   remain in the world, eternal");
+                if (t > 5.5f) {
+                    float a4 = Math.min(1f, (t - 5.5f) / 1.5f);
+                    finText(draw, w, h * 0.66f, 1.1f, 0.85f, 0.83f, 0.78f, a4,
+                            "Thank you for playing.");
+                }
+                if (t > 8f) {
+                    float pa = 0.20f + 0.20f * (float) Math.abs(Math.sin(now * 1.5));
+                    finText(draw, w, h * 0.92f, 0.9f, 0.5f, 0.5f, 0.48f, pa, "[ ESC ]   rest");
                 }
             }
             default -> { }
         }
+    }
+
+    /**
+     * Soft radial vignette: gradient bands from each screen edge fading toward
+     * the centre — reads as a darkened ring, not "black boxes".
+     */
+    private void drawRadialVignette(imgui.ImDrawList draw, float w, float h,
+                                    float r, float g, float b, float a) {
+        if (a <= 0.002f) return;
+        int edge = ImGui.colorConvertFloat4ToU32(r, g, b, Math.min(1f, a));
+        int mid  = ImGui.colorConvertFloat4ToU32(r, g, b, 0f);
+        float bx = w * 0.30f, by = h * 0.34f;
+        draw.addRectFilledMultiColor(0, 0, w, by, edge, edge, mid, mid);       // top
+        draw.addRectFilledMultiColor(0, h - by, w, h, mid, mid, edge, edge);   // bottom
+        draw.addRectFilledMultiColor(0, 0, bx, h, edge, mid, mid, edge);       // left
+        draw.addRectFilledMultiColor(w - bx, 0, w, h, mid, edge, edge, mid);   // right
     }
 
     /** Cinematic letterbox bars (alpha 0..1). */
@@ -2226,7 +2339,9 @@ class WindowHud {
             draw.addText(cx - nw / 2f, screenH - 60f, ImGui.colorConvertFloat4ToU32(0.8f, 0.9f, 1f, 0.8f), navHint);
         }
         // ── FLAPPY BIRD ARCADE SCORE ──
-        if (win.player.useTestMovement && win.player.testMovement.state == TestMovementController.State.FLAPPY) {
+        // (Hidden during the finale trial — renderFinale draws its own n/15 tracker.)
+        if (win.player.useTestMovement && win.player.testMovement.state == TestMovementController.State.FLAPPY
+                && (win.finale == null || !win.finale.isFlappyTrial())) {
             String scoreStr = "SCORE: " + win.player.testMovement.flappyScore;
             ImFont font = ImGui.getFont();
             float scale = 2.4f;
