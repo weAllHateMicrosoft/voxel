@@ -36,6 +36,7 @@ public class CommandHandler {
             case "help":
                 win.chatHistory.add("[System] Commands:");
                 win.chatHistory.add("  /showcase - DEMO MODE: all abilities, godmode, infinite mana, all items.");
+                win.chatHistory.add("  /finale - jump straight to THE ENDING (portal trial at spawn).");
                 win.chatHistory.add("  /showcase <combat|horde|volcanic|sakura|off> - Stage a demo scene.");
                 win.chatHistory.add("  /skip - Skip onboarding AND all wave practices.");
                 win.chatHistory.add("  /spawn <spider|tower|treant> - Spawn an entity.");
@@ -271,6 +272,23 @@ public class CommandHandler {
 
                 win.chatHistory.add("[System]: Entire onboarding & practice sequence bypassed! Endless waves are now active.");
                 break;
+
+            case "finale": {
+                // DEV/DEMO: jump straight to the endgame. Unlock everything and
+                // fire the summons as if the voyage had just been completed.
+                win.player.progression.unlockAll();
+                if (win.tutorial != null) win.tutorial.skip();
+                win.practiceQueue.clear();
+                win.practiceAbility = null;
+                win.practiceSteps = null;
+                win.showUnlockCard = false;
+                if (win.voyage == null) win.voyage = new Voyage(win);
+                win.voyage.complete = true;
+                win.voyage.active   = false;
+                win.voyageStarted   = true;
+                win.chatHistory.add("[FINALE] All powers granted. The crystal calls you home...");
+                break;
+            }
 
             case "god":
                 if (win.player != null) {
