@@ -954,7 +954,7 @@ public class FinaleManager {
             }
             if (giantAbility[i] <= 0f) {
                 giantAbility[i] = 4.2f;
-                fireLaser(s, 12f);
+                fireLaser(s, 3f);
             }
         }
     }
@@ -1119,7 +1119,8 @@ public class FinaleManager {
 
     /** Apply scripted damage to the player (respects post-revival immunity). */
     private void hurtPlayer(float dmg) {
-        if (win.immunityTimer > 0f || win.showcaseMode) return;
+        // ADD "|| win.player.abilities.isKamui" to the if-statement!
+        if (win.immunityTimer > 0f || win.showcaseMode || win.player.abilities.isKamui) return;
         win.player.health -= dmg;
         win.damageFlashTimer = 0.4f;
         ScreenEffectManager.INSTANCE.flash(1f, 0.1f, 0.05f, 0.35f, 0.18f);

@@ -3566,6 +3566,7 @@ public class Window {
                             if (item.blockType == Block.HOTDOG) {
                                 // Nom  -  hotdogs heal instead of entering the inventory.
                                 player.health = Math.min(player.maxHealth, player.health + 25f);
+                                player.mana = Math.min(player.maxMana, player.mana + 25f);
                                 AudioManager.play("cystal_click", 0.9f, 0.7f);
                                 ScreenEffectManager.INSTANCE.flash(0.4f, 1.0f, 0.5f, 0.18f, 0.25f);
                                 hintText  = "HOTDOG!  +25 HP";
@@ -3895,6 +3896,7 @@ public class Window {
                             if (item.blockType == Block.HOTDOG) {
                                 // Nom  -  hotdogs heal instead of entering the inventory.
                                 player.health = Math.min(player.maxHealth, player.health + 25f);
+                                player.mana = Math.min(player.maxMana, player.mana + 25f);
                                 AudioManager.play("cystal_click", 0.9f, 0.7f);
                                 ScreenEffectManager.INSTANCE.flash(0.4f, 1.0f, 0.5f, 0.18f, 0.25f);
                                 hintText  = "HOTDOG!  +25 HP";
